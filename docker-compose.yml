@@ -1,0 +1,64 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: explorer
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    entrypoint: ["/api"]
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/explorer?sslmode=disable
+      RPC_URL: ${RPC_URL:-http://host.docker.internal:8545}
+      API_PORT: "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  indexer:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    entrypoint: ["/indexer"]
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/explorer?sslmode=disable
+      RPC_URL: ${RPC_URL:-http://host.docker.internal:8545}
+      POLL_INTERVAL: "2s"
+      START_BLOCK: ${START_BLOCK:-0}
+      # Tuning - reduce these if your RPC gets overwhelmed (EOF errors)
+      CATCHUP_WORKERS: ${CATCHUP_WORKERS:-10}
+      RPC_WORKERS: ${RPC_WORKERS:-50}
+      RPC_RATE_LIMIT: ${RPC_RATE_LIMIT:-500}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

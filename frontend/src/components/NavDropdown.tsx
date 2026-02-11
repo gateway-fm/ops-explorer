@@ -1,0 +1,77 @@
+import { useState, useRef, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { ChevronDown, Boxes, ArrowLeftRight, Users, ShieldCheck, Coins, ArrowRightLeft, Fuel } from 'lucide-react';
+
+const blockchainItems = [
+  { to: '/blocks', label: 'Blocks', icon: Boxes },
+  { to: '/transactions', label: 'Transactions', icon: ArrowLeftRight },
+  { to: '/accounts', label: 'Top Accounts', icon: Users },
+  { to: '/gas-tracker', label: 'Gas Tracker', icon: Fuel },
+  { to: '/verify', label: 'Verify Contract', icon: ShieldCheck },
+];
+
+const tokenItems = [
+  { to: '/tokens', label: 'Tokens', icon: Coins },
+  { to: '/token-transfers', label: 'Token Transfers', icon: ArrowRightLeft },
+];
+
+interface DropdownProps {
+  label: string;
+  items: { to: string; label: string; icon: React.ComponentType<{ className?: string }> }[];
+}
+
+function Dropdown({ label, items }: DropdownProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div ref={dropdownRef} className="relative">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-1.5 px-3 py-2 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors text-sm font-medium"
+      >
+        {label}
+        <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute top-full right-0 mt-2 w-48 card overflow-hidden z-50 shadow-elevated">
+          {items.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.to}
+                to={item.to}
+                onClick={() => setIsOpen(false)}
+                className="flex items-center gap-3 px-4 py-3 hover:bg-primary-50 transition-colors"
+              >
+                <Icon className="w-4 h-4 text-neutral-500" />
+                <span className="text-sm text-neutral-700">{item.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function NavDropdown() {
+  return (
+    <div className="flex items-center gap-1">
+      <Dropdown label="Blockchain" items={blockchainItems} />
+      <Dropdown label="Tokens" items={tokenItems} />
+    </div>
+  );
+}

@@ -1,0 +1,443 @@
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Link, useParams } from 'react-router-dom';
+import { api } from '../lib/api';
+import type { TokenTransfer, Log, TxCategory } from '../lib/api';
+import { formatWei, formatGas } from '../lib/utils';
+import { AddressLink, TokenAddressLink } from '../components/AddressLink';
+import { PageHeader } from '../components/PageHeader';
+import { decodeEvent, getMethodId, fetchEventSignature, decodeEventWithSignature, KNOWN_EVENTS } from '../lib/eventDecoder';
+import type { DecodedEvent } from '../lib/eventDecoder';
+
+// Category display configuration
+const CATEGORY_CONFIG: Record<TxCategory, { label: string; className: string }> = {
+  contract_creation: { label: 'Contract Creation', className: 'bg-purple-100 text-purple-700' },
+  contract_call: { label: 'Contract Call', className: 'bg-blue-100 text-blue-700' },
+  coin_transfer: { label: 'Coin Transfer', className: 'bg-green-100 text-green-700' },
+  token_transfer: { label: 'Token Transfer', className: 'bg-orange-100 text-orange-700' },
+};
+
+function TxCategoryBadges({ categories }: { categories?: TxCategory[] }) {
+  if (!categories || categories.length === 0) {
+    return <span className="text-neutral-400">-</span>;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {categories.map((category) => {
+        const config = CATEGORY_CONFIG[category];
+        if (!config) return null;
+        return (
+          <span
+            key={category}
+            className={`inline-block text-xs px-2 py-0.5 rounded font-medium ${config.className}`}
+          >
+            {config.label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+export function TransactionDetail() {
+  const { hash } = useParams<{ hash: string }>();
+  const [activeTab, setActiveTab] = useState<'overview' | 'logs'>('overview');
+
+  const { data: tx, isLoading, error } = useQuery({
+    queryKey: ['transaction', hash],
+    queryFn: () => api.getTransaction(hash!),
+    enabled: !!hash,
+  });
+
+  const { data: transfers } = useQuery({
+    queryKey: ['transaction-transfers', hash],
+    queryFn: () => api.getTransactionTransfers(hash!),
+    enabled: !!hash,
+  });
+
+  const { data: logs } = useQuery({
+    queryKey: ['transaction-logs', hash],
+    queryFn: () => api.getTransactionLogs(hash!),
+    enabled: !!hash,
+  });
+
+  if (isLoading) return <div className="text-neutral-400">Loading...</div>;
+  if (error || !tx) return <div className="text-error-600">Transaction not found</div>;
+
+  const hasLogs = logs && logs.length > 0;
+
+  return (
+    <div className="space-y-6">
+      <PageHeader title="Transaction Details" />
+
+      {/* Tabs - only show when logs exist */}
+      {hasLogs && (
+        <div className="tabs">
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={activeTab === 'overview' ? 'tab-active' : 'tab'}
+          >
+            Overview
+          </button>
+          <button
+            onClick={() => setActiveTab('logs')}
+            className={activeTab === 'logs' ? 'tab-active' : 'tab'}
+          >
+            Logs ({logs?.length || 0})
+          </button>
+        </div>
+      )}
+
+      {/* Overview Tab */}
+      {activeTab === 'overview' && (
+        <div className="card">
+          <div className="divide-y divide-neutral-100">
+            <InfoRow
+              label="Transaction Hash"
+              value={<span className="font-mono text-sm break-all text-neutral-900">{tx.hash}</span>}
+            />
+            <InfoRow
+              label="Status"
+              value={
+                <span className={`badge ${tx.status === 1 ? 'badge-success' : 'badge-error'}`}>
+                  {tx.status === 1 ? 'Success' : 'Failed'}
+                </span>
+              }
+            />
+            {tx.txCategories && tx.txCategories.length > 0 && (
+              <InfoRow
+                label="Transaction Type"
+                value={<TxCategoryBadges categories={tx.txCategories} />}
+              />
+            )}
+            <InfoRow
+              label="Block"
+              value={
+                <Link to={`/block/${tx.blockNumber}`} className="text-primary hover:text-primary-600 transition-colors">
+                  {tx.blockNumber}
+                </Link>
+              }
+            />
+            <InfoRow
+              label="From"
+              value={<AddressLink address={tx.from} full className="text-sm" />}
+            />
+            <InfoRow
+              label="To"
+              value={
+                tx.to ? (
+                  <AddressLink address={tx.to} full className="text-sm" />
+                ) : tx.contractAddress ? (
+                  <span className="text-sm">
+                    <span className="text-neutral-500">[Contract </span>
+                    <AddressLink address={tx.contractAddress} full />
+                    <span className="text-neutral-500"> Created]</span>
+                  </span>
+                ) : (
+                  <span className="text-neutral-500">Contract Creation</span>
+                )
+              }
+            />
+
+            {/* ERC-20 Tokens Transferred - Etherscan style, inline with other fields */}
+            {transfers && transfers.length > 0 && (
+              <div className="info-row">
+                <div className="info-label flex items-start gap-1">
+                  <span>ERC-20 Tokens Transferred</span>
+                  <span className="text-xs text-neutral-400">({transfers.length})</span>
+                </div>
+                <div className="flex flex-col gap-2">
+                  {transfers.map((transfer) => (
+                    <TokenTransferRow key={`${transfer.txHash}-${transfer.logIndex}`} transfer={transfer} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <InfoRow label="Value" value={`${formatWei(tx.value)} ETH`} />
+            <InfoRow label="Gas Used" value={formatGas(tx.gasUsed)} />
+            <InfoRow label="Gas Price" value={`${tx.gasPrice} wei`} />
+            {tx.inputData && tx.inputData !== '' && (
+              <InfoRow
+                label="Input Data"
+                value={
+                  <span className="font-mono text-xs text-neutral-500 break-all">
+                    0x{tx.inputData.length > 100 ? tx.inputData.slice(0, 100) + '...' : tx.inputData}
+                  </span>
+                }
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Logs Tab */}
+      {activeTab === 'logs' && logs && (
+        <div className="space-y-4">
+          {logs.map((log) => (
+            <LogCard key={`${log.txHash}-${log.logIndex}`} log={log} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="info-row">
+      <div className="info-label">{label}</div>
+      <div className="info-value">{value}</div>
+    </div>
+  );
+}
+
+function TokenTransferRow({ transfer }: { transfer: TokenTransfer }) {
+  const formattedValue = formatTokenValue(transfer.value);
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap text-sm">
+      <span className="text-neutral-500">From</span>
+      <AddressLink address={transfer.from} />
+      <span className="text-neutral-500">To</span>
+      <AddressLink address={transfer.to} />
+      <span className="text-neutral-500">For</span>
+      <span className="font-mono text-success-600 font-medium">{formattedValue}</span>
+      <TokenAddressLink address={transfer.tokenAddress} />
+    </div>
+  );
+}
+
+function formatTokenValue(value: string | number): string {
+  try {
+    const bigValue = typeof value === 'string' ? BigInt(value) : BigInt(Math.floor(value));
+    // Assuming 18 decimals (standard ERC-20)
+    const divisor = BigInt(10 ** 18);
+    const wholePart = bigValue / divisor;
+    const fractionalPart = bigValue % divisor;
+
+    if (fractionalPart === 0n) {
+      return wholePart.toLocaleString();
+    }
+
+    // Show up to 4 decimal places
+    const fractionalStr = fractionalPart.toString().padStart(18, '0');
+    const decimals = fractionalStr.slice(0, 4).replace(/0+$/, '');
+
+    if (decimals) {
+      return `${wholePart.toLocaleString()}.${decimals}`;
+    }
+    return wholePart.toLocaleString();
+  } catch {
+    return String(value);
+  }
+}
+
+type TopicDecodeFormat = 'hex' | 'address' | 'number' | 'text';
+
+// Decode a 32-byte hex topic to different formats
+function decodeTopic(hex: string, format: TopicDecodeFormat): string {
+  // Remove 0x prefix if present
+  const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
+
+  switch (format) {
+    case 'hex':
+      return hex;
+    case 'address':
+      // Address is last 20 bytes (40 hex chars), with 0x prefix
+      const addressHex = cleanHex.slice(-40);
+      return `0x${addressHex}`;
+    case 'number':
+      try {
+        const num = BigInt('0x' + cleanHex);
+        return num.toString();
+      } catch {
+        return 'Invalid number';
+      }
+    case 'text':
+      try {
+        // Convert hex to bytes, then decode as UTF-8
+        const bytes = [];
+        for (let i = 0; i < cleanHex.length; i += 2) {
+          const byte = parseInt(cleanHex.slice(i, i + 2), 16);
+          if (byte !== 0) bytes.push(byte); // Skip null bytes
+        }
+        const text = new TextDecoder('utf-8', { fatal: false }).decode(new Uint8Array(bytes));
+        // Check if result is printable
+        if (/^[\x20-\x7E\s]*$/.test(text) && text.trim().length > 0) {
+          return text.trim();
+        }
+        return '(non-printable)';
+      } catch {
+        return '(decode error)';
+      }
+    default:
+      return hex;
+  }
+}
+
+function TopicRow({ index, value }: { index: number; value: string }) {
+  const [format, setFormat] = useState<TopicDecodeFormat>('hex');
+
+  // Topic 0 is always the event signature hash - no decode options
+  const showDecodeOptions = index > 0;
+  const decodedValue = showDecodeOptions ? decodeTopic(value, format) : value;
+
+  // Check if decoded address looks valid (for linking)
+  const isAddress = format === 'address' && decodedValue.startsWith('0x') && decodedValue.length === 42;
+
+  return (
+    <div className="flex items-start gap-2">
+      <span className="text-neutral-400 text-xs font-mono w-4 shrink-0">[{index}]</span>
+      <div className="flex-1 min-w-0">
+        {isAddress ? (
+          <AddressLink address={decodedValue} full className="text-xs" />
+        ) : (
+          <span className="font-mono text-xs text-neutral-700 break-all">{decodedValue}</span>
+        )}
+      </div>
+      {showDecodeOptions && (
+        <select
+          value={format}
+          onChange={(e) => setFormat(e.target.value as TopicDecodeFormat)}
+          className="text-xs bg-neutral-100 border border-neutral-200 rounded px-1.5 py-0.5 text-neutral-600 hover:bg-neutral-200 transition-colors cursor-pointer shrink-0"
+        >
+          <option value="hex">Hex</option>
+          <option value="address">Address</option>
+          <option value="number">Number</option>
+          <option value="text">Text</option>
+        </select>
+      )}
+    </div>
+  );
+}
+
+function DecodedEventSection({ decoded, methodId }: { decoded: DecodedEvent; methodId: string }) {
+  return (
+    <div className="bg-primary-50 border border-primary-200 rounded-lg p-3 space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-medium text-primary-700 bg-primary-100 px-2 py-0.5 rounded">
+          Decoded
+        </span>
+        <span className="text-xs text-neutral-500">Method ID: {methodId}</span>
+      </div>
+
+      <div className="font-mono text-sm text-neutral-800">
+        <span className="text-primary-600 font-semibold">{decoded.name}</span>
+        <span className="text-neutral-500">(</span>
+        {decoded.params.map((param, i) => (
+          <span key={param.name}>
+            {i > 0 && <span className="text-neutral-400">, </span>}
+            <span className="text-neutral-500">{param.type}</span>
+            {param.indexed && <span className="text-warning-600 text-xs ml-0.5">indexed</span>}
+            <span className="text-neutral-600"> {param.name}</span>
+          </span>
+        ))}
+        <span className="text-neutral-500">)</span>
+      </div>
+
+      <div className="space-y-1 pt-1 border-t border-primary-200">
+        {decoded.params.map((param) => (
+          <div key={param.name} className="flex items-start gap-2 text-sm">
+            <span className="text-neutral-500 min-w-[80px] shrink-0">{param.name}:</span>
+            {param.type === 'address' && param.value ? (
+              <AddressLink address={param.value} full className="text-xs" />
+            ) : (
+              <span className="font-mono text-xs text-neutral-700 break-all">
+                {param.value || '(empty)'}
+              </span>
+            )}
+            {param.indexed && (
+              <span className="text-xs text-warning-600 bg-warning-50 px-1 rounded shrink-0">indexed</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LogCard({ log }: { log: Log }) {
+  const topics = [
+    { index: 0, value: log.topic0 },
+    { index: 1, value: log.topic1 },
+    { index: 2, value: log.topic2 },
+    { index: 3, value: log.topic3 },
+  ].filter((t) => t.value !== null) as { index: number; value: string }[];
+
+  // Try to decode the event from local database first
+  const localDecoded = decodeEvent(log.topic0, log.topic1, log.topic2, log.topic3, log.data || '');
+  const methodId = log.topic0 ? getMethodId(log.topic0) : '';
+
+  // Check if we need to fetch from 4byte.directory
+  const needsFetch = !localDecoded && !!log.topic0 && !KNOWN_EVENTS[log.topic0.toLowerCase()];
+
+  // Fetch from 4byte.directory for unknown events
+  const { data: fetchedSignature, isLoading: isFetchingSignature } = useQuery({
+    queryKey: ['event-signature', log.topic0],
+    queryFn: () => fetchEventSignature(log.topic0!, topics.length),
+    enabled: needsFetch,
+    staleTime: Infinity, // Signatures don't change
+    retry: 1,
+  });
+
+  // Decode with fetched signature if available
+  const decoded = localDecoded || (fetchedSignature && fetchedSignature.name
+    ? decodeEventWithSignature(fetchedSignature, log.topic1, log.topic2, log.topic3, log.data || '')
+    : null);
+
+  return (
+    <div className="card p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="badge badge-neutral font-mono">
+          {log.logIndex}
+        </span>
+        <span className="text-neutral-500 text-sm">Log Index</span>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex flex-col sm:flex-row gap-1 sm:gap-2">
+          <span className="text-neutral-500 text-sm w-20 shrink-0">Address</span>
+          <AddressLink address={log.address} full className="text-sm" />
+        </div>
+
+        {/* Decoded Event Section - shown when event is recognized */}
+        {decoded && (
+          <DecodedEventSection decoded={decoded} methodId={methodId} />
+        )}
+
+        {/* Loading indicator while fetching signature */}
+        {isFetchingSignature && (
+          <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 flex items-center gap-2">
+            <div className="w-4 h-4 border-2 border-neutral-300 border-t-primary-500 rounded-full animate-spin" />
+            <span className="text-xs text-neutral-500">Looking up event signature...</span>
+          </div>
+        )}
+
+        {topics.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <span className="text-neutral-500 text-sm">Topics</span>
+            <div className="space-y-2 pl-2">
+              {topics.map((topic) => (
+                <TopicRow key={topic.index} index={topic.index} value={topic.value} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {log.data && log.data !== '' && (
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <span className="text-neutral-500 text-sm">Data</span>
+              <span className="text-neutral-400 text-xs">({log.data.length / 2} bytes)</span>
+            </div>
+            <div className="code-block p-2 text-xs max-h-64 overflow-y-auto">
+              <div className="break-all whitespace-pre-wrap">0x{log.data}</div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
