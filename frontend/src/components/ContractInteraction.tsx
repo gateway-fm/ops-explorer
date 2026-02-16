@@ -1,10 +1,8 @@
 import { useState, useMemo } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { BrowserProvider, Contract, parseUnits } from 'ethers';
 import type { Eip1193Provider } from 'ethers';
-import { api } from '../lib/api';
 import type { AbiFragment, AbiInput } from '../lib/api';
-import { ChevronDown, ChevronUp, Loader2, Wallet, Upload, AlertCircle, CheckCircle } from 'lucide-react';
+import { ChevronDown, ChevronUp, Loader2, Wallet, AlertCircle, CheckCircle } from 'lucide-react';
 
 // Extend Window interface for ethereum provider
 declare global {
@@ -14,7 +12,7 @@ declare global {
 }
 
 // Get RPC URL from environment
-const RPC_URL = import.meta.env.VITE_RPC_URL || 'http://localhost:8123';
+const RPC_URL = import.meta.env.VITE_RPC_URL || 'http://localhost:8545';
 
 interface ContractInteractionProps {
   address: string;
@@ -50,7 +48,7 @@ export function ContractInteraction({ address, abi, type }: ContractInteractionP
 
   if (!abi || abi.length === 0) {
     return (
-      <div className="text-center text-white/50 py-8">
+      <div className="text-center text-neutral-400 py-8">
         No ABI available. Upload an ABI to interact with this contract.
       </div>
     );
@@ -58,7 +56,7 @@ export function ContractInteraction({ address, abi, type }: ContractInteractionP
 
   if (functions.length === 0) {
     return (
-      <div className="text-center text-white/50 py-8">
+      <div className="text-center text-neutral-400 py-8">
         No {type === 'read' ? 'read' : 'write'} functions found in ABI.
       </div>
     );
@@ -180,30 +178,30 @@ function FunctionCard({ contractAddress, abiFragment, index, type, isExpanded, o
   };
 
   return (
-    <div className="border border-white/10 rounded-lg overflow-hidden">
+    <div className="border border-neutral-200 rounded-lg overflow-hidden">
       <button
         onClick={onToggle}
-        className="w-full px-4 py-3 flex items-center justify-between bg-white/5 hover:bg-white/10 transition-colors text-left"
+        className="w-full px-4 py-3 flex items-center justify-between bg-neutral-50 hover:bg-neutral-100 transition-colors text-left"
       >
-        <span className="font-medium text-white/95">
+        <span className="font-medium text-neutral-900">
           {index}. {abiFragment.name}
           {abiFragment.stateMutability === 'payable' && (
-            <span className="ml-2 text-xs text-amber-400">(payable)</span>
+            <span className="ml-2 text-xs text-amber-600">(payable)</span>
           )}
         </span>
         {isExpanded ? (
-          <ChevronUp className="w-4 h-4 text-white/50" />
+          <ChevronUp className="w-4 h-4 text-neutral-400" />
         ) : (
-          <ChevronDown className="w-4 h-4 text-white/50" />
+          <ChevronDown className="w-4 h-4 text-neutral-400" />
         )}
       </button>
 
       {isExpanded && (
-        <form onSubmit={handleSubmit} className="p-4 space-y-4 bg-white/[0.02]">
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
           {/* Inputs */}
           {(abiFragment.inputs || []).map((input) => (
             <div key={input.name} className="space-y-1">
-              <label className="text-sm text-white/60">
+              <label className="text-sm text-neutral-500">
                 {input.name} <span className="text-xs">({input.type})</span>
               </label>
               <input
@@ -211,7 +209,7 @@ function FunctionCard({ contractAddress, abiFragment, index, type, isExpanded, o
                 value={inputs[input.name] || ''}
                 onChange={(e) => handleInputChange(input.name, e.target.value)}
                 placeholder={`${input.type}`}
-                className="glass-input w-full"
+                className="w-full px-3 py-2 border border-neutral-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
               />
             </div>
           ))}
@@ -219,7 +217,7 @@ function FunctionCard({ contractAddress, abiFragment, index, type, isExpanded, o
           {/* ETH value for payable functions */}
           {abiFragment.stateMutability === 'payable' && (
             <div className="space-y-1">
-              <label className="text-sm text-white/60">
+              <label className="text-sm text-neutral-500">
                 ETH Value <span className="text-xs">(wei)</span>
               </label>
               <input
@@ -227,14 +225,14 @@ function FunctionCard({ contractAddress, abiFragment, index, type, isExpanded, o
                 value={inputs['__ethValue'] || ''}
                 onChange={(e) => handleInputChange('__ethValue', e.target.value)}
                 placeholder="0.0"
-                className="glass-input w-full"
+                className="w-full px-3 py-2 border border-neutral-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
               />
             </div>
           )}
 
           {/* Outputs display */}
           {(abiFragment.outputs || []).length > 0 && (
-            <div className="text-xs text-white/50">
+            <div className="text-xs text-neutral-400">
               Returns: {(abiFragment.outputs || []).map((o) => `${o.name || 'unnamed'} (${o.type})`).join(', ')}
             </div>
           )}
@@ -243,7 +241,7 @@ function FunctionCard({ contractAddress, abiFragment, index, type, isExpanded, o
           <button
             type="submit"
             disabled={isLoading}
-            className="glass-button flex items-center gap-2"
+            className="btn-primary flex items-center gap-2 text-sm"
           >
             {isLoading ? (
               <>
@@ -262,22 +260,22 @@ function FunctionCard({ contractAddress, abiFragment, index, type, isExpanded, o
 
           {/* Result */}
           {result !== null && (
-            <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
+            <div className="p-3 bg-success-50 border border-success-200 rounded-lg">
               <div className="flex items-start gap-2">
-                <CheckCircle className="w-4 h-4 text-green-400 mt-0.5" />
-                <div className="font-mono text-sm text-white/90 break-all">{result}</div>
+                <CheckCircle className="w-4 h-4 text-success-600 mt-0.5" />
+                <div className="font-mono text-sm text-neutral-900 break-all">{result}</div>
               </div>
             </div>
           )}
 
           {/* Transaction hash */}
           {txHash && (
-            <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+            <div className="p-3 bg-primary-50 border border-primary-200 rounded-lg">
               <div className="text-sm">
-                <span className="text-white/60">Transaction: </span>
+                <span className="text-neutral-500">Transaction: </span>
                 <a
                   href={`/tx/${txHash}`}
-                  className="font-mono text-blue-400 hover:text-blue-300 break-all transition-colors"
+                  className="font-mono text-primary hover:text-primary-600 break-all transition-colors"
                 >
                   {txHash}
                 </a>
@@ -287,10 +285,10 @@ function FunctionCard({ contractAddress, abiFragment, index, type, isExpanded, o
 
           {/* Error */}
           {error && (
-            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+            <div className="p-3 bg-error-50 border border-error-200 rounded-lg">
               <div className="flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-red-400 mt-0.5" />
-                <div className="text-sm text-red-400 break-all">{error}</div>
+                <AlertCircle className="w-4 h-4 text-error-600 mt-0.5" />
+                <div className="text-sm text-error-600 break-all">{error}</div>
               </div>
             </div>
           )}
@@ -361,133 +359,6 @@ function formatResult(result: unknown, outputs: AbiInput[]): string {
   }
 
   return String(result);
-}
-
-// ABI Upload component
-interface AbiUploadProps {
-  address: string;
-  onAbiUpdate: () => void;
-}
-
-export function AbiUpload({ address, onAbiUpdate }: AbiUploadProps) {
-  const [abiText, setAbiText] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const queryClient = useQueryClient();
-
-  const mutation = useMutation({
-    mutationFn: async (abi: AbiFragment[]) => {
-      return api.updateContractABI(address, abi);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['contract', address] });
-      setAbiText('');
-      setError(null);
-      onAbiUpdate();
-    },
-    onError: (err: Error) => {
-      setError(err.message);
-    },
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    try {
-      const parsed = JSON.parse(abiText);
-      if (!Array.isArray(parsed)) {
-        throw new Error('ABI must be a JSON array');
-      }
-      mutation.mutate(parsed);
-    } catch (err) {
-      if (err instanceof SyntaxError) {
-        setError('Invalid JSON format');
-      } else if (err instanceof Error) {
-        setError(err.message);
-      }
-    }
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target?.result as string;
-      try {
-        // Try to parse as JSON and extract ABI if it's a full artifact
-        const parsed = JSON.parse(content);
-        if (Array.isArray(parsed)) {
-          setAbiText(JSON.stringify(parsed, null, 2));
-        } else if (parsed.abi && Array.isArray(parsed.abi)) {
-          // Hardhat/Truffle artifact format
-          setAbiText(JSON.stringify(parsed.abi, null, 2));
-        } else {
-          setAbiText(content);
-        }
-        setError(null);
-      } catch {
-        setAbiText(content);
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-white/95">Upload Contract ABI</h3>
-        <label className="cursor-pointer text-sm text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors">
-          <Upload className="w-4 h-4" />
-          Upload JSON
-          <input
-            type="file"
-            accept=".json"
-            onChange={handleFileUpload}
-            className="hidden"
-          />
-        </label>
-      </div>
-
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <textarea
-          value={abiText}
-          onChange={(e) => {
-            setAbiText(e.target.value);
-            setError(null);
-          }}
-          placeholder='Paste ABI JSON here, e.g. [{"type":"function","name":"balanceOf",...}]'
-          rows={8}
-          className="glass-input w-full font-mono text-sm resize-y"
-        />
-
-        {error && (
-          <div className="p-2 bg-red-500/10 border border-red-500/20 rounded-lg">
-            <div className="flex items-center gap-2 text-sm text-red-400">
-              <AlertCircle className="w-4 h-4" />
-              {error}
-            </div>
-          </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={!abiText.trim() || mutation.isPending}
-          className="glass-button flex items-center gap-2"
-        >
-          {mutation.isPending ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Saving...
-            </>
-          ) : (
-            'Save ABI'
-          )}
-        </button>
-      </form>
-    </div>
-  );
 }
 
 // Window.ethereum type declaration is in lib/auth.tsx

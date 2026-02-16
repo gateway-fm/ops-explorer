@@ -1,8 +1,16 @@
 .PHONY: run stop logs anvil anvil-stop anvil-logs
 
 # Default RPC URL (use host.docker.internal to reach host from Docker)
-RPC_URL ?= http://host.docker.internal:8123
+RPC_URL ?= http://privacy-proxy-anvil-1:8545
 START_BLOCK ?= 0
+
+# Port configuration
+API_PORT ?= 8081
+FRONTEND_PORT ?= 3001
+POSTGRES_PORT ?= 5433
+ANVIL_PORT ?= 8546
+
+export API_PORT FRONTEND_PORT POSTGRES_PORT ANVIL_PORT
 
 run:
 	@echo "Starting Block Explorer..."
@@ -13,7 +21,7 @@ run:
 	@echo ""
 	@echo "Waiting for services..."
 	@for i in 1 2 3 4 5 6 7 8 9 10; do \
-		if curl -s http://127.0.0.1:8080/api/stats >/dev/null 2>&1; then \
+		if curl -s http://127.0.0.1:$(API_PORT)/api/stats >/dev/null 2>&1; then \
 			break; \
 		fi; \
 		sleep 2; \
@@ -21,8 +29,8 @@ run:
 	@echo ""
 	@echo "Block Explorer is ready!"
 	@echo ""
-	@echo "  Explorer:  http://localhost:3000"
-	@echo "  API:       http://localhost:8080"
+	@echo "  Explorer:  http://localhost:$(FRONTEND_PORT)"
+	@echo "  API:       http://localhost:$(API_PORT)"
 	@echo ""
 
 stop:
@@ -42,7 +50,7 @@ anvil:
 	@echo ""
 	@echo "Waiting for services..."
 	@for i in 1 2 3 4 5 6 7 8 9 10; do \
-		if curl -s http://127.0.0.1:8080/api/stats >/dev/null 2>&1; then \
+		if curl -s http://127.0.0.1:$(API_PORT)/api/stats >/dev/null 2>&1; then \
 			break; \
 		fi; \
 		sleep 2; \
@@ -50,9 +58,9 @@ anvil:
 	@echo ""
 	@echo "Block Explorer with Anvil is ready!"
 	@echo ""
-	@echo "  Explorer:  http://localhost:3000"
-	@echo "  API:       http://localhost:8080"
-	@echo "  Anvil RPC: http://localhost:8545"
+	@echo "  Explorer:  http://localhost:$(FRONTEND_PORT)"
+	@echo "  API:       http://localhost:$(API_PORT)"
+	@echo "  Anvil RPC: http://localhost:$(ANVIL_PORT)"
 	@echo ""
 	@echo "Test accounts (each with 10000 ETH):"
 	@echo "  0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
@@ -66,3 +74,6 @@ anvil-stop:
 
 anvil-logs:
 	docker compose -f docker-compose.anvil.yml logs -f
+
+rebuild-backend:
+	docker compose build --no-cache api indexer && docker compose up -d api indexer

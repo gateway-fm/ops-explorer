@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: explorer
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -16,16 +16,24 @@ services:
       retries: 5
 
   api:
+    platform: linux/amd64
     build:
       context: ./backend
       dockerfile: Dockerfile
     entrypoint: ["/api"]
     ports:
-      - "8080:8080"
+      - "${API_PORT:-8081}:8080"
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/explorer?sslmode=disable
-      RPC_URL: ${RPC_URL:-http://host.docker.internal:8545}
+      RPC_URL: ${RPC_URL:-http://privacy-proxy-anvil-1:8545}
       API_PORT: "8080"
+      SOLC_PATH: /opt/solc
+      PRIVACY_PROXY_URL: ${PRIVACY_PROXY_URL:-http://privacy-proxy-proxy-backend-1:8080}
+      SSO_CLIENT_ID: ${SSO_CLIENT_ID:-explorer}
+      SSO_REDIRECT_URI: ${SSO_REDIRECT_URI:-http://localhost:3001/api/auth/callback}
+    networks:
+      - default
+      - privacy-proxy
     depends_on:
       postgres:
         condition: service_healthy
@@ -36,9 +44,12 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     entrypoint: ["/indexer"]
+    networks:
+      - default
+      - privacy-proxy
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/explorer?sslmode=disable
-      RPC_URL: ${RPC_URL:-http://host.docker.internal:8545}
+      RPC_URL: ${RPC_URL:-http://privacy-proxy-anvil-1:8545}
       POLL_INTERVAL: "2s"
       START_BLOCK: ${START_BLOCK:-0}
       # Tuning - reduce these if your RPC gets overwhelmed (EOF errors)
@@ -55,10 +66,15 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "3000:80"
+      - "${FRONTEND_PORT:-3001}:80"
     depends_on:
       - api
     restart: unless-stopped
+
+networks:
+  privacy-proxy:
+    external: true
+    name: privacy-proxy_proxy-network
 
 volumes:
   postgres_data:

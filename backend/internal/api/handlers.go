@@ -1192,7 +1192,7 @@ func (s *Server) handleFetchSourcify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update contract in database
-	if err := s.db.VerifyContract(r.Context(), address, contractName, compilerVersion, false, sourceCode, abi); err != nil {
+	if err := s.db.VerifyContract(r.Context(), address, contractName, compilerVersion, false, sourceCode, abi, ""); err != nil {
 		http.Error(w, "failed to save contract: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1261,7 +1261,7 @@ func (s *Server) handleVerifySourcify(w http.ResponseWriter, r *http.Request) {
 			abi = json.RawMessage("[]")
 		}
 
-		if err := s.db.VerifyContract(r.Context(), req.Address, req.ContractName, req.CompilerVersion, req.OptimizationUsed, req.SourceCode, abi); err != nil {
+		if err := s.db.VerifyContract(r.Context(), req.Address, req.ContractName, req.CompilerVersion, req.OptimizationUsed, req.SourceCode, abi, ""); err != nil {
 			http.Error(w, "failed to store verification: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -1351,7 +1351,7 @@ func (s *Server) handleVerifySourcify(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if len(abi) > 0 {
-				s.db.VerifyContract(r.Context(), req.Address, req.ContractName, compilerVersion, req.OptimizationUsed, req.SourceCode, abi)
+				s.db.VerifyContract(r.Context(), req.Address, req.ContractName, compilerVersion, req.OptimizationUsed, req.SourceCode, abi, "")
 			}
 		}
 	}
@@ -1381,15 +1381,9 @@ func (s *Server) handleVerifyContract(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if result.Success {
-			writeJSON(w, result)
-			return
-		}
-
-		// If local verification failed and we don't want Sourcify fallback, return the error
-		// For now, we'll fall through to Sourcify if the error suggests we should try it
-		if result.Error != "" && !strings.Contains(result.Error, "compiler version") {
-			// Return local verification error
+		// If local verification succeeded or returned an error, use that result directly.
+		// Only fall through to Sourcify if the compiler version is not available locally.
+		if result.Success || (result.Error != "" && !strings.Contains(result.Error, "compiler version")) {
 			writeJSON(w, result)
 			return
 		}

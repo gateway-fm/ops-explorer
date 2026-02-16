@@ -1,7 +1,7 @@
 import { Link, Outlet, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Menu, X, ArrowLeftRight, Users, Coins, ShieldCheck, TrendingUp, TrendingDown, Boxes, Fuel } from 'lucide-react';
+import { Search, Menu, X, ArrowLeftRight, Users, Coins, ShieldCheck, TrendingUp, TrendingDown, Boxes, Fuel, Eye } from 'lucide-react';
 import { api } from '../lib/api';
 import type { SearchSuggestion } from '../lib/api';
 import { NavDropdown } from './NavDropdown';
@@ -14,6 +14,7 @@ const mobileNavItems = [
   { to: '/token-transfers', label: 'Token Transfers', icon: ArrowLeftRight },
   { to: '/gas-tracker', label: 'Gas Tracker', icon: Fuel },
   { to: '/verify', label: 'Verify Contract', icon: ShieldCheck },
+  { to: '/privacy', label: 'Privacy', icon: Eye },
 ];
 
 export function Layout() {
@@ -24,7 +25,6 @@ export function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
   const searchRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
   const mobileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch ETH price
@@ -51,22 +51,6 @@ export function Layout() {
       document.body.style.overflow = '';
     };
   }, [mobileMenuOpen]);
-
-  // Global keyboard shortcut to focus search
-  useEffect(() => {
-    const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-        return;
-      }
-      if (e.key === '/') {
-        e.preventDefault();
-        inputRef.current?.focus();
-      }
-    };
-
-    document.addEventListener('keydown', handleGlobalKeyDown);
-    return () => document.removeEventListener('keydown', handleGlobalKeyDown);
-  }, []);
 
   // Debounced search suggestions
   useEffect(() => {
@@ -197,11 +181,11 @@ export function Layout() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4">
           <div className="flex items-center justify-between gap-2 sm:gap-4">
             {/* Logo and ETH Price */}
-            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <div className="flex items-center gap-3 sm:gap-4 shrink-0">
               <Link to="/" className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-primary flex items-center justify-center shadow-primary hover:opacity-80 transition-opacity">
                 <Boxes className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
               </Link>
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-neutral-100 border border-neutral-200">
+              <div className="flex items-center gap-2 px-4 h-8 sm:h-10 rounded-lg bg-neutral-100 border border-neutral-200">
                 <span className="text-sm font-medium text-neutral-600">ETH</span>
                 {priceData ? (
                   <>
@@ -223,50 +207,6 @@ export function Layout() {
                   <span className="text-sm text-neutral-400">--</span>
                 )}
               </div>
-            </div>
-
-            {/* Desktop Search Bar */}
-            <div ref={searchRef} className="hidden md:block flex-1 max-w-xl relative">
-              <form onSubmit={handleSearch}>
-                <div className="relative">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Search by address, tx hash, or block..."
-                    className="input pl-11 pr-12"
-                  />
-                  <kbd className="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-xs font-mono text-neutral-400 bg-neutral-100 border border-neutral-200 rounded">
-                    /
-                  </kbd>
-                </div>
-              </form>
-
-              {/* Desktop Suggestions dropdown */}
-              {showSuggestions && suggestions.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-2 card overflow-hidden z-50 shadow-elevated max-h-80 overflow-y-auto">
-                  {suggestions.map((suggestion, index) => (
-                    <button
-                      key={`${suggestion.type}-${suggestion.value}`}
-                      onClick={() => navigateToSuggestion(suggestion)}
-                      className={`w-full px-4 py-3 flex items-center gap-3 text-left transition-colors ${
-                        index === selectedIndex ? 'bg-primary-50' : 'hover:bg-neutral-50'
-                      }`}
-                    >
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded ${getTypeColor(suggestion.type)}`}>
-                        {getTypeIcon(suggestion.type)}
-                      </span>
-                      <span className="text-sm text-neutral-700 font-mono truncate">
-                        {suggestion.label}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
 
             {/* Desktop Navigation */}

@@ -62,6 +62,7 @@ export interface Contract {
   contractName?: string;
   compilerVersion?: string;
   optimizationUsed?: boolean;
+  evmVersion?: string;
   sourceCode?: string;
   abi?: AbiFragment[];
   createdAt: string;
@@ -225,8 +226,75 @@ export interface OffsetPaginatedResponse<T> {
   totalPages: number;
 }
 
-async function fetchAPI<T>(endpoint: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${endpoint}`);
+// Privacy types
+export type VisibilityLevel = 'full' | 'pseudonymous' | 'redacted' | 'hidden';
+export type VisibilityReason = 'own_address' | 'disclosure_grant' | 'public_address' | 'no_access';
+
+export interface AddressVisibility {
+  address: string;
+  visible: boolean;
+  level: VisibilityLevel;
+  reason: VisibilityReason;
+  pseudonym?: string;
+  grant_id?: string;
+  expires_at?: string;
+}
+
+export interface OwnAddress {
+  address: string;
+  ens_name?: string;
+}
+
+export interface DisclosedAddress {
+  address: string;
+  address_id: string;
+  owner_did: string;
+  disclosure_level: string;
+  grant_id: string;
+  expires_at?: string;
+  ens_name?: string;
+}
+
+export interface ViewableAddressesResponse {
+  viewer_wallet: string;
+  viewer_did?: string;
+  own_addresses: OwnAddress[];
+  disclosed_addresses: DisclosedAddress[];
+}
+
+export interface GrantedAddressResponse {
+  display_address: string;
+  disclosure_level: string;
+  grant_id: string;
+  balance: string;
+  tx_count: number;
+  is_contract: boolean;
+}
+
+export interface PseudonymizedTransaction {
+  tx_hash?: string;
+  block_number: number;
+  block_timestamp: number;
+  from: string;
+  to?: string;
+  value: string | number;
+  gas_used: number;
+  status: number;
+  direction: 'in' | 'out' | 'self';
+}
+
+export interface PseudonymizedTransactionsResponse {
+  transactions: PseudonymizedTransaction[];
+  disclosure_level: string;
+  address_labels: Record<string, string>;
+  has_more: boolean;
+}
+
+async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE}${endpoint}`, {
+    credentials: 'include',
+    ...options,
+  });
 
   if (!res.ok) {
     throw new Error(`API error: ${res.status}`);
@@ -357,6 +425,63 @@ export const api = {
       compilerVersion: string;
       abiLength: number;
     }>;
+  },
+
+  // Privacy endpoints
+  getViewableAddresses: () =>
+    fetchAPI<ViewableAddressesResponse>('/privacy/viewable-addresses'),
+
+  checkAddressVisibility: (address: string) =>
+    fetchAPI<AddressVisibility>(`/privacy/check-address/${address}`),
+
+  batchCheckAddresses: (addresses: string[]) =>
+    fetchAPI<{ results: Record<string, AddressVisibility> }>('/privacy/check-addresses', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ addresses }),
+    }),
+
+  getGrantedAddress: (grantId: string, addressId: string) =>
+    fetchAPI<GrantedAddressResponse>(`/privacy/grant/${grantId}/${addressId}`),
+
+  getGrantedAddressTransactions: (grantId: string, addressId: string, limit = 25, before?: number) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (before) params.set('before', String(before));
+    return fetchAPI<PseudonymizedTransactionsResponse>(`/privacy/grant/${grantId}/${addressId}/transactions?${params}`);
+  },
+
+  // Auth endpoints
+  auth: {
+    login: async (returnUrl?: string) => {
+      const res = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ return_url: returnUrl || '/' }),
+      });
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      return res.json() as Promise<{
+        oauth_session_id: string;
+        auth_session_id: string;
+        auth_request: unknown;
+        state: string;
+      }>;
+    },
+
+    sessionStatus: (sessionId: string) =>
+      fetchAPI<{ completed: boolean; redirect_url?: string }>(`/auth/session/${sessionId}/status`),
+
+    status: () =>
+      fetchAPI<{ authenticated: boolean; did?: string; expires_at?: number }>('/auth/status'),
+
+    logout: async () => {
+      const res = await fetch(`${API_BASE}/auth/logout`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      return res.json() as Promise<{ logged_out: boolean }>;
+    },
   },
 
   // Contract verification

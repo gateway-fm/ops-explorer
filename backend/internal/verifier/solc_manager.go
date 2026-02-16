@@ -92,8 +92,11 @@ func (sm *SolcManager) GetCompiler(version string) (string, error) {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 
-	// Normalize version (remove 'v' prefix if present)
+	// Normalize version (remove 'v' prefix and '+commit...' suffix if present)
 	version = strings.TrimPrefix(version, "v")
+	if idx := strings.Index(version, "+"); idx != -1 {
+		version = version[:idx]
+	}
 
 	// Check for exact match
 	if path, ok := sm.versions[version]; ok {

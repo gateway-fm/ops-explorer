@@ -1,15 +1,33 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
-import { Boxes, ArrowLeftRight, Users, Clock, Box, FileCode, FilePlus, Coins, ArrowRightLeft } from 'lucide-react';
+import { Boxes, ArrowLeftRight, Users, Clock, Box, FileCode, FilePlus, Coins, ArrowRightLeft, Shield, LogOut } from 'lucide-react';
 import { api } from '../lib/api';
 import type { Block, Transaction, TxCategory } from '../lib/api';
 import { formatHash } from '../lib/utils';
 import { LiveTimeAgo } from '../components/LiveTimeAgo';
 import { AddressLink } from '../components/AddressLink';
 import { TransactionHistoryChart } from '../components/TransactionHistoryChart';
+import { SearchBar } from '../components/SearchBar';
+import { PrivadoLogin } from '../components/PrivadoLogin';
+import { useAuth } from '../lib/auth';
 
 export function Home() {
+  const { isAuthenticated, ssoAuth, privadoLogout } = useAuth();
+  const [showLogin, setShowLogin] = useState(false);
+  const [showAccountMenu, setShowAccountMenu] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (accountMenuRef.current && !accountMenuRef.current.contains(e.target as Node)) {
+        setShowAccountMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const { data: stats } = useQuery({
     queryKey: ['stats'],
     queryFn: api.getStats,
@@ -41,6 +59,7 @@ export function Home() {
     if (isFirstRender.current) {
       // On first render, mark all as seen (don't animate)
       blocks.data.forEach(b => seenBlocks.current.add(b.number));
+      isFirstRender.current = false;
     } else {
       // Find new blocks
       const newOnes = new Set<number>();
@@ -81,6 +100,64 @@ export function Home() {
 
   return (
     <div className="space-y-4 sm:space-y-8">
+      {/* Hero Section */}
+      <div className="relative overflow-visible rounded-xl bg-gradient-to-br from-primary-900 via-primary-700 to-primary p-5 sm:p-8 shadow-card">
+        {/* Background decoration */}
+        <div className="absolute inset-0 opacity-[0.07] overflow-hidden rounded-xl">
+          <div className="absolute top-0 left-0 w-72 h-72 bg-white rounded-full -translate-x-1/2 -translate-y-1/2" />
+          <div className="absolute bottom-0 right-0 w-96 h-96 bg-white rounded-full translate-x-1/3 translate-y-1/3" />
+        </div>
+
+        <div className="relative z-10">
+          <h1 className="text-2xl sm:text-3xl font-bold text-white mb-4">
+            Gateway Block Explorer
+          </h1>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            <div className="flex-1">
+              <SearchBar variant="hero" />
+            </div>
+            <div className="shrink-0">
+              {isAuthenticated ? (
+                <div ref={accountMenuRef} className="relative">
+                  <button
+                    onClick={() => setShowAccountMenu(!showAccountMenu)}
+                    className="flex items-center gap-2 px-4 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 text-sm text-white h-[50px] hover:bg-white/20 transition-colors cursor-pointer"
+                  >
+                    <Shield className="w-4 h-4 text-green-300" />
+                    <span className="font-mono text-xs truncate max-w-[160px]">
+                      {ssoAuth.did ? `${ssoAuth.did.slice(0, 20)}...` : 'Authenticated'}
+                    </span>
+                  </button>
+
+                  {showAccountMenu && (
+                    <div className="absolute top-full right-0 mt-2 w-48 card overflow-hidden z-50 shadow-elevated">
+                      <button
+                        onClick={() => { privadoLogout(); setShowAccountMenu(false); }}
+                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-primary-50 transition-colors"
+                      >
+                        <LogOut className="w-4 h-4 text-neutral-500" />
+                        <span className="text-sm text-neutral-700">Sign out</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowLogin(true)}
+                  className="inline-flex items-center gap-2 px-6 h-[50px] rounded-xl bg-white text-primary font-medium text-sm hover:bg-neutral-100 transition-colors shadow-card whitespace-nowrap border border-neutral-200"
+                >
+                  <Shield className="w-4 h-4" />
+                  Sign in with Privado
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {showLogin && <PrivadoLogin onClose={() => setShowLogin(false)} />}
+
       {/* Stats + Chart */}
       <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
         <div className="grid grid-cols-2 gap-2 sm:gap-4">

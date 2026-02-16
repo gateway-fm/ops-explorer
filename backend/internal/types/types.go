@@ -169,6 +169,7 @@ type Contract struct {
 	ContractName     *string         `json:"contractName,omitempty"`
 	CompilerVersion  *string         `json:"compilerVersion,omitempty"`
 	OptimizationUsed *bool           `json:"optimizationUsed,omitempty"`
+	EVMVersion       *string         `json:"evmVersion,omitempty"`
 	SourceCode       *string         `json:"sourceCode,omitempty"`
 	ABI              json.RawMessage `json:"abi,omitempty"`
 	CreatedAt        time.Time       `json:"createdAt"`

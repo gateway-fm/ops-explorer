@@ -6,11 +6,13 @@ import (
 	"net/http"
 	"time"
 
+	"explorer/internal/auth"
 	"explorer/internal/db"
 	"explorer/internal/events"
 	"explorer/internal/gas"
 	"explorer/internal/indexer"
 	"explorer/internal/price"
+	"explorer/internal/privacy"
 	"explorer/internal/rpc"
 	"explorer/internal/verifier"
 	ws "explorer/internal/websocket"
@@ -21,18 +23,20 @@ import (
 )
 
 type Server struct {
-	db         *db.DB
-	rpc        *rpc.Client
-	indexer    *indexer.Indexer
-	price      *price.Service
-	eventBus   *events.Bus
-	verifier   *verifier.Verifier
-	gasTracker *gas.Tracker
-	metrics    *Metrics
-	wsHub      *ws.Hub
-	wsConfig   *ws.Config
-	port       int
-	router     *chi.Mux
+	db            *db.DB
+	rpc           *rpc.Client
+	indexer       *indexer.Indexer
+	price         *price.Service
+	eventBus      *events.Bus
+	verifier      *verifier.Verifier
+	gasTracker    *gas.Tracker
+	metrics       *Metrics
+	wsHub         *ws.Hub
+	wsConfig      *ws.Config
+	privacyClient *privacy.Client
+	ssoClient     *auth.SSOClient
+	port          int
+	router        *chi.Mux
 }
 
 // ServerConfig holds server configuration options
@@ -42,15 +46,17 @@ type ServerConfig struct {
 	MetricsEnabled      bool
 }
 
-func New(database *db.DB, rpcClient *rpc.Client, idx *indexer.Indexer, priceService *price.Service, eventBus *events.Bus, port int, cfg *ServerConfig) *Server {
+func New(database *db.DB, rpcClient *rpc.Client, idx *indexer.Indexer, priceService *price.Service, eventBus *events.Bus, port int, cfg *ServerConfig, privacyClient *privacy.Client, ssoClient *auth.SSOClient) *Server {
 	s := &Server{
-		db:       database,
-		rpc:      rpcClient,
-		indexer:  idx,
-		price:    priceService,
-		eventBus: eventBus,
-		port:     port,
-		router:   chi.NewRouter(),
+		db:            database,
+		rpc:           rpcClient,
+		indexer:       idx,
+		price:         priceService,
+		eventBus:      eventBus,
+		privacyClient: privacyClient,
+		ssoClient:     ssoClient,
+		port:          port,
+		router:        chi.NewRouter(),
 	}
 
 	// Set up metrics if enabled
@@ -89,13 +95,19 @@ func (s *Server) setupRoutes() {
 		s.router.Use(metricsMiddleware(s.metrics))
 	}
 
-	c := cors.New(cors.Options{
+	corsOpts := cors.Options{
 		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Content-Type"},
-		AllowCredentials: false,
-	})
+		AllowedHeaders:   []string{"Accept", "Content-Type", "Cookie"},
+		AllowCredentials: true,
+	}
+	c := cors.New(corsOpts)
 	s.router.Use(c.Handler)
+
+	// Add auth refresh middleware if SSO is enabled
+	if s.ssoClient != nil && s.ssoClient.IsEnabled() {
+		s.router.Use(s.refreshAuthMiddleware)
+	}
 
 	// Health check endpoints
 	s.router.Get("/health", s.handleHealthCheck)
@@ -126,6 +138,28 @@ func (s *Server) setupRoutes() {
 	s.router.Route("/api/v2", func(r chi.Router) {
 		s.setupAPIV2Routes(r)
 	})
+
+	// Auth routes (only if SSO is enabled)
+	if s.ssoClient != nil && s.ssoClient.IsEnabled() {
+		s.router.Route("/api/auth", func(r chi.Router) {
+			r.Post("/login", s.handleAuthLogin)
+			r.Get("/callback", s.handleAuthCallback)
+			r.Get("/status", s.handleAuthStatus)
+			r.Post("/logout", s.handleAuthLogout)
+			r.Get("/session/{id}/status", s.handleAuthSessionStatus)
+		})
+	}
+
+	// Privacy routes (only if privacy client is enabled)
+	if s.privacyClient != nil && s.privacyClient.IsEnabled() {
+		s.router.Route("/api/privacy", func(r chi.Router) {
+			r.Get("/viewable-addresses", s.handleGetViewableAddresses)
+			r.Get("/check-address/{address}", s.handleCheckAddressVisibility)
+			r.Post("/check-addresses", s.handleBatchCheckAddresses)
+			r.Get("/grant/{grantId}/{addressId}", s.handleGetGrantedAddress)
+			r.Get("/grant/{grantId}/{addressId}/transactions", s.handleGetGrantedAddressTransactions)
+		})
+	}
 }
 
 func (s *Server) setupAPIRoutes(r chi.Router) {

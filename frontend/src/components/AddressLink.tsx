@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { formatAddress } from '../lib/utils';
 import { useContractName } from '../hooks/useContractName';
+import type { AddressVisibility } from '../lib/api';
 
 interface AddressLinkProps {
   address: string;
@@ -10,9 +11,32 @@ interface AddressLinkProps {
   className?: string;
   label?: string; // Override label (won't fetch if provided)
   showLabel?: boolean; // Whether to auto-fetch and show contract name (default: true)
+  visibility?: AddressVisibility; // Privacy visibility info
 }
 
-export function AddressLink({ address, chars = 6, full = false, className = '', label, showLabel = true }: AddressLinkProps) {
+export function AddressLink({ address, chars = 6, full = false, className = '', label, showLabel = true, visibility }: AddressLinkProps) {
+  // If visibility is provided and address is not fully visible, render privacy-aware display
+  if (visibility && !visibility.visible) {
+    if (visibility.level === 'redacted') {
+      return <span className={`text-neutral-400 italic ${className}`}>[REDACTED]</span>;
+    }
+    return <span className={`text-neutral-400 italic ${className}`}>[PRIVATE]</span>;
+  }
+
+  if (visibility?.level === 'pseudonymous' && visibility.pseudonym) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className={`font-mono text-amber-600 cursor-help ${className}`}>
+            {visibility.pseudonym}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>
+          <span className="text-xs">Pseudonymous address</span>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
   // Auto-fetch contract name if showLabel is true and no label is provided
   const fetchedName = useContractName(showLabel && !label ? address : null);
   const displayLabel = label || fetchedName;
@@ -63,9 +87,32 @@ interface TokenAddressLinkProps {
   className?: string;
   label?: string;
   showLabel?: boolean;
+  visibility?: AddressVisibility; // Privacy visibility info
 }
 
-export function TokenAddressLink({ address, chars = 4, className = '', label, showLabel = true }: TokenAddressLinkProps) {
+export function TokenAddressLink({ address, chars = 4, className = '', label, showLabel = true, visibility }: TokenAddressLinkProps) {
+  // If visibility is provided and address is not fully visible, render privacy-aware display
+  if (visibility && !visibility.visible) {
+    if (visibility.level === 'redacted') {
+      return <span className={`text-neutral-400 italic ${className}`}>[REDACTED]</span>;
+    }
+    return <span className={`text-neutral-400 italic ${className}`}>[PRIVATE]</span>;
+  }
+
+  if (visibility?.level === 'pseudonymous' && visibility.pseudonym) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className={`font-mono text-amber-600 cursor-help ${className}`}>
+            {visibility.pseudonym}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>
+          <span className="text-xs">Pseudonymous address</span>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
   const fetchedName = useContractName(showLabel && !label ? address : null);
   const displayLabel = label || fetchedName;
   const displayAddress = formatAddress(address, chars);

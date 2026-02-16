@@ -832,10 +832,10 @@ func (d *DB) GetContract(ctx context.Context, address string) (*types.Contract, 
 	var c types.Contract
 	err := d.pool.QueryRow(ctx, `
 		SELECT address, bytecode, bytecode_hash, creator, creation_tx, block_number, is_verified,
-			contract_name, compiler_version, optimization_used, source_code, abi, created_at
+			contract_name, compiler_version, optimization_used, evm_version, source_code, abi, created_at
 		FROM contracts WHERE LOWER(address) = LOWER($1)`, address).Scan(
 		&c.Address, &c.Bytecode, &c.BytecodeHash, &c.Creator, &c.CreationTx, &c.BlockNumber, &c.IsVerified,
-		&c.ContractName, &c.CompilerVersion, &c.OptimizationUsed, &c.SourceCode, &c.ABI, &c.CreatedAt)
+		&c.ContractName, &c.CompilerVersion, &c.OptimizationUsed, &c.EVMVersion, &c.SourceCode, &c.ABI, &c.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -848,7 +848,7 @@ func (d *DB) IsContract(ctx context.Context, address string) (bool, error) {
 	return exists, err
 }
 
-func (d *DB) VerifyContract(ctx context.Context, address string, name string, compilerVersion string, optimizationUsed bool, sourceCode string, abi json.RawMessage) error {
+func (d *DB) VerifyContract(ctx context.Context, address string, name string, compilerVersion string, optimizationUsed bool, sourceCode string, abi json.RawMessage, evmVersion string) error {
 	_, err := d.pool.Exec(ctx, `
 		UPDATE contracts SET
 			is_verified = true,
@@ -856,9 +856,10 @@ func (d *DB) VerifyContract(ctx context.Context, address string, name string, co
 			compiler_version = $3,
 			optimization_used = $4,
 			source_code = $5,
-			abi = $6
+			abi = $6,
+			evm_version = $7
 		WHERE LOWER(address) = LOWER($1)`,
-		address, name, compilerVersion, optimizationUsed, sourceCode, abi)
+		address, name, compilerVersion, optimizationUsed, sourceCode, abi, evmVersion)
 	return err
 }
 
@@ -901,7 +902,7 @@ func (d *DB) GetVerifiedContracts(ctx context.Context, limit int, offset int) ([
 
 	rows, err := d.pool.Query(ctx, `
 		SELECT address, bytecode, bytecode_hash, creator, creation_tx, block_number, is_verified,
-			contract_name, compiler_version, optimization_used, source_code, abi, created_at
+			contract_name, compiler_version, optimization_used, evm_version, source_code, abi, created_at
 		FROM contracts WHERE is_verified = true
 		ORDER BY created_at DESC LIMIT $1 OFFSET $2`, limit, offset)
 	if err != nil {
@@ -913,7 +914,7 @@ func (d *DB) GetVerifiedContracts(ctx context.Context, limit int, offset int) ([
 	for rows.Next() {
 		var c types.Contract
 		if err := rows.Scan(&c.Address, &c.Bytecode, &c.BytecodeHash, &c.Creator, &c.CreationTx, &c.BlockNumber, &c.IsVerified,
-			&c.ContractName, &c.CompilerVersion, &c.OptimizationUsed, &c.SourceCode, &c.ABI, &c.CreatedAt); err != nil {
+			&c.ContractName, &c.CompilerVersion, &c.OptimizationUsed, &c.EVMVersion, &c.SourceCode, &c.ABI, &c.CreatedAt); err != nil {
 			return nil, 0, err
 		}
 		contracts = append(contracts, c)
