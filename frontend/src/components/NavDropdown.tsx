@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ChevronDown, Boxes, ArrowLeftRight, Users, ShieldCheck, Coins, ArrowRightLeft, Fuel, LogIn, Shield, LogOut } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { PrivadoLogin } from './PrivadoLogin';
+import { usePrivacyEnabled } from '../hooks/usePrivacyEnabled';
 
 const blockchainItems = [
   { to: '/blocks', label: 'Blocks', icon: Boxes },
@@ -70,6 +71,7 @@ function Dropdown({ label, items }: DropdownProps) {
 }
 
 function AuthButton() {
+  const privacyEnabled = usePrivacyEnabled();
   const { isAuthenticated, ssoAuth, privadoLogout } = useAuth();
   const [showLogin, setShowLogin] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -85,6 +87,8 @@ function AuthButton() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  if (!privacyEnabled) return null;
 
   if (isAuthenticated) {
     return (

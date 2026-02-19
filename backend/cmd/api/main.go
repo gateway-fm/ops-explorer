@@ -57,7 +57,7 @@ func main() {
 	// Initialize privacy and SSO clients (opt-in: only when PRIVACY_PROXY_URL is set)
 	var privacyClient *privacy.Client
 	var ssoClient *auth.SSOClient
-	if cfg.PrivacyProxyURL != "" {
+	if cfg.PrivacyEnabled && cfg.PrivacyProxyURL != "" {
 		privacyClient = privacy.NewClient(cfg.PrivacyProxyURL)
 		ssoClient = auth.NewSSOClient(cfg.PrivacyProxyURL, cfg.SSOClientID, cfg.SSORedirectURI)
 		log.Info("privacy integration enabled", "proxy_url", cfg.PrivacyProxyURL)

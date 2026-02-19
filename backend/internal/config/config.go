@@ -47,7 +47,8 @@ type Config struct {
 	CatchupBatchSize int  `mapstructure:"catchup_batch_size"` // Number of blocks to process in each batch
 	CatchupQueueSize int  `mapstructure:"catchup_queue_size"` // Size of the catchup work queue
 
-	// Privacy settings (opt-in: when PrivacyProxyURL is empty, all privacy features are disabled)
+	// Privacy settings (opt-in: PrivacyEnabled must be true AND PrivacyProxyURL must be set)
+	PrivacyEnabled  bool   `mapstructure:"privacy_enabled"`   // Master toggle for all privacy features
 	PrivacyProxyURL string `mapstructure:"privacy_proxy_url"` // URL of the privacy-proxy service
 	SSOClientID     string `mapstructure:"sso_client_id"`     // OAuth client ID for SSO
 	SSORedirectURI  string `mapstructure:"sso_redirect_uri"`  // OAuth redirect URI for SSO callback
@@ -93,6 +94,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("catchup_queue_size", 1000)
 
 	// Privacy settings (disabled by default)
+	v.SetDefault("privacy_enabled", false)
 	v.SetDefault("privacy_proxy_url", "")
 	v.SetDefault("sso_client_id", "explorer")
 	v.SetDefault("sso_redirect_uri", "http://localhost:8080/api/auth/callback")
@@ -161,6 +163,7 @@ func Load() (*Config, error) {
 	cfg.CatchupQueueSize = v.GetInt("catchup_queue_size")
 
 	// Privacy settings
+	cfg.PrivacyEnabled = v.GetBool("privacy_enabled")
 	cfg.PrivacyProxyURL = v.GetString("privacy_proxy_url")
 	cfg.SSOClientID = v.GetString("sso_client_id")
 	cfg.SSORedirectURI = v.GetString("sso_redirect_uri")
@@ -231,6 +234,7 @@ func (c *Config) String() string {
     CATCHUP_BATCH_SIZE: %d
     CATCHUP_QUEUE_SIZE: %d
   Privacy:
+    PRIVACY_ENABLED: %t
     PRIVACY_PROXY_URL: %s
     SSO_CLIENT_ID: %s
     SSO_REDIRECT_URI: %s
@@ -242,7 +246,7 @@ func (c *Config) String() string {
 		c.SolcPath, c.UseSourcifyFallback,
 		c.MetricsEnabled,
 		c.CatchupEnabled, c.CatchupWorkers, c.CatchupBatchSize, c.CatchupQueueSize,
-		c.PrivacyProxyURL, c.SSOClientID, c.SSORedirectURI,
+		c.PrivacyEnabled, c.PrivacyProxyURL, c.SSOClientID, c.SSORedirectURI,
 	)
 }
 

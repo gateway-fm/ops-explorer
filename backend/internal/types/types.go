@@ -236,6 +236,7 @@ type ChainStats struct {
 	TotalAddresses    int64   `json:"totalAddresses"`
 	TotalTokens       int64   `json:"totalTokens"`
 	AvgBlockTime      float64 `json:"avgBlockTime"`
+	PrivacyEnabled    bool    `json:"privacyEnabled"`
 }
 
 // PaginatedResponse for cursor-based pagination

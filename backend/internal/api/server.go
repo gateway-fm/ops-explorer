@@ -96,7 +96,7 @@ func (s *Server) setupRoutes() {
 	}
 
 	corsOpts := cors.Options{
-		AllowedOrigins:   []string{"*"},
+		AllowOriginFunc:  func(origin string) bool { return true },
 		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Content-Type", "Cookie"},
 		AllowCredentials: true,

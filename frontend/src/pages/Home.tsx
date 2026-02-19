@@ -117,6 +117,7 @@ export function Home() {
             <div className="flex-1">
               <SearchBar variant="hero" />
             </div>
+            {stats?.privacyEnabled && (
             <div className="shrink-0">
               {isAuthenticated ? (
                 <div ref={accountMenuRef} className="relative">
@@ -152,11 +153,12 @@ export function Home() {
                 </button>
               )}
             </div>
+            )}
           </div>
         </div>
       </div>
 
-      {showLogin && <PrivadoLogin onClose={() => setShowLogin(false)} />}
+      {stats?.privacyEnabled && showLogin && <PrivadoLogin onClose={() => setShowLogin(false)} />}
 
       {/* Stats + Chart */}
       <div className="grid md:grid-cols-2 gap-4 sm:gap-6">

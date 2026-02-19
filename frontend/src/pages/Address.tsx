@@ -12,6 +12,7 @@ import { PageHeader } from '../components/PageHeader';
 import { useAuth } from '../lib/auth';
 import { useAddressVisibility } from '../hooks/useAddressVisibility';
 import { PrivadoLogin } from '../components/PrivadoLogin';
+import { usePrivacyEnabled } from '../hooks/usePrivacyEnabled';
 
 type TabType = 'transactions' | 'code' | 'read' | 'write';
 type CodeSubTab = 'source' | 'abi' | 'bytecode' | 'compiler';
@@ -83,13 +84,14 @@ export function Address() {
   }, []);
 
   const before = searchParams.get('before');
+  const privacyEnabled = usePrivacyEnabled();
   const { isAuthenticated } = useAuth();
   const { visibility } = useAddressVisibility(address);
 
   const { data: info, isLoading: infoLoading, error } = useQuery({
-    queryKey: ['address', address, isAuthenticated],
+    queryKey: ['address', address, privacyEnabled ? isAuthenticated : true],
     queryFn: () => api.getAddress(address!),
-    enabled: !!address && isAuthenticated,
+    enabled: !!address && (!privacyEnabled || isAuthenticated),
     retry: false,
   });
 
@@ -116,8 +118,8 @@ export function Address() {
   // Default code sub-tab based on verification status
   const activeCodeSubTab = codeSubTab ?? (contract?.isVerified ? 'source' : 'bytecode');
 
-  // Show authentication prompt if not logged in
-  if (!isAuthenticated) {
+  // Show authentication prompt if not logged in (only when privacy is enabled)
+  if (privacyEnabled && !isAuthenticated) {
     return (
       <>
         <div className="flex flex-col items-center justify-center py-16 space-y-4">
@@ -183,7 +185,7 @@ export function Address() {
       </PageHeader>
 
       {/* Disclosed Address Banner */}
-      {visibility?.reason === 'disclosure_grant' && (
+      {privacyEnabled && visibility?.reason === 'disclosure_grant' && (
         <div className="card p-4 border-primary-200 bg-primary-50">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary-100 flex items-center justify-center shrink-0">
@@ -231,12 +233,12 @@ export function Address() {
           <InfoRow
             label="Address"
             value={
-              visibility?.level === 'pseudonymous' && visibility.pseudonym ? (
+              privacyEnabled && visibility?.level === 'pseudonymous' && visibility.pseudonym ? (
                 <div>
                   <span className="font-mono text-sm break-all text-neutral-900">{visibility.pseudonym}</span>
                   <span className="text-xs text-neutral-400 ml-2">(pseudonymous view)</span>
                 </div>
-              ) : visibility?.level === 'redacted' ? (
+              ) : privacyEnabled && visibility?.level === 'redacted' ? (
                 <span className="text-neutral-400 italic">Address hidden (redacted disclosure)</span>
               ) : (
                 <span className="font-mono text-sm break-all text-neutral-900">{info.address}</span>

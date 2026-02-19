@@ -5,6 +5,7 @@ import { Search, Menu, X, ArrowLeftRight, Users, Coins, ShieldCheck, TrendingUp,
 import { api } from '../lib/api';
 import type { SearchSuggestion } from '../lib/api';
 import { NavDropdown } from './NavDropdown';
+import { usePrivacyEnabled } from '../hooks/usePrivacyEnabled';
 
 const mobileNavItems = [
   { to: '/blocks', label: 'Blocks', icon: Boxes },
@@ -18,6 +19,7 @@ const mobileNavItems = [
 ];
 
 export function Layout() {
+  const privacyEnabled = usePrivacyEnabled();
   const [search, setSearch] = useState('');
   const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -182,9 +184,10 @@ export function Layout() {
           <div className="flex items-center justify-between gap-2 sm:gap-4">
             {/* Logo and ETH Price */}
             <div className="flex items-center gap-3 sm:gap-4 shrink-0">
-              <Link to="/" className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-primary flex items-center justify-center shadow-primary hover:opacity-80 transition-opacity">
-                <Boxes className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+              <Link to="/" className="shrink-0 hover:opacity-80 transition-opacity">
+                <img src="/mascot.png" alt="Logo" className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl object-contain p-0.5" />
               </Link>
+              {/* ETH price tracker - hidden for now
               <div className="flex items-center gap-2 px-4 h-8 sm:h-10 rounded-lg bg-neutral-100 border border-neutral-200">
                 <span className="text-sm font-medium text-neutral-600">ETH</span>
                 {priceData ? (
@@ -207,6 +210,7 @@ export function Layout() {
                   <span className="text-sm text-neutral-400">--</span>
                 )}
               </div>
+              */}
             </div>
 
             {/* Desktop Navigation */}
@@ -285,7 +289,7 @@ export function Layout() {
                 <div className="px-4 py-2 border-b border-neutral-100 bg-neutral-50">
                   <span className="text-xs font-medium text-neutral-500 uppercase tracking-wider">Navigation</span>
                 </div>
-                {mobileNavItems.map((item) => {
+                {mobileNavItems.filter(item => item.to !== '/privacy' || privacyEnabled).map((item) => {
                   const Icon = item.icon;
                   return (
                     <Link
@@ -301,7 +305,7 @@ export function Layout() {
                 })}
               </div>
 
-              {/* Mobile ETH Price */}
+              {/* Mobile ETH Price - hidden for now
               {priceData && (
                 <div className="card p-4">
                   <div className="mb-3">
@@ -324,6 +328,7 @@ export function Layout() {
                   </div>
                 </div>
               )}
+              */}
 
             </div>
           </div>

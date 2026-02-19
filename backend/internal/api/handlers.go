@@ -25,6 +25,7 @@ func (s *Server) handleGetStats(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	stats.PrivacyEnabled = s.privacyClient != nil && s.privacyClient.IsEnabled()
 	writeJSON(w, stats)
 }
 

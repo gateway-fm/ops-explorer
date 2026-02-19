@@ -98,6 +98,7 @@ export interface ChainStats {
   totalTransactions: number;
   totalAddresses: number;
   avgBlockTime: number;
+  privacyEnabled?: boolean;
 }
 
 export interface PaginatedResponse<T> {
