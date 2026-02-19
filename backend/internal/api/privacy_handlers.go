@@ -245,6 +245,13 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// SECURITY: Require authenticated viewer to prevent unauthorized access (IDOR)
+	viewer := s.getViewerIdentity(r)
+	if viewer.DID == "" {
+		http.Error(w, "authentication required (sign in via Privado SSO)", http.StatusUnauthorized)
+		return
+	}
+
 	if !s.privacyClient.IsEnabled() {
 		http.Error(w, "privacy service not enabled", http.StatusServiceUnavailable)
 		return
@@ -356,6 +363,13 @@ func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *h
 
 	if grantID == "" || addressID == "" {
 		http.Error(w, "grant_id and address_id are required", http.StatusBadRequest)
+		return
+	}
+
+	// SECURITY: Require authenticated viewer to prevent unauthorized access (IDOR)
+	viewer := s.getViewerIdentity(r)
+	if viewer.DID == "" {
+		http.Error(w, "authentication required (sign in via Privado SSO)", http.StatusUnauthorized)
 		return
 	}
 
