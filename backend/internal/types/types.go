@@ -321,3 +321,24 @@ const (
 	TxCategoryContractCreation  = "contract_creation"  // Deployed a new contract
 	TxCategoryTokenTransfer     = "token_transfer"     // Involved ERC20/ERC721 transfers
 )
+
+// TxType constants
+const (
+	TxTypeDeposit = 126 // OP Stack deposit transaction (0x7E)
+)
+
+// OPDeposit represents L1 metadata for an OP Stack deposit transaction
+type OPDeposit struct {
+	L2TxHash        string  `json:"l2TxHash"`
+	L1BlockNumber   uint64  `json:"l1BlockNumber"`
+	L1BlockTimestamp *uint64 `json:"l1BlockTimestamp,omitempty"`
+	L1TxHash        string  `json:"l1TxHash"`
+	L1TxOrigin      string  `json:"l1TxOrigin"`
+	CreatedAt       time.Time `json:"createdAt"`
+}
+
+// TransactionWithDeposit is a transaction with optional OP deposit metadata
+type TransactionWithDeposit struct {
+	Transaction
+	OPDeposit *OPDeposit `json:"opDeposit,omitempty"`
+}

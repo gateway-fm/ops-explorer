@@ -14,9 +14,12 @@ import (
 	"explorer/internal/events"
 	"explorer/internal/indexer"
 	"explorer/internal/log"
+	"explorer/internal/opdeposits"
 	"explorer/internal/price"
 	"explorer/internal/privacy"
 	"explorer/internal/rpc"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 func main() {
@@ -59,6 +62,7 @@ func main() {
 		CatchupWorkers:       cfg.CatchupWorkers,
 		CatchupBatchSize:     cfg.CatchupBatchSize,
 		CatchupQueueSize:     cfg.CatchupQueueSize,
+		EnableOPDeposits:     cfg.EnableOPDeposits,
 	}
 	idx := indexer.NewWithConfig(database, rpcClient, cfg.PollInterval, cfg.StartBlock, idxCfg)
 
@@ -108,6 +112,26 @@ func main() {
 			log.Error("indexer error", "error", err)
 		}
 	}()
+
+	// Start L1 deposit fetcher if OP deposits are enabled
+	if cfg.EnableOPDeposits {
+		fetcherCfg := &opdeposits.FetcherConfig{
+			L1RPCURL:              cfg.L1RPCURL,
+			OptimismPortalAddress: common.HexToAddress(cfg.OptimismPortalAddress),
+			PollInterval:          cfg.L1DepositPollInterval,
+			BatchSize:             cfg.L1DepositBatchSize,
+			StartBlock:            cfg.L1DepositStartBlock,
+			ConfirmationBlocks:    12,
+		}
+		fetcher := opdeposits.NewFetcher(database, fetcherCfg)
+		if err := fetcher.Start(ctx); err != nil {
+			log.Error("failed to start L1 deposit fetcher", "error", err)
+		} else {
+			log.Info("L1 deposit fetcher started",
+				"l1_rpc", cfg.L1RPCURL,
+				"portal", cfg.OptimismPortalAddress)
+		}
+	}
 
 	log.Info("starting API server", "port", cfg.APIPort)
 	if err := server.Start(ctx); err != nil {

@@ -239,6 +239,18 @@ func (s *Server) handleGetTransaction(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Enrich deposit transactions with L1 metadata
+	if tx.TxType == types.TxTypeDeposit {
+		deposit, err := s.db.GetOPDeposit(ctx, tx.Hash)
+		if err == nil && deposit != nil {
+			writeJSON(w, types.TransactionWithDeposit{
+				Transaction: *tx,
+				OPDeposit:   deposit,
+			})
+			return
+		}
+	}
+
 	writeJSON(w, tx)
 }
 

@@ -283,6 +283,11 @@ func (r *RealtimeIndexer) runPollingMode(ctx context.Context) error {
 
 // processBlock processes a single block
 func (r *RealtimeIndexer) processBlock(ctx context.Context, number uint64) error {
+	// Use raw JSON-RPC path for OP Stack chains
+	if r.idxCfg.EnableOPDeposits {
+		return r.processBlockRaw(ctx, number)
+	}
+
 	block, err := r.rpc.BlockByNumber(ctx, big.NewInt(int64(number)))
 	if err != nil {
 		return err
@@ -295,6 +300,22 @@ func (r *RealtimeIndexer) processBlock(ctx context.Context, number uint64) error
 
 	// Empty block - just insert the block record
 	return r.insertEmptyBlock(ctx, block)
+}
+
+// processBlockRaw processes a single block using raw JSON-RPC for OP Stack support
+func (r *RealtimeIndexer) processBlockRaw(ctx context.Context, number uint64) error {
+	idx := &Indexer{
+		db:               r.db,
+		rpc:              r.rpc,
+		config:           r.idxCfg,
+		tokenCache:       r.tokenCache,
+		contractCache:    r.contractCache,
+		balanceWorkers:   r.balanceWorkers,
+		tracingSupported: r.tracingSupported,
+		eventBus:         r.eventBus,
+	}
+
+	return idx.processBlockRaw(ctx, number)
 }
 
 // insertEmptyBlock inserts a block with no transactions
@@ -374,16 +395,26 @@ func (r *RealtimeIndexer) detectReorg(ctx context.Context, blockNumber uint64) (
 			continue
 		}
 
-		chainBlock, err := r.rpc.BlockByNumber(ctx, big.NewInt(int64(checkBlock)))
+		// Use raw path when OP deposits are enabled
+		var chainHash string
+		if r.idxCfg.EnableOPDeposits {
+			chainHash, err = r.rpc.RawBlockHash(ctx, checkBlock)
+		} else {
+			var chainBlock *ethtypes.Block
+			chainBlock, err = r.rpc.BlockByNumber(ctx, big.NewInt(int64(checkBlock)))
+			if err == nil {
+				chainHash = chainBlock.Hash().Hex()
+			}
+		}
 		if err != nil {
 			return 0, err
 		}
 
-		if storedBlock.Hash != chainBlock.Hash().Hex() {
+		if storedBlock.Hash != chainHash {
 			log.Warn("realtime: reorg detected",
 				"block", checkBlock,
 				"stored_hash", storedBlock.Hash[:16],
-				"chain_hash", chainBlock.Hash().Hex()[:16])
+				"chain_hash", chainHash[:16])
 			return depth + 1, nil
 		}
 	}
