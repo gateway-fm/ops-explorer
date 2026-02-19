@@ -37,6 +37,7 @@ export function Blocks() {
         }
       });
       if (newOnes.size > 0) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- animation tracking for new blocks
         setNewBlocks(newOnes);
         setTimeout(() => setNewBlocks(new Set()), 2000);
       }

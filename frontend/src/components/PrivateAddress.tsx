@@ -125,6 +125,7 @@ export function PrivateAddressInline({ className = '' }: { className?: string })
 /**
  * Helper to get a display label for visibility reason
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function getVisibilityReasonLabel(reason: VisibilityReason): string {
   switch (reason) {
     case 'own_address':

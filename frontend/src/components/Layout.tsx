@@ -1,7 +1,7 @@
 import { Link, Outlet, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Menu, X, ArrowLeftRight, Users, Coins, ShieldCheck, TrendingUp, TrendingDown, Boxes, Fuel, Eye } from 'lucide-react';
+import { Search, Menu, X, ArrowLeftRight, Users, Coins, ShieldCheck, Boxes, Fuel, Eye } from 'lucide-react';
 import { api } from '../lib/api';
 import type { SearchSuggestion } from '../lib/api';
 import { NavDropdown } from './NavDropdown';
@@ -29,8 +29,8 @@ export function Layout() {
   const searchRef = useRef<HTMLDivElement>(null);
   const mobileInputRef = useRef<HTMLInputElement>(null);
 
-  // Fetch ETH price
-  const { data: priceData } = useQuery({
+  // Fetch ETH price (used in commented-out UI sections)
+  useQuery({
     queryKey: ['ethPrice'],
     queryFn: api.getPrice,
     refetchInterval: 60000,
@@ -39,6 +39,7 @@ export function Layout() {
 
   // Close mobile menu on route change
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset on navigation
     setMobileMenuOpen(false);
   }, [navigate]);
 
@@ -57,6 +58,7 @@ export function Layout() {
   // Debounced search suggestions
   useEffect(() => {
     if (!search.trim() || search.length < 1) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing suggestions when search is empty
       setSuggestions([]);
       return;
     }

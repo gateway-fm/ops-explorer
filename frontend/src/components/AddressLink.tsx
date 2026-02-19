@@ -15,6 +15,12 @@ interface AddressLinkProps {
 }
 
 export function AddressLink({ address, chars = 6, full = false, className = '', label, showLabel = true, visibility }: AddressLinkProps) {
+  // Auto-fetch contract name if showLabel is true and no label is provided
+  // Hook must be called unconditionally before any early returns
+  const shouldFetch = showLabel && !label && !(visibility && !visibility.visible) && !(visibility?.level === 'pseudonymous' && visibility.pseudonym);
+  const fetchedName = useContractName(shouldFetch ? address : null);
+  const displayLabel = label || fetchedName;
+
   // If visibility is provided and address is not fully visible, render privacy-aware display
   if (visibility && !visibility.visible) {
     if (visibility.level === 'redacted') {
@@ -37,9 +43,6 @@ export function AddressLink({ address, chars = 6, full = false, className = '', 
       </Tooltip>
     );
   }
-  // Auto-fetch contract name if showLabel is true and no label is provided
-  const fetchedName = useContractName(showLabel && !label ? address : null);
-  const displayLabel = label || fetchedName;
 
   const displayAddress = full ? address : formatAddress(address, chars);
   const baseClassName = "font-mono text-primary hover:text-primary-600 transition-colors";
@@ -91,6 +94,11 @@ interface TokenAddressLinkProps {
 }
 
 export function TokenAddressLink({ address, chars = 4, className = '', label, showLabel = true, visibility }: TokenAddressLinkProps) {
+  // Hook must be called unconditionally before any early returns
+  const shouldFetch = showLabel && !label && !(visibility && !visibility.visible) && !(visibility?.level === 'pseudonymous' && visibility.pseudonym);
+  const fetchedName = useContractName(shouldFetch ? address : null);
+  const displayLabel = label || fetchedName;
+
   // If visibility is provided and address is not fully visible, render privacy-aware display
   if (visibility && !visibility.visible) {
     if (visibility.level === 'redacted') {
@@ -113,8 +121,6 @@ export function TokenAddressLink({ address, chars = 4, className = '', label, sh
       </Tooltip>
     );
   }
-  const fetchedName = useContractName(showLabel && !label ? address : null);
-  const displayLabel = label || fetchedName;
   const displayAddress = formatAddress(address, chars);
   const baseClassName = "font-mono text-warning-600 hover:text-warning-700 transition-colors";
 

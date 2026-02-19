@@ -48,6 +48,7 @@ export function Address() {
       setWalletAddress(accounts.length > 0 ? accounts[0] : null);
     };
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const eth = window.ethereum as any;
     eth.on('accountsChanged', handleAccountsChanged);
     return () => {

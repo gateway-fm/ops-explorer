@@ -190,6 +190,7 @@ export function NavDropdown() {
 
     window.ethereum.request({ method: 'eth_chainId' }).then(checkChain).catch(() => {});
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const eth = window.ethereum as any;
     eth.on('chainChanged', checkChain);
     return () => {
