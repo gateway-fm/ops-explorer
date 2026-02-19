@@ -1,0 +1,137 @@
+package rpc
+
+import (
+	"context"
+	"fmt"
+	"math/big"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+)
+
+// RawTransaction represents a transaction from the JSON-RPC eth_getBlockByNumber response.
+// This is used instead of go-ethereum's types.Transaction to handle OP Stack deposit
+// transactions (type 0x7E/126) which go-ethereum does not support.
+type RawTransaction struct {
+	Hash             common.Hash    `json:"hash"`
+	BlockHash        common.Hash    `json:"blockHash"`
+	BlockNumber      *hexutil.Big   `json:"blockNumber"`
+	TransactionIndex hexutil.Uint64 `json:"transactionIndex"`
+	From             common.Address `json:"from"`
+	To               *common.Address `json:"to"`
+	Value            *hexutil.Big   `json:"value"`
+	Gas              hexutil.Uint64 `json:"gas"`
+	GasPrice         *hexutil.Big   `json:"gasPrice"`
+	Input            hexutil.Bytes  `json:"input"`
+	Nonce            *hexutil.Uint64 `json:"nonce"`
+	Type             hexutil.Uint64 `json:"type"`
+
+	// EIP-1559 fields
+	MaxFeePerGas         *hexutil.Big `json:"maxFeePerGas,omitempty"`
+	MaxPriorityFeePerGas *hexutil.Big `json:"maxPriorityFeePerGas,omitempty"`
+
+	// Signature fields (absent for deposit transactions)
+	V *hexutil.Big `json:"v,omitempty"`
+	R *hexutil.Big `json:"r,omitempty"`
+	S *hexutil.Big `json:"s,omitempty"`
+
+	// OP Stack deposit transaction fields (type 0x7E)
+	SourceHash  *common.Hash `json:"sourceHash,omitempty"`
+	Mint        *hexutil.Big `json:"mint,omitempty"`
+	IsSystemTx  *bool        `json:"isSystemTx,omitempty"`
+
+	// OP Stack deposit receipt fields
+	DepositNonce          *hexutil.Uint64 `json:"depositNonce,omitempty"`
+	DepositReceiptVersion *hexutil.Uint64 `json:"depositReceiptVersion,omitempty"`
+}
+
+// RawBlock represents a block from the JSON-RPC eth_getBlockByNumber response.
+type RawBlock struct {
+	Number           *hexutil.Big    `json:"number"`
+	Hash             common.Hash     `json:"hash"`
+	ParentHash       common.Hash     `json:"parentHash"`
+	Timestamp        hexutil.Uint64  `json:"timestamp"`
+	GasUsed          hexutil.Uint64  `json:"gasUsed"`
+	GasLimit         hexutil.Uint64  `json:"gasLimit"`
+	BaseFeePerGas    *hexutil.Big    `json:"baseFeePerGas,omitempty"`
+	Miner            common.Address  `json:"miner"`
+	Difficulty       *hexutil.Big    `json:"difficulty"`
+	TotalDifficulty  *hexutil.Big    `json:"totalDifficulty,omitempty"`
+	Size             hexutil.Uint64  `json:"size"`
+	Nonce            hexutil.Bytes   `json:"nonce"`
+	ExtraData        hexutil.Bytes   `json:"extraData"`
+	StateRoot        common.Hash     `json:"stateRoot"`
+	TransactionsRoot common.Hash     `json:"transactionsRoot"`
+	ReceiptsRoot     common.Hash     `json:"receiptsRoot"`
+
+	Transactions []RawTransaction `json:"transactions"`
+}
+
+// NumberU64 returns the block number as uint64.
+func (b *RawBlock) NumberU64() uint64 {
+	if b.Number == nil {
+		return 0
+	}
+	return b.Number.ToInt().Uint64()
+}
+
+// DifficultyString returns the difficulty as a decimal string.
+func (b *RawBlock) DifficultyString() string {
+	if b.Difficulty == nil {
+		return "0"
+	}
+	return b.Difficulty.ToInt().String()
+}
+
+// TotalDifficultyString returns the total difficulty as a decimal string.
+func (b *RawBlock) TotalDifficultyString() string {
+	if b.TotalDifficulty == nil {
+		return "0"
+	}
+	return b.TotalDifficulty.ToInt().String()
+}
+
+// NonceHex returns the nonce as a hex string (0x prefixed, 16 chars).
+func (b *RawBlock) NonceHex() string {
+	if len(b.Nonce) == 8 {
+		return fmt.Sprintf("0x%016x", new(big.Int).SetBytes(b.Nonce).Uint64())
+	}
+	return "0x0000000000000000"
+}
+
+// BaseFeeU64 returns the base fee as *uint64 (nil if not present).
+func (b *RawBlock) BaseFeeU64() *uint64 {
+	if b.BaseFeePerGas == nil {
+		return nil
+	}
+	v := b.BaseFeePerGas.ToInt().Uint64()
+	return &v
+}
+
+// RawBlockByNumber fetches a block with full transaction objects via raw JSON-RPC.
+// This bypasses go-ethereum's transaction unmarshalling which fails on OP Stack
+// deposit transactions (type 0x7E).
+func (c *Client) RawBlockByNumber(ctx context.Context, number uint64) (*RawBlock, error) {
+	var raw RawBlock
+	err := c.raw.CallContext(ctx, &raw, "eth_getBlockByNumber", toHex(number), true)
+	if err != nil {
+		return nil, fmt.Errorf("raw block fetch for %d: %w", number, err)
+	}
+	if raw.Number == nil {
+		return nil, fmt.Errorf("block %d not found", number)
+	}
+	return &raw, nil
+}
+
+// RawBlockHash fetches only the block hash for a given block number.
+// Used for lightweight reorg detection without fetching full transaction data.
+func (c *Client) RawBlockHash(ctx context.Context, number uint64) (string, error) {
+	var raw struct {
+		Hash common.Hash `json:"hash"`
+	}
+	err := c.raw.CallContext(ctx, &raw, "eth_getBlockByNumber", toHex(number), false)
+	if err != nil {
+		return "", fmt.Errorf("raw block hash fetch for %d: %w", number, err)
+	}
+	return raw.Hash.Hex(), nil
+}

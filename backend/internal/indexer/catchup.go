@@ -358,6 +358,11 @@ func (c *CatchupIndexer) worker(id int) {
 
 // processBlock processes a single block
 func (c *CatchupIndexer) processBlock(number uint64) error {
+	// Use raw JSON-RPC path for OP Stack chains
+	if c.idxCfg.EnableOPDeposits {
+		return c.processBlockRaw(number)
+	}
+
 	block, err := c.rpc.BlockByNumber(c.ctx, big.NewInt(int64(number)))
 	if err != nil {
 		return err
@@ -370,6 +375,35 @@ func (c *CatchupIndexer) processBlock(number uint64) error {
 
 	// Empty block - just insert the block record
 	return c.insertEmptyBlock(block)
+}
+
+// processBlockRaw processes a single block using raw JSON-RPC for OP Stack support
+func (c *CatchupIndexer) processBlockRaw(number uint64) error {
+	rawBlock, err := c.rpc.RawBlockByNumber(c.ctx, number)
+	if err != nil {
+		return err
+	}
+
+	// Create a temporary Indexer to reuse processBlockRaw/processBlockParallelRaw logic
+	catchupConfig := *c.idxCfg
+	catchupConfig.SkipAddressStats = true
+
+	idx := &Indexer{
+		db:               c.db,
+		rpc:              c.rpc,
+		config:           &catchupConfig,
+		tokenCache:       c.tokenCache,
+		contractCache:    c.contractCache,
+		balanceWorkers:   c.balanceWorkers,
+		tracingSupported: c.tracingSupported,
+		eventBus:         c.eventBus,
+	}
+
+	if len(rawBlock.Transactions) > 0 {
+		return idx.processBlockParallelRaw(c.ctx, rawBlock)
+	}
+
+	return idx.processBlockRaw(c.ctx, number)
 }
 
 // insertEmptyBlock inserts a block with no transactions

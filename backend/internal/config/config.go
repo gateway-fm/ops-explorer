@@ -52,6 +52,14 @@ type Config struct {
 	PrivacyProxyURL string `mapstructure:"privacy_proxy_url"` // URL of the privacy-proxy service
 	SSOClientID     string `mapstructure:"sso_client_id"`     // OAuth client ID for SSO
 	SSORedirectURI  string `mapstructure:"sso_redirect_uri"`  // OAuth redirect URI for SSO callback
+
+	// OP Stack deposit transaction settings
+	EnableOPDeposits      bool          `mapstructure:"enable_op_deposits"`       // Enable OP Stack deposit tx support
+	L1RPCURL              string        `mapstructure:"l1_rpc_url"`              // L1 RPC URL for deposit event fetching
+	OptimismPortalAddress string        `mapstructure:"optimism_portal_address"` // OptimismPortal contract address on L1
+	L1DepositPollInterval time.Duration `mapstructure:"l1_deposit_poll_interval"` // L1 polling interval
+	L1DepositBatchSize    int           `mapstructure:"l1_deposit_batch_size"`    // L1 log fetch batch size
+	L1DepositStartBlock   uint64        `mapstructure:"l1_deposit_start_block"`   // L1 start block (0 = auto-detect)
 }
 
 // setDefaults sets all default values for configuration
@@ -98,6 +106,14 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("privacy_proxy_url", "")
 	v.SetDefault("sso_client_id", "explorer")
 	v.SetDefault("sso_redirect_uri", "http://localhost:8080/api/auth/callback")
+
+	// OP Stack deposit settings (disabled by default)
+	v.SetDefault("enable_op_deposits", false)
+	v.SetDefault("l1_rpc_url", "")
+	v.SetDefault("optimism_portal_address", "")
+	v.SetDefault("l1_deposit_poll_interval", "12s")
+	v.SetDefault("l1_deposit_batch_size", 1000)
+	v.SetDefault("l1_deposit_start_block", 0)
 }
 
 // Load loads configuration from environment variables with defaults
@@ -168,6 +184,14 @@ func Load() (*Config, error) {
 	cfg.SSOClientID = v.GetString("sso_client_id")
 	cfg.SSORedirectURI = v.GetString("sso_redirect_uri")
 
+	// OP Stack deposit settings
+	cfg.EnableOPDeposits = v.GetBool("enable_op_deposits")
+	cfg.L1RPCURL = v.GetString("l1_rpc_url")
+	cfg.OptimismPortalAddress = v.GetString("optimism_portal_address")
+	cfg.L1DepositPollInterval = v.GetDuration("l1_deposit_poll_interval")
+	cfg.L1DepositBatchSize = v.GetInt("l1_deposit_batch_size")
+	cfg.L1DepositStartBlock = v.GetUint64("l1_deposit_start_block")
+
 	// Validate required fields
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -192,6 +216,14 @@ func (c *Config) Validate() error {
 	}
 	if c.RPCRateLimit <= 0 {
 		return fmt.Errorf("RPC_RATE_LIMIT must be greater than 0")
+	}
+	if c.EnableOPDeposits {
+		if c.L1RPCURL == "" {
+			return fmt.Errorf("L1_RPC_URL is required when ENABLE_OP_DEPOSITS is true")
+		}
+		if c.OptimismPortalAddress == "" {
+			return fmt.Errorf("OPTIMISM_PORTAL_ADDRESS is required when ENABLE_OP_DEPOSITS is true")
+		}
 	}
 	return nil
 }
@@ -238,6 +270,13 @@ func (c *Config) String() string {
     PRIVACY_PROXY_URL: %s
     SSO_CLIENT_ID: %s
     SSO_REDIRECT_URI: %s
+  OP Stack:
+    ENABLE_OP_DEPOSITS: %t
+    L1_RPC_URL: %s
+    OPTIMISM_PORTAL_ADDRESS: %s
+    L1_DEPOSIT_POLL_INTERVAL: %s
+    L1_DEPOSIT_BATCH_SIZE: %d
+    L1_DEPOSIT_START_BLOCK: %d
 }`,
 		c.RPCURL, maskedDBURL, c.APIPort, c.PollInterval, c.StartBlock,
 		c.RPCWorkers, c.RPCRateLimit, c.DBBatchSize, c.TokenMetadataWorkers, c.BalanceWorkers, c.EnableAsyncBalance,
@@ -247,6 +286,7 @@ func (c *Config) String() string {
 		c.MetricsEnabled,
 		c.CatchupEnabled, c.CatchupWorkers, c.CatchupBatchSize, c.CatchupQueueSize,
 		c.PrivacyEnabled, c.PrivacyProxyURL, c.SSOClientID, c.SSORedirectURI,
+		c.EnableOPDeposits, c.L1RPCURL, c.OptimismPortalAddress, c.L1DepositPollInterval, c.L1DepositBatchSize, c.L1DepositStartBlock,
 	)
 }
 
