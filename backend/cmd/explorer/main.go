@@ -8,12 +8,14 @@ import (
 	"time"
 
 	"explorer/internal/api"
+	"explorer/internal/auth"
 	"explorer/internal/config"
 	"explorer/internal/db"
 	"explorer/internal/events"
 	"explorer/internal/indexer"
 	"explorer/internal/log"
 	"explorer/internal/price"
+	"explorer/internal/privacy"
 	"explorer/internal/rpc"
 )
 
@@ -76,7 +78,16 @@ func main() {
 		MetricsEnabled:      cfg.MetricsEnabled,
 	}
 
-	server := api.New(database, rpcClient, idx, priceService, eventBus, cfg.APIPort, serverCfg)
+	// Initialize privacy and SSO clients (opt-in: only when PRIVACY_PROXY_URL is set)
+	var privacyClient *privacy.Client
+	var ssoClient *auth.SSOClient
+	if cfg.PrivacyEnabled && cfg.PrivacyProxyURL != "" {
+		privacyClient = privacy.NewClient(cfg.PrivacyProxyURL)
+		ssoClient = auth.NewSSOClient(cfg.PrivacyProxyURL, cfg.SSOClientID, cfg.SSORedirectURI)
+		log.Info("privacy integration enabled", "proxy_url", cfg.PrivacyProxyURL)
+	}
+
+	server := api.New(database, rpcClient, idx, priceService, eventBus, cfg.APIPort, serverCfg, privacyClient, ssoClient)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

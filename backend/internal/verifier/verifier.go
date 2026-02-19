@@ -113,7 +113,17 @@ func (v *Verifier) Verify(ctx context.Context, req *VerifyRequest) (*VerifyRespo
 	response.CompilerVersion = req.CompilerVersion
 
 	if comparison.MatchType == MatchTypeNone {
-		response.Error = "bytecode does not match"
+		response.Error = fmt.Sprintf("bytecode does not match (on-chain: %d bytes, compiled: %d bytes)", comparison.OnChainLength, comparison.CompiledLength)
+		log.Warn("bytecode mismatch",
+			"address", req.Address,
+			"onChainLen", comparison.OnChainLength,
+			"compiledLen", comparison.CompiledLength,
+			"onChainHash", comparison.OnChainHash,
+			"compiledHash", comparison.CompiledHash,
+			"optimizer", req.OptimizationUsed,
+			"runs", runs,
+			"evmVersion", req.EVMVersion,
+		)
 		return response, nil
 	}
 
@@ -141,7 +151,7 @@ func (v *Verifier) storeVerification(ctx context.Context, req *VerifyRequest, ou
 	sourceCode := sourceBuilder.String()
 
 	return v.db.VerifyContract(ctx, req.Address, req.ContractName, req.CompilerVersion,
-		req.OptimizationUsed, sourceCode, output.ABI)
+		req.OptimizationUsed, sourceCode, output.ABI, req.EVMVersion)
 }
 
 // ListCompilers returns the list of available compiler versions

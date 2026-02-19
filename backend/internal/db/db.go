@@ -36,6 +36,7 @@ func (d *DB) Migrate() error {
 	migrationFiles := []string{
 		"migrations/001_schema.sql",
 		"migrations/002_missing_ranges.sql",
+		"migrations/003_evm_version.sql",
 	}
 
 	for _, file := range migrationFiles {

@@ -169,6 +169,7 @@ type Contract struct {
 	ContractName     *string         `json:"contractName,omitempty"`
 	CompilerVersion  *string         `json:"compilerVersion,omitempty"`
 	OptimizationUsed *bool           `json:"optimizationUsed,omitempty"`
+	EVMVersion       *string         `json:"evmVersion,omitempty"`
 	SourceCode       *string         `json:"sourceCode,omitempty"`
 	ABI              json.RawMessage `json:"abi,omitempty"`
 	CreatedAt        time.Time       `json:"createdAt"`
@@ -235,6 +236,7 @@ type ChainStats struct {
 	TotalAddresses    int64   `json:"totalAddresses"`
 	TotalTokens       int64   `json:"totalTokens"`
 	AvgBlockTime      float64 `json:"avgBlockTime"`
+	PrivacyEnabled    bool    `json:"privacyEnabled"`
 }
 
 // PaginatedResponse for cursor-based pagination

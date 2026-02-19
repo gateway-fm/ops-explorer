@@ -3,7 +3,7 @@ services:
     image: ghcr.io/foundry-rs/foundry:latest
     entrypoint: ["anvil", "--host", "0.0.0.0", "--block-time", "2"]
     ports:
-      - "8545:8545"
+      - "${ANVIL_PORT:-8546}:8545"
     healthcheck:
       test: ["CMD", "cast", "block-number", "--rpc-url", "http://localhost:8545"]
       interval: 5s
@@ -17,7 +17,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: explorer
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - postgres_anvil_data:/var/lib/postgresql/data
     healthcheck:
@@ -32,11 +32,12 @@ services:
       dockerfile: Dockerfile
     entrypoint: ["/api"]
     ports:
-      - "8080:8080"
+      - "${API_PORT:-8081}:8080"
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/explorer?sslmode=disable
       RPC_URL: http://anvil:8545
       API_PORT: "8080"
+      PRIVACY_ENABLED: ${PRIVACY_ENABLED:-false}
     depends_on:
       postgres:
         condition: service_healthy
@@ -65,14 +66,20 @@ services:
     restart: unless-stopped
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
     ports:
-      - "3000:80"
+      - "${FRONTEND_PORT:-3001}:3001"
+    environment:
+      VITE_API_URL: http://localhost:${API_PORT:-8081}/api
+    command: sh -c "npm install --legacy-peer-deps && npm run dev -- --host 0.0.0.0 --port 3001"
     depends_on:
       - api
     restart: unless-stopped
 
 volumes:
   postgres_anvil_data:
+  frontend_node_modules:

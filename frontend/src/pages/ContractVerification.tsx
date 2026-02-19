@@ -2,7 +2,46 @@ import { useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { AlertCircle, AlertTriangle, CheckCircle, Loader2, Search, Upload } from 'lucide-react';
+import { AlertCircle, AlertTriangle, CheckCircle, Info, Loader2, Search, Upload } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
+
+const SOLC_VERSIONS = [
+  'v0.8.28+commit.7893614a',
+  'v0.8.27+commit.40a35a09',
+  'v0.8.26+commit.8a97fa7a',
+  'v0.8.25+commit.b61c2a91',
+  'v0.8.24+commit.e11b9ed9',
+  'v0.8.23+commit.f704f362',
+  'v0.8.22+commit.4fc1097e',
+  'v0.8.21+commit.d9974bed',
+  'v0.8.20+commit.a1b79de6',
+  'v0.8.19+commit.7dd6d404',
+  'v0.8.18+commit.87f61d96',
+  'v0.8.17+commit.8df45f5f',
+  'v0.8.16+commit.07a7930e',
+  'v0.8.15+commit.e14f2714',
+  'v0.8.14+commit.80d49f37',
+  'v0.8.13+commit.abaa5c0e',
+  'v0.8.12+commit.f00d7308',
+  'v0.8.11+commit.d7f03943',
+  'v0.8.10+commit.fc410830',
+  'v0.8.9+commit.e5eed63a',
+  'v0.8.8+commit.dddeac2f',
+  'v0.8.7+commit.e28d00a7',
+  'v0.8.6+commit.11564f7e',
+  'v0.8.5+commit.a4f2e591',
+  'v0.8.4+commit.c7e474f2',
+  'v0.8.3+commit.8d00100c',
+  'v0.8.2+commit.661d1103',
+  'v0.8.1+commit.df193b15',
+  'v0.8.0+commit.c7dfd78e',
+  'v0.7.6+commit.7338295f',
+  'v0.7.5+commit.eb77ed08',
+  'v0.6.12+commit.27d51765',
+  'v0.6.6+commit.6c089d02',
+  'v0.5.17+commit.d19bba13',
+  'v0.4.26+commit.4563c3fc',
+];
 
 export default function ContractVerification() {
   const [searchParams] = useSearchParams();
@@ -194,13 +233,15 @@ contract MyContract {
 
               <div className="space-y-2">
                 <label className="text-sm font-medium text-neutral-700">Compiler Version</label>
-                <input
-                  type="text"
+                <select
                   value={compilerVersion}
                   onChange={(e) => setCompilerVersion(e.target.value)}
-                  placeholder="v0.8.20+commit.a1b79de6"
-                  className="input"
-                />
+                  className="select"
+                >
+                  {SOLC_VERSIONS.map((v) => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -213,6 +254,14 @@ contract MyContract {
                   className="checkbox"
                 />
                 <span className="text-sm text-neutral-700">Optimization</span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="w-3.5 h-3.5 text-neutral-400 cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-[240px]">
+                    Enables the Solidity optimizer, which reduces gas costs and contract size. Must match the settings used during deployment.
+                  </TooltipContent>
+                </Tooltip>
               </label>
 
               {optimizationUsed && (
