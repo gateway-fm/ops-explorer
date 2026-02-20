@@ -244,10 +244,11 @@ function decodeTopic(hex: string, format: TopicDecodeFormat): string {
   switch (format) {
     case 'hex':
       return hex;
-    case 'address':
+    case 'address': {
       // Address is last 20 bytes (40 hex chars), with 0x prefix
       const addressHex = cleanHex.slice(-40);
       return `0x${addressHex}`;
+    }
     case 'number':
       try {
         const num = BigInt('0x' + cleanHex);

@@ -37,6 +37,7 @@ export function SearchBar({ variant = 'default', autoFocus }: SearchBarProps) {
   // Debounced search suggestions
   useEffect(() => {
     if (!search.trim() || search.length < 1) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing suggestions when search is empty
       setSuggestions([]);
       return;
     }

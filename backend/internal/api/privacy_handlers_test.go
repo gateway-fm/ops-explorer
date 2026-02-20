@@ -2,14 +2,32 @@ package api
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"explorer/internal/privacy"
 	"github.com/go-chi/chi/v5"
 )
+
+// mockAuthCookie creates a fake JWT cookie for testing.
+// ExtractClaims does not verify signatures, so a well-formed JWT is sufficient.
+func mockAuthCookie() *http.Cookie {
+	claims := map[string]any{
+		"sub": "did:test:12345",
+		"exp": time.Now().Add(time.Hour).Unix(),
+		"iat": time.Now().Unix(),
+	}
+	payload, _ := json.Marshal(claims)
+	token := "eyJhbGciOiJub25lIn0." + base64.RawURLEncoding.EncodeToString(payload) + ".signature"
+	return &http.Cookie{
+		Name:  AuthCookieName,
+		Value: token,
+	}
+}
 
 func setupPrivacyTestServer(privacyClient *privacy.Client) *chi.Mux {
 	s := &Server{
@@ -179,6 +197,7 @@ func TestHandleGetGrantedAddress_ServiceNotEnabled(t *testing.T) {
 	router := setupPrivacyTestServerWithMock(nil)
 
 	req := httptest.NewRequest("GET", "/api/privacy/grant/grant-123/addr-456", nil)
+	req.AddCookie(mockAuthCookie())
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -214,6 +233,7 @@ func TestHandleGetGrantedAddress_NotFound(t *testing.T) {
 	router := setupPrivacyTestServerWithMock(client)
 
 	req := httptest.NewRequest("GET", "/api/privacy/grant/invalid-grant/addr-456", nil)
+	req.AddCookie(mockAuthCookie())
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -233,6 +253,7 @@ func TestHandleGetGrantedAddress_ExpiredGrant(t *testing.T) {
 	router := setupPrivacyTestServerWithMock(client)
 
 	req := httptest.NewRequest("GET", "/api/privacy/grant/expired-grant/addr-456", nil)
+	req.AddCookie(mockAuthCookie())
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -249,6 +270,7 @@ func TestHandleGetGrantedAddress_RevokedGrant(t *testing.T) {
 	router := setupPrivacyTestServerWithMock(client)
 
 	req := httptest.NewRequest("GET", "/api/privacy/grant/revoked-grant/addr-456", nil)
+	req.AddCookie(mockAuthCookie())
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
