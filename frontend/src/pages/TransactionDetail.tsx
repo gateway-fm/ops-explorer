@@ -171,7 +171,7 @@ export function TransactionDetail() {
             <InfoRow label="Value" value={`${formatWei(tx.value)} ETH`} />
             <InfoRow
               label="Transaction Fee"
-              value={`${formatWei(BigInt(tx.gasUsed) * BigInt(tx.gasPrice))} ETH`}
+              value={`${formatWei((BigInt(tx.gasUsed) * BigInt(tx.gasPrice)).toString())} ETH`}
             />
             <InfoRow label="Gas Price" value={`${tx.gasPrice} wei`} />
           </div>
