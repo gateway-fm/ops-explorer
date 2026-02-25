@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../lib/api';
 import type { TokenTransfer, Log, TxCategory } from '../lib/api';
-import { formatWei, formatGas } from '../lib/utils';
+import { formatWei, formatGas, formatTimestamp } from '../lib/utils';
 import { AddressLink, TokenAddressLink } from '../components/AddressLink';
 import { PageHeader } from '../components/PageHeader';
 import { decodeEvent, getMethodId, fetchEventSignature, decodeEventWithSignature, KNOWN_EVENTS } from '../lib/eventDecoder';
@@ -43,6 +44,7 @@ function TxCategoryBadges({ categories }: { categories?: TxCategory[] }) {
 export function TransactionDetail() {
   const { hash } = useParams<{ hash: string }>();
   const [activeTab, setActiveTab] = useState<'overview' | 'logs'>('overview');
+  const [showMore, setShowMore] = useState(false);
 
   const { data: tx, isLoading, error } = useQuery({
     queryKey: ['transaction', hash],
@@ -100,14 +102,22 @@ export function TransactionDetail() {
             <InfoRow
               label="Status"
               value={
-                <span className={`badge ${tx.status === 1 ? 'badge-success' : 'badge-error'}`}>
-                  {tx.status === 1 ? 'Success' : 'Failed'}
-                </span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`badge ${tx.status === 1 ? 'badge-success' : 'badge-error'}`}>
+                    {tx.status === 1 ? 'Success' : 'Failed'}
+                  </span>
+                  {tx.status !== 1 && tx.error && (
+                    <span className="text-sm text-error-600">{tx.error}</span>
+                  )}
+                  {tx.status !== 1 && tx.revertReason && (
+                    <span className="text-sm text-error-600 font-mono">Revert: {tx.revertReason}</span>
+                  )}
+                </div>
               }
             />
             {tx.txCategories && tx.txCategories.length > 0 && (
               <InfoRow
-                label="Transaction Type"
+                label="Transaction Action"
                 value={<TxCategoryBadges categories={tx.txCategories} />}
               />
             )}
@@ -119,6 +129,9 @@ export function TransactionDetail() {
                 </Link>
               }
             />
+            {tx.blockTimestamp && (
+              <InfoRow label="Timestamp" value={formatTimestamp(tx.blockTimestamp)} />
+            )}
             <InfoRow
               label="From"
               value={<AddressLink address={tx.from} full className="text-sm" />}
@@ -156,19 +169,84 @@ export function TransactionDetail() {
             )}
 
             <InfoRow label="Value" value={`${formatWei(tx.value)} ETH`} />
-            <InfoRow label="Gas Used" value={formatGas(tx.gasUsed)} />
+            <InfoRow
+              label="Transaction Fee"
+              value={`${formatWei((BigInt(tx.gasUsed) * BigInt(tx.gasPrice)).toString())} ETH`}
+            />
             <InfoRow label="Gas Price" value={`${tx.gasPrice} wei`} />
-            {tx.inputData && tx.inputData !== '' && (
+          </div>
+
+          {/* Show More / Show Less toggle */}
+          <button
+            onClick={() => setShowMore(!showMore)}
+            className="w-full px-4 py-3 flex items-center justify-center gap-2 text-sm text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50 transition-colors border-t border-neutral-100"
+          >
+            {showMore ? (
+              <>
+                <ChevronUp className="w-4 h-4" />
+                Show Less
+              </>
+            ) : (
+              <>
+                <ChevronDown className="w-4 h-4" />
+                Show More
+              </>
+            )}
+          </button>
+
+          {showMore && (
+            <div className="divide-y divide-neutral-100 border-t border-neutral-100">
               <InfoRow
-                label="Input Data"
+                label="Transaction Type"
                 value={
-                  <span className="font-mono text-xs text-neutral-500 break-all">
-                    0x{tx.inputData.length > 100 ? tx.inputData.slice(0, 100) + '...' : tx.inputData}
+                  <span className="font-mono text-sm">
+                    {tx.txType === 0 ? '0 (Legacy)' :
+                     tx.txType === 1 ? '1 (Access List)' :
+                     tx.txType === 2 ? '2 (EIP-1559)' :
+                     tx.txType === 126 ? '126 (OP Deposit)' :
+                     tx.txType ?? '-'}
                   </span>
                 }
               />
-            )}
-          </div>
+              <InfoRow
+                label="Nonce"
+                value={<span className="font-mono text-sm">{tx.nonce ?? '-'}</span>}
+              />
+              <InfoRow
+                label="Position in Block"
+                value={<span className="font-mono text-sm">{tx.txIndex}</span>}
+              />
+              <InfoRow label="Gas Limit" value={tx.gasLimit != null ? formatGas(tx.gasLimit) : '-'} />
+              <InfoRow label="Gas Used" value={formatGas(tx.gasUsed)} />
+              {tx.maxFeePerGas != null && (
+                <InfoRow label="Max Fee Per Gas" value={`${tx.maxFeePerGas} wei`} />
+              )}
+              {tx.maxPriorityFeePerGas != null && (
+                <InfoRow label="Max Priority Fee Per Gas" value={`${tx.maxPriorityFeePerGas} wei`} />
+              )}
+            </div>
+          )}
+
+          {/* Input Data */}
+          {tx.inputData && tx.inputData !== '' && (
+            <div className="border-t border-neutral-100 px-4 py-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-neutral-500">Input Data</span>
+                  <span className="text-neutral-400 text-xs">({tx.inputData.length / 2} bytes)</span>
+                </div>
+                <button
+                  onClick={() => navigator.clipboard.writeText('0x' + tx.inputData)}
+                  className="text-xs text-neutral-500 hover:text-neutral-700 bg-neutral-100 hover:bg-neutral-200 px-2 py-1 rounded transition-colors"
+                >
+                  Copy
+                </button>
+              </div>
+              <div className="code-block p-2 text-xs max-h-64 overflow-y-auto">
+                <div className="break-all whitespace-pre-wrap">0x{tx.inputData}</div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

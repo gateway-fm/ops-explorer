@@ -137,18 +137,29 @@ func (s *Server) handleBatchCheckAddresses(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, map[string]any{"results": results})
 }
 
-// checkAddressVisibility is a helper for use in other handlers
-// Returns nil if privacy is not enabled or if visibility check fails (fail open)
+// checkAddressVisibility is a helper for use in other handlers.
+// Returns nil if privacy is not enabled (no gating needed).
+// Otherwise always calls the privacy-proxy, even for anonymous viewers.
+// Fails closed: on error returns HIDDEN to prevent leaking private data.
 func (s *Server) checkAddressVisibility(r *http.Request, address string) *privacy.AddressVisibility {
+	if !s.privacyClient.IsEnabled() {
+		return nil
+	}
+
 	viewer := s.getViewerIdentity(r)
-	if viewer.DID == "" || !s.privacyClient.IsEnabled() {
+	if viewer.DID == "" {
 		return nil
 	}
 
 	vis, err := s.privacyClient.CheckAddressWithIdentity(r.Context(), viewer, address)
 	if err != nil {
-		// Fail open - log error but don't block
-		return nil
+		// Fail closed - return HIDDEN on error
+		return &privacy.AddressVisibility{
+			Address: strings.ToLower(address),
+			Visible: false,
+			Level:   privacy.VisibilityHidden,
+			Reason:  privacy.ReasonNoAccess,
+		}
 	}
 
 	return vis

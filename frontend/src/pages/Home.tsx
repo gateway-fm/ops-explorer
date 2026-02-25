@@ -274,7 +274,7 @@ function BlockRow({ block, isNew }: { block: Block; isNew: boolean }) {
   const gasPercent = block.gasLimit > 0 ? (block.gasUsed / block.gasLimit) * 100 : 0;
 
   return (
-    <div className={`px-3 sm:px-4 py-2 sm:py-3 flex items-center gap-3 hover:bg-primary-50/50 transition-colors ${isNew ? 'feed-item-new' : ''}`}>
+    <div className={`px-3 sm:px-4 h-[52px] sm:h-[60px] flex items-center gap-3 hover:bg-primary-50/50 transition-colors ${isNew ? 'feed-item-new' : ''}`}>
       <div className="p-2 rounded-lg bg-blue-50 text-blue-600 shrink-0">
         <Box className="w-5 h-5" />
       </div>
@@ -283,10 +283,10 @@ function BlockRow({ block, isNew }: { block: Block; isNew: boolean }) {
           <Link to={`/block/${block.number}`} className="font-mono text-sm sm:text-base text-primary hover:text-primary-600 transition-colors">
             {block.number}
           </Link>
-          <span className="text-neutral-400 font-mono text-xs hidden sm:inline">{formatHash(block.hash, 4)}</span>
+          <span className="text-neutral-400 text-xs hidden sm:inline"><LiveTimeAgo timestamp={block.timestamp} /></span>
         </div>
-        <div className="text-xs sm:text-sm text-neutral-500">
-          <LiveTimeAgo timestamp={block.timestamp} />
+        <div className="text-xs sm:text-sm text-neutral-500 font-mono">
+          {formatHash(block.hash, 4)}
         </div>
       </div>
       <div className="text-right text-xs sm:text-sm shrink-0">
@@ -362,14 +362,19 @@ function TxRow({ tx, isNew }: { tx: Transaction; isNew: boolean }) {
   const { icon, bgColor, textColor, label } = getTxTypeConfig(tx.txCategories);
 
   return (
-    <div className={`px-3 sm:px-4 py-2 sm:py-3 flex items-center gap-3 hover:bg-primary-50/50 transition-colors ${isNew ? 'feed-item-new' : ''}`}>
+    <div className={`px-3 sm:px-4 h-[52px] sm:h-[60px] flex items-center gap-3 hover:bg-primary-50/50 transition-colors ${isNew ? 'feed-item-new' : ''}`}>
       <div className={`p-2 rounded-lg ${bgColor} ${textColor} shrink-0`}>
         {icon}
       </div>
       <div className="min-w-0 flex-1">
-        <Link to={`/tx/${tx.hash}`} className="font-mono text-primary hover:text-primary-600 transition-colors text-xs sm:text-sm">
-          {formatHash(tx.hash, 6)}
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link to={`/tx/${tx.hash}`} className="font-mono text-primary hover:text-primary-600 transition-colors text-xs sm:text-sm">
+            {formatHash(tx.hash, 6)}
+          </Link>
+          {tx.blockTimestamp && (
+            <span className="text-neutral-400 text-xs hidden sm:inline"><LiveTimeAgo timestamp={tx.blockTimestamp} /></span>
+          )}
+        </div>
         <div className="text-xs sm:text-sm text-neutral-500 truncate">
           <AddressLink address={tx.from} chars={4} className="text-neutral-500 hover:text-neutral-700" />
           {tx.to && (

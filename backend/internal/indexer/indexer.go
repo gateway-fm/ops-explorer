@@ -720,14 +720,10 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 			to = &toStr
 		}
 
-		// Extract input data selector
+		// Store full input data
 		inputData := ""
 		if len(rawTx.Input) > 0 {
-			if len(rawTx.Input) >= 4 {
-				inputData = common.Bytes2Hex(rawTx.Input[:4])
-			} else {
-				inputData = common.Bytes2Hex(rawTx.Input)
-			}
+			inputData = common.Bytes2Hex(rawTx.Input)
 		}
 
 		// Nonce: nil for deposit txs (store as 0)
@@ -1103,14 +1099,10 @@ func (i *Indexer) processBlockParallel(ctx context.Context, block *ethtypes.Bloc
 			to = &toStr
 		}
 
-		// Extract input data selector
+		// Store full input data
 		inputData := ""
 		if len(tx.Data()) > 0 {
-			if len(tx.Data()) >= 4 {
-				inputData = common.Bytes2Hex(tx.Data()[:4])
-			} else {
-				inputData = common.Bytes2Hex(tx.Data())
-			}
+			inputData = common.Bytes2Hex(tx.Data())
 		}
 
 		nonce := tx.Nonce()
@@ -1429,14 +1421,10 @@ func (i *Indexer) processTransaction(ctx context.Context, tx *ethtypes.Transacti
 		to = &toStr
 	}
 
-	// Extract full input data selector (first 4 bytes)
+	// Store full input data
 	inputData := ""
 	if len(tx.Data()) > 0 {
-		if len(tx.Data()) >= 4 {
-			inputData = common.Bytes2Hex(tx.Data()[:4])
-		} else {
-			inputData = common.Bytes2Hex(tx.Data())
-		}
+		inputData = common.Bytes2Hex(tx.Data())
 	}
 
 	// Extract additional transaction fields

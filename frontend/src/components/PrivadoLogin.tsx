@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../lib/auth';
 import { X, Loader2, CheckCircle2, Shield } from 'lucide-react';
@@ -16,15 +16,7 @@ export function PrivadoLogin({ onClose, returnUrl }: PrivadoLoginProps) {
   const [retryCount, setRetryCount] = useState(0);
 
   // Start the login flow - on mount or retry
-  const hasStartedRef = useRef(false);
-
   useEffect(() => {
-    // On first mount, start automatically. On retry, retryCount changes.
-    if (hasStartedRef.current && retryCount === 0) {
-      return;
-    }
-    hasStartedRef.current = true;
-
     let mounted = true;
 
     const startLogin = async () => {

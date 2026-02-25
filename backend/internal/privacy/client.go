@@ -75,10 +75,11 @@ const (
 type VisibilityReason string
 
 const (
-	ReasonOwnAddress      VisibilityReason = "own_address"
-	ReasonDisclosureGrant VisibilityReason = "disclosure_grant"
-	ReasonPublicAddress   VisibilityReason = "public_address"
-	ReasonNoAccess        VisibilityReason = "no_access"
+	ReasonOwnAddress       VisibilityReason = "own_address"
+	ReasonDisclosureGrant  VisibilityReason = "disclosure_grant"
+	ReasonPublicAddress    VisibilityReason = "public_address"
+	ReasonNoAccess         VisibilityReason = "no_access"
+	ReasonRBACGroupMember  VisibilityReason = "rbac_group_member"
 )
 
 // AddressVisibility represents the visibility status of a single address

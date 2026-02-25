@@ -185,17 +185,18 @@ func (s *Server) setupAPIRoutes(r chi.Router) {
 		r.Get("/{hash}/internal", s.handleGetTransactionInternalTxs)
 	})
 
-	r.Route("/addresses", func(r chi.Router) {
-		r.Get("/{address}", s.handleGetAddress)
-		r.Get("/{address}/transactions", s.handleGetAddressTransactions)
-		r.Get("/{address}/transfers", s.handleGetAddressTransfers)
-		r.Get("/{address}/contract", s.handleGetContract)
-		r.Post("/{address}/abi", s.handleUpdateContractABI)
-		r.Get("/{address}/internal", s.handleGetAddressInternalTxs)
-		r.Get("/{address}/logs", s.handleGetAddressLogs)
-		r.Get("/{address}/balances", s.handleGetAddressTokenBalances)
-		r.Get("/{address}/sourcify", s.handleFetchSourcify)
-		r.Get("/{address}/sourcify/check", s.handleCheckSourcify)
+	r.Route("/addresses/{address}", func(r chi.Router) {
+		r.Use(s.addressPrivacyMiddleware)
+		r.Get("/", s.handleGetAddress)
+		r.Get("/transactions", s.handleGetAddressTransactions)
+		r.Get("/transfers", s.handleGetAddressTransfers)
+		r.Get("/contract", s.handleGetContract)
+		r.Post("/abi", s.handleUpdateContractABI)
+		r.Get("/internal", s.handleGetAddressInternalTxs)
+		r.Get("/logs", s.handleGetAddressLogs)
+		r.Get("/balances", s.handleGetAddressTokenBalances)
+		r.Get("/sourcify", s.handleFetchSourcify)
+		r.Get("/sourcify/check", s.handleCheckSourcify)
 	})
 
 	// Contract verification
@@ -204,9 +205,12 @@ func (s *Server) setupAPIRoutes(r chi.Router) {
 
 	r.Route("/tokens", func(r chi.Router) {
 		r.Get("/", s.handleGetTokens)
-		r.Get("/{address}", s.handleGetToken)
-		r.Get("/{address}/holders", s.handleGetTokenHolders)
-		r.Get("/{address}/transfers", s.handleGetTokenTransfers)
+		r.Route("/{address}", func(r chi.Router) {
+			r.Use(s.addressPrivacyMiddleware)
+			r.Get("/", s.handleGetToken)
+			r.Get("/holders", s.handleGetTokenHolders)
+			r.Get("/transfers", s.handleGetTokenTransfers)
+		})
 	})
 
 	r.Get("/token-transfers", s.handleGetAllTransfers)
