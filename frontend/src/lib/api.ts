@@ -36,6 +36,13 @@ export interface Transaction {
   inputData: string;
   status: number;
   createdAt: string;
+  nonce?: number;
+  txType?: number;
+  gasLimit?: number;
+  maxFeePerGas?: number;
+  maxPriorityFeePerGas?: number;
+  error?: string;
+  revertReason?: string;
   // Transaction categories
   txCategories?: TxCategory[];
   tokenTransferCount?: number;

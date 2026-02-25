@@ -74,12 +74,42 @@ services:
     ports:
       - "${FRONTEND_PORT:-3001}:3001"
     environment:
-      VITE_API_URL: http://localhost:${API_PORT:-8081}/api
+      VITE_API_URL: /api
     command: sh -c "npm install --legacy-peer-deps && npm run dev -- --host 0.0.0.0 --port 3001"
     depends_on:
       - api
     restart: unless-stopped
 
+  loadgenerator:
+    build:
+      context: ../loadgenerator
+      dockerfile: Dockerfile
+    command: ["./load-generator", "-chainid", "31337"]
+    ports:
+      - "${LOADGEN_PORT:-13001}:3001"
+    environment:
+      BUILDER_RPC_URL: http://anvil:8545
+      L2_RPC_URL: http://anvil:8545
+      L2_WS_URL: ws://anvil:8545
+      LISTEN_ADDR: ":3001"
+      DATABASE_PATH: /data/loadgen.db
+      BLOCK_TIME_MS: "2000"
+      GAS_TIP_CAP: "1000000000"
+      EXECUTION_LAYER: gravity-reth
+    volumes:
+      - loadgen_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    depends_on:
+      anvil:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_anvil_data:
   frontend_node_modules:
+  loadgen_data:

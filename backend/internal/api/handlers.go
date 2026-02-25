@@ -585,6 +585,14 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	// Try as address
 	if common.IsHexAddress(q) {
 		address := common.HexToAddress(q).Hex()
+
+		// Check privacy visibility before returning address results
+		vis := s.checkAddressVisibility(r, address)
+		if vis != nil && !vis.Visible {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+
 		stats, _ := s.db.GetAddressStats(ctx, address)
 		writeJSON(w, map[string]any{"type": "address", "data": stats})
 		return

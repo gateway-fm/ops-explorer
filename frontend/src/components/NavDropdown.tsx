@@ -141,7 +141,7 @@ function AuthButton() {
   );
 }
 
-function MetaMaskFox({ className }: { className?: string }) {
+export function MetaMaskFox({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 35 33" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M32.96 1L19.7 10.86l2.45-5.81L32.96 1z" fill="#E2761B" stroke="#E2761B" strokeLinecap="round" strokeLinejoin="round"/>
@@ -160,7 +160,7 @@ function MetaMaskFox({ className }: { className?: string }) {
   );
 }
 
-function addNetworkToMetaMask() {
+export function addNetworkToMetaMask() {
   if (!window.ethereum) {
     alert('MetaMask is not installed. Please install MetaMask to add the network.');
     return;

@@ -319,7 +319,7 @@ func (d *DB) GetTransactionWithCategories(ctx context.Context, hash string) (*ty
 	var tokenTransferCount int
 
 	err := d.pool.QueryRow(ctx, `
-		SELECT t.hash, t.block_number, t.tx_index, t.from_address, t.to_address, c.address, t.value::text,
+		SELECT t.hash, t.block_number, b.timestamp, t.tx_index, t.from_address, t.to_address, c.address, t.value::text,
 			t.gas_used, t.gas_price, t.gas_limit, t.max_fee_per_gas, t.max_priority_fee_per_gas, t.nonce,
 			t.tx_type, t.input_data, t.status, t.error, t.revert_reason, t.created_at,
 			-- Computed categories
@@ -328,9 +328,10 @@ func (d *DB) GetTransactionWithCategories(ctx context.Context, hash string) (*ty
 			(t.to_address IS NULL AND c.address IS NOT NULL) as is_contract_creation,
 			(SELECT COUNT(*) FROM token_transfers tt WHERE tt.tx_hash = t.hash) as token_transfer_count
 		FROM transactions t
+		JOIN blocks b ON t.block_number = b.number
 		LEFT JOIN contracts c ON c.creation_tx = t.hash
 		WHERE t.hash = $1`, hash).Scan(
-		&tx.Hash, &tx.BlockNumber, &tx.TxIndex, &tx.From, &tx.To, &tx.ContractAddress, &valueStr,
+		&tx.Hash, &tx.BlockNumber, &tx.BlockTimestamp, &tx.TxIndex, &tx.From, &tx.To, &tx.ContractAddress, &valueStr,
 		&tx.GasUsed, &tx.GasPrice, &tx.GasLimit, &tx.MaxFeePerGas, &tx.MaxPriorityFeePerGas, &tx.Nonce,
 		&tx.TxType, &tx.InputData, &tx.Status, &tx.Error, &tx.RevertReason, &tx.CreatedAt,
 		&isCoinTransfer, &isContractCall, &isContractCreation, &tokenTransferCount)

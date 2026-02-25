@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { api } from './api';
 
 // SSO Auth state
@@ -42,9 +42,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
   const [ssoLoginSession, setSSOLoginSession] = useState<SSOLoginSession | null>(null);
 
-  // Ref to prevent duplicate login calls
-  const loginInProgressRef = useRef(false);
-
   // Check SSO status from backend (cookie-based)
   const checkSSOStatus = useCallback(async () => {
     try {
@@ -68,12 +65,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Initiate Privado SSO login
   const initiatePrivadoLogin = useCallback(async (returnUrl?: string): Promise<SSOLoginSession> => {
-    // Prevent duplicate concurrent calls but don't throw - just wait
-    if (loginInProgressRef.current) {
-      return new Promise(() => {}); // Never resolves, caller will be cleaned up on unmount
-    }
-    loginInProgressRef.current = true;
-
     setIsLoading(true);
     try {
       const response = await api.auth.login(returnUrl);
@@ -87,7 +78,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return session;
     } finally {
       setIsLoading(false);
-      loginInProgressRef.current = false;
     }
   }, []);
 
