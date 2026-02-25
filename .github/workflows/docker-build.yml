@@ -1,0 +1,68 @@
+name: Docker Build (Dry Run)
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-api:
+    name: Build API Image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend/
+          file: backend/Dockerfile.api
+          push: false
+          tags: gatewayfm/block-explorer-api:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-indexer:
+    name: Build Indexer Image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Indexer image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend/
+          file: backend/Dockerfile.indexer
+          push: false
+          tags: gatewayfm/block-explorer-indexer:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-frontend:
+    name: Build Frontend Image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend/
+          file: frontend/Dockerfile
+          push: false
+          tags: gatewayfm/block-explorer-frontend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

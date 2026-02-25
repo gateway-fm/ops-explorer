@@ -1,4 +1,11 @@
+include version.mk
+
+DOCKER_REGISTRY ?= gatewayfm
+IMAGE_PREFIX ?= block-explorer
+
 .PHONY: run run-privacy stop destroy logs anvil anvil-privacy anvil-stop anvil-destroy anvil-logs
+.PHONY: version docker-build docker-build-api docker-build-indexer docker-build-frontend
+.PHONY: lint test build
 
 # Default RPC URL (use host.docker.internal to reach host from Docker)
 RPC_URL ?= http://privacy-proxy-anvil-1:8545
@@ -136,3 +143,64 @@ rebuild-backend:
 
 anvil-rebuild-backend:
 	docker compose -f docker-compose.anvil.yml build --no-cache api indexer && docker compose -f docker-compose.anvil.yml up -d api indexer
+
+# =============================================================================
+# Version
+# =============================================================================
+
+version:
+	@echo "Version:    $(VERSION)"
+	@echo "Git Rev:    $(GITREV)"
+	@echo "Git Branch: $(GITBRANCH)"
+	@echo "Build Date: $(DATE)"
+
+# =============================================================================
+# CI / Quality
+# =============================================================================
+
+lint:
+	@echo "--- Backend ---"
+	cd backend && go vet ./...
+	@echo "--- Frontend ---"
+	cd frontend && npx eslint .
+	cd frontend && npx tsc -b
+
+test:
+	@echo "--- Backend ---"
+	cd backend && go test -race -count=1 ./...
+
+build:
+	@echo "--- Backend ---"
+	cd backend && CGO_ENABLED=0 go build -o /dev/null ./cmd/api
+	cd backend && CGO_ENABLED=0 go build -o /dev/null ./cmd/indexer
+	@echo "--- Frontend ---"
+	cd frontend && npm run build
+
+# =============================================================================
+# Docker Builds
+# =============================================================================
+
+docker-build: docker-build-api docker-build-indexer docker-build-frontend
+
+docker-build-api:
+	@echo "Building $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-api:$(VERSION)"
+	docker build -f backend/Dockerfile.api -t $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-api:$(VERSION) backend/
+
+docker-build-indexer:
+	@echo "Building $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-indexer:$(VERSION)"
+	docker build -f backend/Dockerfile.indexer -t $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-indexer:$(VERSION) backend/
+
+docker-build-frontend:
+	@echo "Building $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-frontend:$(VERSION)"
+	docker build -f frontend/Dockerfile -t $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-frontend:$(VERSION) frontend/
+
+docker-build-dry-run:
+	@echo "Docker build dry run (no push)..."
+	@echo ""
+	@$(MAKE) docker-build-api
+	@echo ""
+	@$(MAKE) docker-build-indexer
+	@echo ""
+	@$(MAKE) docker-build-frontend
+	@echo ""
+	@echo "All images built successfully."
