@@ -4,7 +4,9 @@ import { useQuery } from '@tanstack/react-query';
 import { Search, Menu, X, ArrowLeftRight, Users, Coins, ShieldCheck, Boxes, Fuel, Eye } from 'lucide-react';
 import { api } from '../lib/api';
 import type { SearchSuggestion } from '../lib/api';
-import { NavDropdown, MetaMaskFox, addNetworkToMetaMask } from './NavDropdown';
+import { NavDropdown } from './NavDropdown';
+import { MetaMaskFox } from './MetaMask';
+import { addNetworkToMetaMask } from '../lib/metamask';
 import { usePrivacyEnabled } from '../hooks/usePrivacyEnabled';
 import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip';
 
