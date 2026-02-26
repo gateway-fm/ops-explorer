@@ -6,6 +6,9 @@ import (
 	"sync"
 	"time"
 
+	"explorer/internal/log"
+	explorerTypes "explorer/internal/types"
+
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -13,8 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
-
-	explorerTypes "explorer/internal/types"
 )
 
 type Client struct {
@@ -80,10 +81,11 @@ func (c *Client) GetTransactionByHash(ctx context.Context, hash common.Hash) (*e
 		return nil, err
 	}
 
-	// Get receipt for status and gas used
+	// Get receipt for status and gas used (may fail on some OP Stack nodes)
 	receipt, err := c.eth.TransactionReceipt(ctx, hash)
 	if err != nil {
-		return nil, err
+		log.Warn("failed to fetch receipt for tx lookup", "tx", hash.Hex(), "error", err)
+		// Continue without receipt
 	}
 
 	// Get sender
@@ -111,23 +113,36 @@ func (c *Client) GetTransactionByHash(ctx context.Context, hash common.Hash) (*e
 		}
 	}
 
-	blockNum := uint64(0)
-	if !isPending && receipt.BlockNumber != nil {
-		blockNum = receipt.BlockNumber.Uint64()
+	var blockNum uint64
+	var txIndex int
+	var gasUsed uint64
+	var status int
+
+	if receipt != nil {
+		if !isPending && receipt.BlockNumber != nil {
+			blockNum = receipt.BlockNumber.Uint64()
+		}
+		txIndex = int(receipt.TransactionIndex)
+		gasUsed = receipt.GasUsed
+		status = int(receipt.Status)
+	} else {
+		// Without receipt: assume success, use gas limit
+		gasUsed = tx.Gas()
+		status = 1
 	}
 
 	return &explorerTypes.Transaction{
 		Hash:        tx.Hash().Hex(),
 		BlockNumber: blockNum,
-		TxIndex:     int(receipt.TransactionIndex),
+		TxIndex:     txIndex,
 		From:        from.Hex(),
 		To:          to,
 		Value:       explorerTypes.JSONString(tx.Value().String()),
-		GasUsed:     receipt.GasUsed,
+		GasUsed:     gasUsed,
 		GasPrice:    tx.GasPrice().Uint64(),
 		InputData:   inputData,
-		Status:      int(receipt.Status),
-		CreatedAt:   time.Now(), // We don't have the exact time from RPC
+		Status:      status,
+		CreatedAt:   time.Now(),
 	}, nil
 }
 
@@ -215,7 +230,10 @@ type ReceiptResult struct {
 	Err     error
 }
 
-// FetchReceiptsBatch fetches transaction receipts in parallel with rate limiting
+// FetchReceiptsBatch fetches transaction receipts in parallel with rate limiting.
+// Individual receipt failures are logged and skipped rather than failing the entire batch.
+// This handles RPC nodes (e.g. op-reth) that return errors for receipt queries due to
+// missing L1 block info or other node-specific issues.
 func (c *Client) FetchReceiptsBatch(ctx context.Context, txHashes []common.Hash, workers int, rateLimit int) (map[common.Hash]*types.Receipt, error) {
 	if len(txHashes) == 0 {
 		return make(map[common.Hash]*types.Receipt), nil
@@ -226,6 +244,7 @@ func (c *Client) FetchReceiptsBatch(ctx context.Context, txHashes []common.Hash,
 
 	results := make(map[common.Hash]*types.Receipt)
 	var mu sync.Mutex
+	var failCount int
 
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(workers)
@@ -235,12 +254,17 @@ func (c *Client) FetchReceiptsBatch(ctx context.Context, txHashes []common.Hash,
 		g.Go(func() error {
 			// Wait for rate limiter
 			if err := limiter.Wait(ctx); err != nil {
-				return err
+				return err // context cancellation is fatal
 			}
 
 			receipt, err := c.eth.TransactionReceipt(ctx, hash)
 			if err != nil {
-				return err
+				mu.Lock()
+				failCount++
+				mu.Unlock()
+				log.Warn("failed to fetch receipt, tx will be indexed without receipt data",
+					"tx", hash.Hex(), "error", err)
+				return nil // skip this receipt, don't fail the batch
 			}
 
 			mu.Lock()
@@ -252,6 +276,11 @@ func (c *Client) FetchReceiptsBatch(ctx context.Context, txHashes []common.Hash,
 
 	if err := g.Wait(); err != nil {
 		return nil, err
+	}
+
+	if failCount > 0 {
+		log.Warn("some receipts could not be fetched",
+			"failed", failCount, "total", len(txHashes))
 	}
 
 	return results, nil
