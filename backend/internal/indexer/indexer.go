@@ -705,11 +705,7 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 
 	// 4. Process all transactions and receipts
 	for idx, rawTx := range rawTxs {
-		receipt, ok := receipts[rawTx.Hash]
-		if !ok {
-			log.Warn("missing receipt for tx", "tx", rawTx.Hash.Hex())
-			continue
-		}
+		receipt := receipts[rawTx.Hash] // nil if receipt was unavailable
 
 		// From is always present in JSON-RPC response (computed by the node)
 		from := rawTx.From.Hex()
@@ -758,10 +754,20 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 			maxPriorityFeePerGas = &mpfpg
 		}
 
+		// Use receipt data when available, fall back to tx-only data otherwise
+		var gasUsed uint64
+		var status int
 		var txError *string
-		if receipt.Status == 0 {
-			errMsg := "transaction reverted"
-			txError = &errMsg
+		if receipt != nil {
+			gasUsed = receipt.GasUsed
+			status = int(receipt.Status)
+			if receipt.Status == 0 {
+				errMsg := "transaction reverted"
+				txError = &errMsg
+			}
+		} else {
+			gasUsed = gasLimit
+			status = 1
 		}
 
 		// Add transaction
@@ -772,7 +778,7 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 			From:                 from,
 			To:                   to,
 			Value:                types.JSONString(value),
-			GasUsed:              receipt.GasUsed,
+			GasUsed:              gasUsed,
 			GasPrice:             gasPrice,
 			GasLimit:             &gasLimit,
 			MaxFeePerGas:         maxFeePerGas,
@@ -780,7 +786,7 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 			Nonce:                &nonce,
 			TxType:               txType,
 			InputData:            inputData,
-			Status:               int(receipt.Status),
+			Status:               status,
 			Error:                txError,
 		})
 
@@ -793,8 +799,8 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 			i.updateAddressStatsDelta(blockData.AddressStats, *to, blockNumber, isContract)
 		}
 
-		// Check for contract creation
-		if rawTx.To == nil && receipt.ContractAddress != (common.Address{}) {
+		// Check for contract creation (requires receipt for contract address)
+		if receipt != nil && rawTx.To == nil && receipt.ContractAddress != (common.Address{}) {
 			contractAddr := receipt.ContractAddress.Hex()
 			code, err := i.rpc.GetCode(ctx, receipt.ContractAddress)
 			if err == nil && len(code) > 0 {
@@ -813,7 +819,10 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 			}
 		}
 
-		// Process logs (identical to non-raw path — receipts are the same)
+		// Process logs (requires receipt)
+		if receipt == nil {
+			continue
+		}
 		for _, logEntry := range receipt.Logs {
 			var topic0, topic1, topic2, topic3 *string
 			if len(logEntry.Topics) > 0 {
@@ -1080,11 +1089,7 @@ func (i *Indexer) processBlockParallel(ctx context.Context, block *ethtypes.Bloc
 
 	// 4. Process all transactions and receipts
 	for idx, tx := range txs {
-		receipt, ok := receipts[tx.Hash()]
-		if !ok {
-			log.Warn("missing receipt for tx", "tx", tx.Hash().Hex())
-			continue
-		}
+		receipt := receipts[tx.Hash()] // nil if receipt was unavailable
 
 		// Get sender using pre-fetched signer
 		from, err := ethtypes.Sender(signer, tx)
@@ -1121,10 +1126,23 @@ func (i *Indexer) processBlockParallel(ctx context.Context, block *ethtypes.Bloc
 			}
 		}
 
+		// Use receipt data when available, fall back to tx-only data otherwise.
+		// Receipt may be unavailable when the RPC node (e.g. op-reth) fails to
+		// compute L1 fee fields due to missing L1 block info deposit transactions.
+		var gasUsed uint64
+		var status int
 		var txError *string
-		if receipt.Status == 0 {
-			errMsg := "transaction reverted"
-			txError = &errMsg
+		if receipt != nil {
+			gasUsed = receipt.GasUsed
+			status = int(receipt.Status)
+			if receipt.Status == 0 {
+				errMsg := "transaction reverted"
+				txError = &errMsg
+			}
+		} else {
+			// No receipt: assume success, use gas limit as estimate
+			gasUsed = gasLimit
+			status = 1
 		}
 
 		// Add transaction
@@ -1135,7 +1153,7 @@ func (i *Indexer) processBlockParallel(ctx context.Context, block *ethtypes.Bloc
 			From:                 from.Hex(),
 			To:                   to,
 			Value:                types.JSONString(tx.Value().String()),
-			GasUsed:              receipt.GasUsed,
+			GasUsed:              gasUsed,
 			GasPrice:             tx.GasPrice().Uint64(),
 			GasLimit:             &gasLimit,
 			MaxFeePerGas:         maxFeePerGas,
@@ -1143,7 +1161,7 @@ func (i *Indexer) processBlockParallel(ctx context.Context, block *ethtypes.Bloc
 			Nonce:                &nonce,
 			TxType:               txType,
 			InputData:            inputData,
-			Status:               int(receipt.Status),
+			Status:               status,
 			Error:                txError,
 		})
 
@@ -1156,8 +1174,8 @@ func (i *Indexer) processBlockParallel(ctx context.Context, block *ethtypes.Bloc
 			i.updateAddressStatsDelta(blockData.AddressStats, *to, blockNumber, isContract)
 		}
 
-		// Check for contract creation
-		if tx.To() == nil && receipt.ContractAddress != (common.Address{}) {
+		// Check for contract creation (requires receipt for contract address)
+		if receipt != nil && tx.To() == nil && receipt.ContractAddress != (common.Address{}) {
 			contractAddr := receipt.ContractAddress.Hex()
 			code, err := i.rpc.GetCode(ctx, receipt.ContractAddress)
 			if err == nil && len(code) > 0 {
@@ -1176,7 +1194,10 @@ func (i *Indexer) processBlockParallel(ctx context.Context, block *ethtypes.Bloc
 			}
 		}
 
-		// Process logs
+		// Process logs (requires receipt)
+		if receipt == nil {
+			continue
+		}
 		for _, logEntry := range receipt.Logs {
 			var topic0, topic1, topic2, topic3 *string
 			if len(logEntry.Topics) > 0 {
@@ -1407,7 +1428,9 @@ func (i *Indexer) updateAddressStatsDeltaInternal(stats map[string]*db.AddressSt
 func (i *Indexer) processTransaction(ctx context.Context, tx *ethtypes.Transaction, block *ethtypes.Block, idx int) error {
 	receipt, err := i.rpc.TransactionReceipt(ctx, tx.Hash())
 	if err != nil {
-		return err
+		log.Warn("failed to fetch receipt, indexing tx without receipt data",
+			"tx", tx.Hash().Hex(), "error", err)
+		// Continue without receipt — we can still index the transaction
 	}
 
 	from, err := ethtypes.Sender(ethtypes.LatestSignerForChainID(tx.ChainId()), tx)
@@ -1445,14 +1468,20 @@ func (i *Indexer) processTransaction(ctx context.Context, tx *ethtypes.Transacti
 		}
 	}
 
-	// Check for errors and revert reasons
+	// Use receipt data when available, fall back to tx-only data otherwise
+	var gasUsed uint64
+	var status int
 	var txError, revertReason *string
-	if receipt.Status == 0 {
-		// Transaction failed - try to get revert reason
-		errMsg := "transaction reverted"
-		txError = &errMsg
-		// Note: Getting revert reason requires calling the transaction again
-		// which can be expensive, so we leave it for future enhancement
+	if receipt != nil {
+		gasUsed = receipt.GasUsed
+		status = int(receipt.Status)
+		if receipt.Status == 0 {
+			errMsg := "transaction reverted"
+			txError = &errMsg
+		}
+	} else {
+		gasUsed = gasLimit
+		status = 1
 	}
 
 	t := &types.Transaction{
@@ -1462,7 +1491,7 @@ func (i *Indexer) processTransaction(ctx context.Context, tx *ethtypes.Transacti
 		From:                 from.Hex(),
 		To:                   to,
 		Value:                types.JSONString(tx.Value().String()),
-		GasUsed:              receipt.GasUsed,
+		GasUsed:              gasUsed,
 		GasPrice:             tx.GasPrice().Uint64(),
 		GasLimit:             &gasLimit,
 		MaxFeePerGas:         maxFeePerGas,
@@ -1470,7 +1499,7 @@ func (i *Indexer) processTransaction(ctx context.Context, tx *ethtypes.Transacti
 		Nonce:                &nonce,
 		TxType:               txType,
 		InputData:            inputData,
-		Status:               int(receipt.Status),
+		Status:               status,
 		Error:                txError,
 		RevertReason:         revertReason,
 	}
@@ -1479,8 +1508,8 @@ func (i *Indexer) processTransaction(ctx context.Context, tx *ethtypes.Transacti
 		return err
 	}
 
-	// Check for contract creation
-	isContractCreation := tx.To() == nil && receipt.ContractAddress != (common.Address{})
+	// Check for contract creation (requires receipt for contract address)
+	isContractCreation := receipt != nil && tx.To() == nil && receipt.ContractAddress != (common.Address{})
 	if isContractCreation {
 		contractAddr := receipt.ContractAddress.Hex()
 		// Fetch deployed bytecode
