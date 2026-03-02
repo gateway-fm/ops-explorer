@@ -8,70 +8,58 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Config holds all configuration for the explorer backend
 type Config struct {
-	// Core settings
 	RPCURL       string        `mapstructure:"rpc_url"`
 	DatabaseURL  string        `mapstructure:"database_url"`
 	APIPort      int           `mapstructure:"api_port"`
 	PollInterval time.Duration `mapstructure:"poll_interval"`
 	StartBlock   uint64        `mapstructure:"start_block"`
 
-	// Parallelization settings
-	RPCWorkers           int  `mapstructure:"rpc_workers"`            // Number of concurrent RPC workers
-	RPCRateLimit         int  `mapstructure:"rpc_rate_limit"`         // Max RPC requests per second
-	DBBatchSize          int  `mapstructure:"db_batch_size"`          // Max items per DB batch insert
-	TokenMetadataWorkers int  `mapstructure:"token_metadata_workers"` // Workers for token metadata fetching
-	BalanceWorkers       int  `mapstructure:"balance_workers"`        // Workers for async balance tracking
-	EnableAsyncBalance   bool `mapstructure:"enable_async_balance"`   // Enable async balance tracking
+	RPCWorkers           int  `mapstructure:"rpc_workers"`
+	RPCRateLimit         int  `mapstructure:"rpc_rate_limit"`
+	DBBatchSize          int  `mapstructure:"db_batch_size"`
+	TokenMetadataWorkers int  `mapstructure:"token_metadata_workers"`
+	BalanceWorkers       int  `mapstructure:"balance_workers"`
+	EnableAsyncBalance   bool `mapstructure:"enable_async_balance"`
 
-	// Tracing settings
-	EnableTracing  bool `mapstructure:"enable_tracing"`   // Enable internal transaction tracing
-	TraceRateLimit int  `mapstructure:"trace_rate_limit"` // Max trace RPC calls per second
-	TraceWorkers   int  `mapstructure:"trace_workers"`    // Parallel workers for tracing
+	EnableTracing  bool `mapstructure:"enable_tracing"`
+	TraceRateLimit int  `mapstructure:"trace_rate_limit"`
+	TraceWorkers   int  `mapstructure:"trace_workers"`
 
-	// WebSocket settings
-	WSMaxConnections int           `mapstructure:"ws_max_connections"` // Max WebSocket connections
-	WSPingInterval   time.Duration `mapstructure:"ws_ping_interval"`   // WebSocket ping interval
+	WSMaxConnections int           `mapstructure:"ws_max_connections"`
+	WSPingInterval   time.Duration `mapstructure:"ws_ping_interval"`
 
-	// Verification settings
-	SolcPath            string `mapstructure:"solc_path"`             // Path to solc binaries
-	UseSourcifyFallback bool   `mapstructure:"use_sourcify_fallback"` // Try Sourcify first for public chains
+	SolcPath            string `mapstructure:"solc_path"`
+	UseSourcifyFallback bool   `mapstructure:"use_sourcify_fallback"`
 
-	// Metrics settings
-	MetricsEnabled bool `mapstructure:"metrics_enabled"` // Enable Prometheus metrics
+	MetricsEnabled bool `mapstructure:"metrics_enabled"`
 
-	// Catchup mode settings
-	CatchupEnabled   bool `mapstructure:"catchup_enabled"`    // Enable catchup mode for faster historical indexing
-	CatchupWorkers   int  `mapstructure:"catchup_workers"`    // Number of parallel block processing workers
-	CatchupBatchSize int  `mapstructure:"catchup_batch_size"` // Number of blocks to process in each batch
-	CatchupQueueSize int  `mapstructure:"catchup_queue_size"` // Size of the catchup work queue
+	CatchupEnabled   bool `mapstructure:"catchup_enabled"`
+	CatchupWorkers   int  `mapstructure:"catchup_workers"`
+	CatchupBatchSize int  `mapstructure:"catchup_batch_size"`
+	CatchupQueueSize int  `mapstructure:"catchup_queue_size"`
 
-	// Privacy settings (opt-in: PrivacyEnabled must be true AND PrivacyProxyURL must be set)
-	PrivacyEnabled  bool   `mapstructure:"privacy_enabled"`   // Master toggle for all privacy features
-	PrivacyProxyURL string `mapstructure:"privacy_proxy_url"` // URL of the privacy-proxy service
-	SSOClientID     string `mapstructure:"sso_client_id"`     // OAuth client ID for SSO
-	SSORedirectURI  string `mapstructure:"sso_redirect_uri"`  // OAuth redirect URI for SSO callback
+	// PrivacyEnabled AND PrivacyProxyURL must both be set to enable privacy features
+	PrivacyEnabled  bool   `mapstructure:"privacy_enabled"`
+	PrivacyProxyURL string `mapstructure:"privacy_proxy_url"`
+	SSOClientID     string `mapstructure:"sso_client_id"`
+	SSORedirectURI  string `mapstructure:"sso_redirect_uri"`
 
-	// OP Stack deposit transaction settings
-	EnableOPDeposits      bool          `mapstructure:"enable_op_deposits"`       // Enable OP Stack deposit tx support
-	L1RPCURL              string        `mapstructure:"l1_rpc_url"`              // L1 RPC URL for deposit event fetching
-	OptimismPortalAddress string        `mapstructure:"optimism_portal_address"` // OptimismPortal contract address on L1
-	L1DepositPollInterval time.Duration `mapstructure:"l1_deposit_poll_interval"` // L1 polling interval
-	L1DepositBatchSize    int           `mapstructure:"l1_deposit_batch_size"`    // L1 log fetch batch size
-	L1DepositStartBlock   uint64        `mapstructure:"l1_deposit_start_block"`   // L1 start block (0 = auto-detect)
+	EnableOPDeposits      bool          `mapstructure:"enable_op_deposits"`
+	L1RPCURL              string        `mapstructure:"l1_rpc_url"`
+	OptimismPortalAddress string        `mapstructure:"optimism_portal_address"`
+	L1DepositPollInterval time.Duration `mapstructure:"l1_deposit_poll_interval"`
+	L1DepositBatchSize    int           `mapstructure:"l1_deposit_batch_size"`
+	L1DepositStartBlock   uint64        `mapstructure:"l1_deposit_start_block"`
 }
 
-// setDefaults sets all default values for configuration
 func setDefaults(v *viper.Viper) {
-	// Core settings
 	v.SetDefault("rpc_url", "http://127.0.0.1:8545")
 	v.SetDefault("database_url", "postgres://postgres:postgres@localhost:5432/explorer?sslmode=disable")
 	v.SetDefault("api_port", 8080)
 	v.SetDefault("poll_interval", "2s")
 	v.SetDefault("start_block", 0)
 
-	// Parallelization settings
 	v.SetDefault("rpc_workers", 50)
 	v.SetDefault("rpc_rate_limit", 500)
 	v.SetDefault("db_batch_size", 500)
@@ -79,35 +67,28 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("balance_workers", 30)
 	v.SetDefault("enable_async_balance", true)
 
-	// Tracing settings
 	v.SetDefault("enable_tracing", false)
 	v.SetDefault("trace_rate_limit", 50)
 	v.SetDefault("trace_workers", 10)
 
-	// WebSocket settings
 	v.SetDefault("ws_max_connections", 10000)
 	v.SetDefault("ws_ping_interval", "30s")
 
-	// Verification settings
 	v.SetDefault("solc_path", "/opt/solc")
 	v.SetDefault("use_sourcify_fallback", true)
 
-	// Metrics settings
 	v.SetDefault("metrics_enabled", true)
 
-	// Catchup mode settings
 	v.SetDefault("catchup_enabled", true)
 	v.SetDefault("catchup_workers", 10)
 	v.SetDefault("catchup_batch_size", 100)
 	v.SetDefault("catchup_queue_size", 1000)
 
-	// Privacy settings (disabled by default)
 	v.SetDefault("privacy_enabled", false)
 	v.SetDefault("privacy_proxy_url", "")
 	v.SetDefault("sso_client_id", "explorer")
 	v.SetDefault("sso_redirect_uri", "http://localhost:8080/api/auth/callback")
 
-	// OP Stack deposit settings (disabled by default)
 	v.SetDefault("enable_op_deposits", false)
 	v.SetDefault("l1_rpc_url", "")
 	v.SetDefault("optimism_portal_address", "")
@@ -116,39 +97,27 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("l1_deposit_start_block", 0)
 }
 
-// Load loads configuration from environment variables with defaults
-// Priority: Environment variables > .env file > defaults
 func Load() (*Config, error) {
 	v := viper.New()
-
-	// Set defaults first
 	setDefaults(v)
 
-	// Configure environment variable reading
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
-	// Try to read from .env file (optional)
 	v.SetConfigName(".env")
 	v.SetConfigType("env")
 	v.AddConfigPath(".")
 	v.AddConfigPath("./backend")
 	v.AddConfigPath("..")
-
-	// Read config file if it exists (ignore error if not found)
 	_ = v.ReadInConfig()
 
-	// Create config struct
 	cfg := &Config{}
-
-	// Manually bind each config value to handle type conversions properly
 	cfg.RPCURL = v.GetString("rpc_url")
 	cfg.DatabaseURL = v.GetString("database_url")
 	cfg.APIPort = v.GetInt("api_port")
 	cfg.PollInterval = v.GetDuration("poll_interval")
 	cfg.StartBlock = v.GetUint64("start_block")
 
-	// Parallelization settings
 	cfg.RPCWorkers = v.GetInt("rpc_workers")
 	cfg.RPCRateLimit = v.GetInt("rpc_rate_limit")
 	cfg.DBBatchSize = v.GetInt("db_batch_size")
@@ -156,35 +125,28 @@ func Load() (*Config, error) {
 	cfg.BalanceWorkers = v.GetInt("balance_workers")
 	cfg.EnableAsyncBalance = v.GetBool("enable_async_balance")
 
-	// Tracing settings
 	cfg.EnableTracing = v.GetBool("enable_tracing")
 	cfg.TraceRateLimit = v.GetInt("trace_rate_limit")
 	cfg.TraceWorkers = v.GetInt("trace_workers")
 
-	// WebSocket settings
 	cfg.WSMaxConnections = v.GetInt("ws_max_connections")
 	cfg.WSPingInterval = v.GetDuration("ws_ping_interval")
 
-	// Verification settings
 	cfg.SolcPath = v.GetString("solc_path")
 	cfg.UseSourcifyFallback = v.GetBool("use_sourcify_fallback")
 
-	// Metrics settings
 	cfg.MetricsEnabled = v.GetBool("metrics_enabled")
 
-	// Catchup mode settings
 	cfg.CatchupEnabled = v.GetBool("catchup_enabled")
 	cfg.CatchupWorkers = v.GetInt("catchup_workers")
 	cfg.CatchupBatchSize = v.GetInt("catchup_batch_size")
 	cfg.CatchupQueueSize = v.GetInt("catchup_queue_size")
 
-	// Privacy settings
 	cfg.PrivacyEnabled = v.GetBool("privacy_enabled")
 	cfg.PrivacyProxyURL = v.GetString("privacy_proxy_url")
 	cfg.SSOClientID = v.GetString("sso_client_id")
 	cfg.SSORedirectURI = v.GetString("sso_redirect_uri")
 
-	// OP Stack deposit settings
 	cfg.EnableOPDeposits = v.GetBool("enable_op_deposits")
 	cfg.L1RPCURL = v.GetString("l1_rpc_url")
 	cfg.OptimismPortalAddress = v.GetString("optimism_portal_address")
@@ -192,7 +154,6 @@ func Load() (*Config, error) {
 	cfg.L1DepositBatchSize = v.GetInt("l1_deposit_batch_size")
 	cfg.L1DepositStartBlock = v.GetUint64("l1_deposit_start_block")
 
-	// Validate required fields
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -200,7 +161,6 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
-// Validate validates the configuration
 func (c *Config) Validate() error {
 	if c.RPCURL == "" {
 		return fmt.Errorf("RPC_URL is required")
@@ -228,10 +188,7 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// String returns a string representation of the config (for logging)
-// Sensitive values are masked
 func (c *Config) String() string {
-	// Mask database URL password
 	maskedDBURL := maskDatabasePassword(c.DatabaseURL)
 
 	return fmt.Sprintf(`Config{
@@ -290,9 +247,7 @@ func (c *Config) String() string {
 	)
 }
 
-// maskDatabasePassword masks the password in a database URL
 func maskDatabasePassword(url string) string {
-	// Find password between :// and @
 	start := strings.Index(url, "://")
 	if start == -1 {
 		return url
@@ -302,13 +257,11 @@ func maskDatabasePassword(url string) string {
 		return url
 	}
 
-	// Find the colon after the username
 	userPassPart := url[start+3 : start+atSign]
 	colonPos := strings.Index(userPassPart, ":")
 	if colonPos == -1 {
 		return url
 	}
 
-	// Mask the password
 	return url[:start+3+colonPos+1] + "****" + url[start+atSign:]
 }

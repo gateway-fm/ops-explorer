@@ -7,7 +7,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// BlockRange represents a range of block numbers
 type BlockRange struct {
 	ID         int
 	FromNumber uint64
@@ -15,7 +14,6 @@ type BlockRange struct {
 	CreatedAt  time.Time
 }
 
-// IndexerProgress tracks the scanning boundaries
 type IndexerProgress struct {
 	ID               int
 	MinFetchedBlock  uint64
@@ -24,7 +22,6 @@ type IndexerProgress struct {
 	UpdatedAt        time.Time
 }
 
-// GetIndexerProgress returns the current indexer scanning progress
 func (d *DB) GetIndexerProgress(ctx context.Context) (*IndexerProgress, error) {
 	var p IndexerProgress
 	err := d.pool.QueryRow(ctx, `
@@ -37,7 +34,6 @@ func (d *DB) GetIndexerProgress(ctx context.Context) (*IndexerProgress, error) {
 	return &p, err
 }
 
-// UpdateIndexerProgress updates the scanning boundaries
 func (d *DB) UpdateIndexerProgress(ctx context.Context, minBlock, maxBlock uint64, backfillComplete bool) error {
 	_, err := d.pool.Exec(ctx, `
 		UPDATE indexer_progress SET
@@ -50,7 +46,6 @@ func (d *DB) UpdateIndexerProgress(ctx context.Context, minBlock, maxBlock uint6
 	return err
 }
 
-// SaveMissingRanges saves a batch of missing block ranges
 func (d *DB) SaveMissingRanges(ctx context.Context, ranges []BlockRange) error {
 	if len(ranges) == 0 {
 		return nil
@@ -77,7 +72,6 @@ func (d *DB) SaveMissingRanges(ctx context.Context, ranges []BlockRange) error {
 	return nil
 }
 
-// GetMissingRangesBatch retrieves a batch of missing ranges to process
 // Returns ranges ordered by from_number descending (process newest first)
 func (d *DB) GetMissingRangesBatch(ctx context.Context, batchSize int) ([]BlockRange, error) {
 	rows, err := d.pool.Query(ctx, `
@@ -101,13 +95,11 @@ func (d *DB) GetMissingRangesBatch(ctx context.Context, batchSize int) ([]BlockR
 	return ranges, rows.Err()
 }
 
-// DeleteMissingRange removes a processed range
 func (d *DB) DeleteMissingRange(ctx context.Context, id int) error {
 	_, err := d.pool.Exec(ctx, `DELETE FROM missing_block_ranges WHERE id = $1`, id)
 	return err
 }
 
-// DeleteMissingRangeByBlock removes ranges that contain the specified block
 func (d *DB) DeleteMissingRangeByBlock(ctx context.Context, blockNumber uint64) error {
 	_, err := d.pool.Exec(ctx, `
 		DELETE FROM missing_block_ranges
@@ -115,10 +107,9 @@ func (d *DB) DeleteMissingRangeByBlock(ctx context.Context, blockNumber uint64) 
 	return err
 }
 
-// ShrinkMissingRange shrinks a range after processing some blocks
-// If a block in the middle was processed, this splits the range
+// ShrinkMissingRange shrinks a range after processing a block.
+// If the processed block is in the middle, the range is split into two.
 func (d *DB) ShrinkMissingRange(ctx context.Context, id int, processedBlock uint64) error {
-	// Get the current range
 	var fromNum, toNum uint64
 	err := d.pool.QueryRow(ctx, `
 		SELECT from_number, to_number FROM missing_block_ranges WHERE id = $1`,
@@ -127,30 +118,24 @@ func (d *DB) ShrinkMissingRange(ctx context.Context, id int, processedBlock uint
 		return err
 	}
 
-	// Delete the old range
 	_, err = d.pool.Exec(ctx, `DELETE FROM missing_block_ranges WHERE id = $1`, id)
 	if err != nil {
 		return err
 	}
 
-	// If the processed block is at the start or end, shrink the range
-	// If it's in the middle, split into two ranges
 	if processedBlock == fromNum {
-		// Shrink from start
 		if fromNum < toNum {
 			_, err = d.pool.Exec(ctx, `
 				INSERT INTO missing_block_ranges (from_number, to_number)
 				VALUES ($1, $2)`, processedBlock+1, toNum)
 		}
 	} else if processedBlock == toNum {
-		// Shrink from end
 		if fromNum < toNum {
 			_, err = d.pool.Exec(ctx, `
 				INSERT INTO missing_block_ranges (from_number, to_number)
 				VALUES ($1, $2)`, fromNum, processedBlock-1)
 		}
 	} else if processedBlock > fromNum && processedBlock < toNum {
-		// Split into two ranges
 		_, err = d.pool.Exec(ctx, `
 			INSERT INTO missing_block_ranges (from_number, to_number)
 			VALUES ($1, $2), ($3, $4)`,
@@ -159,14 +144,12 @@ func (d *DB) ShrinkMissingRange(ctx context.Context, id int, processedBlock uint
 	return err
 }
 
-// GetMissingRangesCount returns the total number of missing ranges
 func (d *DB) GetMissingRangesCount(ctx context.Context) (int64, error) {
 	var count int64
 	err := d.pool.QueryRow(ctx, `SELECT COUNT(*) FROM missing_block_ranges`).Scan(&count)
 	return count, err
 }
 
-// GetTotalMissingBlocks returns the total number of missing blocks
 func (d *DB) GetTotalMissingBlocks(ctx context.Context) (int64, error) {
 	var total *int64
 	err := d.pool.QueryRow(ctx, `
@@ -177,10 +160,7 @@ func (d *DB) GetTotalMissingBlocks(ctx context.Context) (int64, error) {
 	return *total, err
 }
 
-// FindMissingBlocksInRange scans for gaps in the blocks table within a range
-// Returns ranges of missing blocks
 func (d *DB) FindMissingBlocksInRange(ctx context.Context, fromBlock, toBlock uint64) ([]BlockRange, error) {
-	// Use a CTE to find gaps efficiently
 	rows, err := d.pool.Query(ctx, `
 		WITH block_series AS (
 			SELECT generate_series($1::bigint, $2::bigint) AS block_num
@@ -219,7 +199,6 @@ func (d *DB) FindMissingBlocksInRange(ctx context.Context, fromBlock, toBlock ui
 	return ranges, rows.Err()
 }
 
-// GetMinMaxIndexedBlocks returns the minimum and maximum block numbers in the blocks table
 func (d *DB) GetMinMaxIndexedBlocks(ctx context.Context) (min uint64, max uint64, err error) {
 	var minPtr, maxPtr *uint64
 	err = d.pool.QueryRow(ctx, `
@@ -233,20 +212,17 @@ func (d *DB) GetMinMaxIndexedBlocks(ctx context.Context) (min uint64, max uint64
 	return
 }
 
-// GetBlockCount returns the number of indexed blocks
 func (d *DB) GetBlockCount(ctx context.Context) (int64, error) {
 	var count int64
 	err := d.pool.QueryRow(ctx, `SELECT COUNT(*) FROM blocks`).Scan(&count)
 	return count, err
 }
 
-// ClearMissingRanges removes all missing range records (used when resetting)
 func (d *DB) ClearMissingRanges(ctx context.Context) error {
 	_, err := d.pool.Exec(ctx, `TRUNCATE missing_block_ranges`)
 	return err
 }
 
-// HasBlock checks if a specific block exists in the database
 func (d *DB) HasBlock(ctx context.Context, number uint64) (bool, error) {
 	var exists bool
 	err := d.pool.QueryRow(ctx, `

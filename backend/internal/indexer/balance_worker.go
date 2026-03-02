@@ -15,14 +15,12 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-// BalanceWork represents a balance tracking work item
 type BalanceWork struct {
 	Address      common.Address
 	TokenAddress common.Address
 	BlockNumber  uint64
 }
 
-// BalanceWorkerPool manages async balance tracking workers
 type BalanceWorkerPool struct {
 	db         *db.DB
 	rpc        *rpc.Client
@@ -34,7 +32,6 @@ type BalanceWorkerPool struct {
 	cancel     context.CancelFunc
 }
 
-// NewBalanceWorkerPool creates a new balance worker pool
 func NewBalanceWorkerPool(database *db.DB, rpcClient *rpc.Client, numWorkers, rateLimit int) *BalanceWorkerPool {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &BalanceWorkerPool{
@@ -48,7 +45,6 @@ func NewBalanceWorkerPool(database *db.DB, rpcClient *rpc.Client, numWorkers, ra
 	}
 }
 
-// Start launches the worker goroutines
 func (p *BalanceWorkerPool) Start() {
 	log.Info("starting balance workers", "count", p.numWorkers)
 	for i := 0; i < p.numWorkers; i++ {
@@ -57,7 +53,6 @@ func (p *BalanceWorkerPool) Start() {
 	}
 }
 
-// Stop gracefully shuts down the worker pool
 func (p *BalanceWorkerPool) Stop() {
 	log.Info("stopping balance workers")
 	p.cancel()
@@ -66,19 +61,16 @@ func (p *BalanceWorkerPool) Stop() {
 	log.Info("balance workers stopped")
 }
 
-// QueueWork adds a balance tracking request to the queue
-// Returns false if the queue is full (non-blocking)
+// QueueWork returns false if the queue is full (non-blocking).
 func (p *BalanceWorkerPool) QueueWork(work BalanceWork) bool {
 	select {
 	case p.workChan <- work:
 		return true
 	default:
-		// Queue full, drop the work item
 		return false
 	}
 }
 
-// QueueWorkBatch adds multiple balance tracking requests
 func (p *BalanceWorkerPool) QueueWorkBatch(works []BalanceWork) int {
 	queued := 0
 	for _, work := range works {
@@ -89,41 +81,34 @@ func (p *BalanceWorkerPool) QueueWorkBatch(works []BalanceWork) int {
 	return queued
 }
 
-// QueueSize returns the current number of items in the queue
 func (p *BalanceWorkerPool) QueueSize() int {
 	return len(p.workChan)
 }
 
-// worker processes balance work items
 func (p *BalanceWorkerPool) worker(id int) {
 	defer p.wg.Done()
 
-	// Batch accumulator for DB inserts
 	batch := make([]*types.Balance, 0, 100)
 
 	for {
 		select {
 		case <-p.ctx.Done():
-			// Flush remaining batch before exit
 			if len(batch) > 0 {
 				p.flushBatch(batch)
 			}
 			return
 		case work, ok := <-p.workChan:
 			if !ok {
-				// Channel closed
 				if len(batch) > 0 {
 					p.flushBatch(batch)
 				}
 				return
 			}
 
-			// Skip zero address
 			if work.Address == (common.Address{}) {
 				continue
 			}
 
-			// Fetch balance
 			balance, err := p.fetchBalance(work)
 			if err != nil {
 				continue // Skip on error
@@ -131,7 +116,6 @@ func (p *BalanceWorkerPool) worker(id int) {
 
 			batch = append(batch, balance)
 
-			// Flush batch when full
 			if len(batch) >= 100 {
 				p.flushBatch(batch)
 				batch = make([]*types.Balance, 0, 100)
@@ -140,7 +124,6 @@ func (p *BalanceWorkerPool) worker(id int) {
 	}
 }
 
-// fetchBalance queries the token balance for an address
 func (p *BalanceWorkerPool) fetchBalance(work BalanceWork) (*types.Balance, error) {
 	// balanceOf(address) = 0x70a08231
 	addrPadded := common.LeftPadBytes(work.Address.Bytes(), 32)
@@ -165,7 +148,6 @@ func (p *BalanceWorkerPool) fetchBalance(work BalanceWork) (*types.Balance, erro
 	}, nil
 }
 
-// flushBatch inserts a batch of balances into the database with retry logic
 func (p *BalanceWorkerPool) flushBatch(batch []*types.Balance) {
 	if len(batch) == 0 {
 		return

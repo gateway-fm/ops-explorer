@@ -34,7 +34,6 @@ func main() {
 		log.Fatal("failed to create rpc client", "error", err)
 	}
 
-	// Create indexer with parallelization, tracing, and catchup config
 	idxCfg := &indexer.Config{
 		RPCWorkers:           cfg.RPCWorkers,
 		RPCRateLimit:         cfg.RPCRateLimit,

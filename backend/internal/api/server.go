@@ -39,7 +39,6 @@ type Server struct {
 	router        *chi.Mux
 }
 
-// ServerConfig holds server configuration options
 type ServerConfig struct {
 	SolcPath            string
 	UseSourcifyFallback bool
@@ -59,18 +58,15 @@ func New(database *db.DB, rpcClient *rpc.Client, idx *indexer.Indexer, priceServ
 		router:        chi.NewRouter(),
 	}
 
-	// Set up metrics if enabled
 	if cfg != nil && cfg.MetricsEnabled {
 		s.metrics = NewMetrics()
 	}
 
-	// Set up WebSocket if event bus is available
 	if eventBus != nil {
 		s.wsConfig = ws.DefaultConfig()
 		s.wsHub = ws.NewHub(eventBus, s.wsConfig.MaxConnections)
 	}
 
-	// Set up verifier if solc path is provided
 	if cfg != nil && cfg.SolcPath != "" {
 		s.verifier = verifier.NewVerifier(database, rpcClient, &verifier.Config{
 			SolcPath:            cfg.SolcPath,
@@ -78,7 +74,6 @@ func New(database *db.DB, rpcClient *rpc.Client, idx *indexer.Indexer, priceServ
 		})
 	}
 
-	// Set up gas tracker
 	s.gasTracker = gas.NewTracker(database, nil)
 
 	s.setupRoutes()
@@ -90,7 +85,6 @@ func (s *Server) setupRoutes() {
 	s.router.Use(middleware.Recoverer)
 	s.router.Use(middleware.Timeout(30 * time.Second))
 
-	// Add metrics middleware if enabled
 	if s.metrics != nil {
 		s.router.Use(metricsMiddleware(s.metrics))
 	}
@@ -104,42 +98,34 @@ func (s *Server) setupRoutes() {
 	c := cors.New(corsOpts)
 	s.router.Use(c.Handler)
 
-	// Add auth refresh middleware if SSO is enabled
 	if s.ssoClient != nil && s.ssoClient.IsEnabled() {
 		s.router.Use(s.refreshAuthMiddleware)
 	}
 
-	// Health check endpoints
 	s.router.Get("/health", s.handleHealthCheck)
 	s.router.Get("/health/live", s.handleLivenessCheck)
 	s.router.Get("/health/ready", s.handleReadinessCheck)
 
-	// Metrics endpoint
 	if s.metrics != nil {
 		s.router.Handle("/metrics", s.metrics.Handler())
 	}
 
-	// WebSocket endpoint
 	if s.wsHub != nil {
 		s.router.Get("/ws", s.handleWebSocket)
 	}
 
-	// API v1 routes (current)
+	// /api and /api/v1 serve the same routes
 	s.router.Route("/api", func(r chi.Router) {
 		s.setupAPIRoutes(r)
 	})
-
-	// API v1 explicit versioning (alias to /api)
 	s.router.Route("/api/v1", func(r chi.Router) {
 		s.setupAPIRoutes(r)
 	})
 
-	// API v2 routes (with standardized cursor pagination)
 	s.router.Route("/api/v2", func(r chi.Router) {
 		s.setupAPIV2Routes(r)
 	})
 
-	// Auth routes (only if SSO is enabled)
 	if s.ssoClient != nil && s.ssoClient.IsEnabled() {
 		s.router.Route("/api/auth", func(r chi.Router) {
 			r.Post("/login", s.handleAuthLogin)
@@ -150,7 +136,6 @@ func (s *Server) setupRoutes() {
 		})
 	}
 
-	// Privacy routes (only if privacy client is enabled)
 	if s.privacyClient != nil && s.privacyClient.IsEnabled() {
 		s.router.Route("/api/privacy", func(r chi.Router) {
 			r.Get("/viewable-addresses", s.handleGetViewableAddresses)
@@ -199,7 +184,6 @@ func (s *Server) setupAPIRoutes(r chi.Router) {
 		r.Get("/sourcify/check", s.handleCheckSourcify)
 	})
 
-	// Contract verification
 	r.Post("/verify", s.handleVerifyContract)
 	r.Get("/verify/compilers", s.handleListCompilers)
 
@@ -218,15 +202,12 @@ func (s *Server) setupAPIRoutes(r chi.Router) {
 	r.Get("/accounts", s.handleGetAccounts)
 }
 
-// setupAPIV2Routes sets up API v2 routes with standardized cursor pagination
 func (s *Server) setupAPIV2Routes(r chi.Router) {
-	// V2 uses the same handlers but with cursor-based pagination responses
-	// The handlers detect v2 from the route context and adjust accordingly
+	// V2 handlers detect v2 from the route context and adjust pagination accordingly
 	s.setupAPIRoutes(r)
 }
 
 func (s *Server) Start(ctx context.Context) error {
-	// Start WebSocket hub if available
 	if s.wsHub != nil {
 		go s.wsHub.Run(ctx)
 	}

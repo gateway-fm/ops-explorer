@@ -8,7 +8,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
-// BytecodeComparison represents the result of comparing two bytecodes
 type BytecodeComparison struct {
 	MatchType        MatchType
 	OnChainHash      string
@@ -18,15 +17,11 @@ type BytecodeComparison struct {
 	MetadataStripped bool
 }
 
-// CompareBytecode compares on-chain bytecode with compiled bytecode
-// It handles metadata hash stripping and constructor arguments
 func CompareBytecode(onChain, compiled, constructorArgs string) *BytecodeComparison {
-	// Normalize bytecodes (remove 0x prefix if present)
 	onChain = strings.TrimPrefix(strings.ToLower(onChain), "0x")
 	compiled = strings.TrimPrefix(strings.ToLower(compiled), "0x")
 	constructorArgs = strings.TrimPrefix(strings.ToLower(constructorArgs), "0x")
 
-	// Remove constructor arguments from on-chain bytecode if provided
 	if constructorArgs != "" && strings.HasSuffix(onChain, constructorArgs) {
 		onChain = onChain[:len(onChain)-len(constructorArgs)]
 	}
@@ -36,7 +31,6 @@ func CompareBytecode(onChain, compiled, constructorArgs string) *BytecodeCompari
 		CompiledLength: len(compiled) / 2,
 	}
 
-	// Calculate hashes
 	if onChainBytes, err := hex.DecodeString(onChain); err == nil {
 		result.OnChainHash = common.BytesToHash(crypto.Keccak256(onChainBytes)).Hex()
 	}
@@ -44,13 +38,11 @@ func CompareBytecode(onChain, compiled, constructorArgs string) *BytecodeCompari
 		result.CompiledHash = common.BytesToHash(crypto.Keccak256(compiledBytes)).Hex()
 	}
 
-	// Exact match
 	if onChain == compiled {
 		result.MatchType = MatchTypeExact
 		return result
 	}
 
-	// Try matching with metadata stripped
 	onChainStripped := stripMetadata(onChain)
 	compiledStripped := stripMetadata(compiled)
 
@@ -60,14 +52,11 @@ func CompareBytecode(onChain, compiled, constructorArgs string) *BytecodeCompari
 		return result
 	}
 
-	// No match
 	result.MatchType = MatchTypeNone
 	return result
 }
 
-// stripMetadata removes the CBOR-encoded metadata hash from bytecode
-// The metadata is typically appended at the end of the bytecode
-// Format: 0xa264... (CBOR encoded) followed by length bytes
+// stripMetadata removes the CBOR-encoded metadata hash appended by solc at the end of bytecode.
 func stripMetadata(bytecode string) string {
 	if len(bytecode) < 86 { // Minimum length for metadata
 		return bytecode
@@ -77,7 +66,6 @@ func stripMetadata(bytecode string) string {
 	// This is the start of the metadata: a2 64 'i' 'p' 'f' 's'
 	marker := "a264697066"
 
-	// Search for the marker from the end of the bytecode
 	idx := strings.LastIndex(bytecode, marker)
 	if idx == -1 {
 		// Try older metadata format (a1 65 62 7a 7a 72 30 = 0xa165627a7a7230 for bzzr0)
@@ -86,15 +74,12 @@ func stripMetadata(bytecode string) string {
 	}
 
 	if idx == -1 {
-		// No metadata found
 		return bytecode
 	}
 
-	// Return bytecode without metadata
 	return bytecode[:idx]
 }
 
-// ExtractMetadataHash extracts the metadata hash from bytecode
 func ExtractMetadataHash(bytecode string) string {
 	bytecode = strings.TrimPrefix(strings.ToLower(bytecode), "0x")
 
@@ -102,7 +87,6 @@ func ExtractMetadataHash(bytecode string) string {
 		return ""
 	}
 
-	// Look for IPFS metadata marker
 	marker := "a264697066"
 	idx := strings.LastIndex(bytecode, marker)
 
@@ -115,7 +99,6 @@ func ExtractMetadataHash(bytecode string) string {
 		}
 	}
 
-	// Try bzzr0 format
 	marker = "a165627a7a72"
 	idx = strings.LastIndex(bytecode, marker)
 
@@ -129,7 +112,6 @@ func ExtractMetadataHash(bytecode string) string {
 	return ""
 }
 
-// BytecodeHash computes the keccak256 hash of bytecode
 func BytecodeHash(bytecode string) string {
 	bytecode = strings.TrimPrefix(bytecode, "0x")
 	bytes, err := hex.DecodeString(bytecode)
@@ -139,9 +121,7 @@ func BytecodeHash(bytecode string) string {
 	return common.BytesToHash(crypto.Keccak256(bytes)).Hex()
 }
 
-// NormalizeBytecode normalizes bytecode for comparison
 func NormalizeBytecode(bytecode string) string {
 	bytecode = strings.TrimPrefix(strings.ToLower(bytecode), "0x")
-	// Remove trailing zeros (padding)
 	return strings.TrimRight(bytecode, "0")
 }

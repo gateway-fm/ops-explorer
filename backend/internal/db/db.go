@@ -32,7 +32,6 @@ func (d *DB) Close() {
 func (d *DB) Migrate() error {
 	ctx := context.Background()
 
-	// Run migrations in order
 	migrationFiles := []string{
 		"migrations/001_schema.sql",
 		"migrations/002_missing_ranges.sql",

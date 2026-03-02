@@ -248,7 +248,6 @@ func scanTransactionsWithTimestamp(rows pgx.Rows) ([]types.Transaction, error) {
 	return txs, rows.Err()
 }
 
-// GetTransactionsWithCategories returns transactions with computed categories
 func (d *DB) GetTransactionsWithCategories(ctx context.Context, limit int, beforeBlock *uint64) ([]types.Transaction, error) {
 	var rows pgx.Rows
 	var err error
@@ -280,7 +279,6 @@ func (d *DB) GetTransactionsWithCategories(ctx context.Context, limit int, befor
 	return scanTransactionsWithCategories(rows)
 }
 
-// GetTransactionsPaginatedWithCategories returns paginated transactions with computed categories
 func (d *DB) GetTransactionsPaginatedWithCategories(ctx context.Context, page, pageSize int) ([]types.Transaction, int64, error) {
 	var total int64
 	err := d.pool.QueryRow(ctx, `SELECT COUNT(*) FROM transactions`).Scan(&total)
@@ -311,7 +309,6 @@ func (d *DB) GetTransactionsPaginatedWithCategories(ctx context.Context, page, p
 	return txs, total, err
 }
 
-// GetTransactionWithCategories returns a single transaction with computed categories
 func (d *DB) GetTransactionWithCategories(ctx context.Context, hash string) (*types.Transaction, error) {
 	var tx types.Transaction
 	var valueStr string
@@ -342,8 +339,6 @@ func (d *DB) GetTransactionWithCategories(ctx context.Context, hash string) (*ty
 		return nil, err
 	}
 	tx.Value = types.JSONString(valueStr)
-
-	// Build categories
 	tx.TxCategories = buildCategories(isCoinTransfer, isContractCall, isContractCreation, tokenTransferCount)
 	tx.TokenTransferCount = tokenTransferCount
 
@@ -365,8 +360,6 @@ func scanTransactionsWithCategories(rows pgx.Rows) ([]types.Transaction, error) 
 			return nil, err
 		}
 		tx.Value = types.JSONString(valueStr)
-
-		// Build categories
 		tx.TxCategories = buildCategories(isCoinTransfer, isContractCall, isContractCreation, tokenTransferCount)
 		tx.TokenTransferCount = tokenTransferCount
 
@@ -864,7 +857,6 @@ func (d *DB) VerifyContract(ctx context.Context, address string, name string, co
 	return err
 }
 
-// UpdateContractABI updates the ABI for a contract (manual ABI upload without full verification)
 func (d *DB) UpdateContractABI(ctx context.Context, address string, abi json.RawMessage) error {
 	_, err := d.pool.Exec(ctx, `
 		UPDATE contracts SET abi = $2
@@ -873,9 +865,7 @@ func (d *DB) UpdateContractABI(ctx context.Context, address string, abi json.Raw
 	return err
 }
 
-// SetContractABI sets the ABI for any address, creating a minimal contract record if needed
 func (d *DB) SetContractABI(ctx context.Context, address string, abi json.RawMessage) error {
-	// Try to update existing contract first
 	result, err := d.pool.Exec(ctx, `
 		UPDATE contracts SET abi = $2
 		WHERE LOWER(address) = LOWER($1)`,
@@ -884,10 +874,7 @@ func (d *DB) SetContractABI(ctx context.Context, address string, abi json.RawMes
 		return err
 	}
 
-	// If no rows updated, the contract doesn't exist - this is expected for
-	// addresses that aren't contracts but user wants to interact with ABI anyway
 	if result.RowsAffected() == 0 {
-		// Insert a minimal record for non-indexed contracts (e.g., external contracts)
 		_, err = d.pool.Exec(ctx, `
 			INSERT INTO contracts (address, bytecode, creator, creation_tx, block_number, is_verified, abi)
 			VALUES ($1, '', '', '', 0, false, $2)
@@ -1185,7 +1172,6 @@ func (d *DB) GetTransactionHistory(ctx context.Context, intervalSeconds int, lim
 func (d *DB) SearchSuggestions(ctx context.Context, query string, limit int) ([]types.SearchSuggestion, error) {
 	var suggestions []types.SearchSuggestion
 
-	// If query is numeric, search for block numbers
 	if isNumeric(query) {
 		rows, err := d.pool.Query(ctx, `
 			SELECT number FROM blocks
@@ -1212,7 +1198,6 @@ func (d *DB) SearchSuggestions(ctx context.Context, query string, limit int) ([]
 		}
 	}
 
-	// If query looks like a hash (starts with 0x), search transactions
 	if len(query) >= 2 && query[:2] == "0x" {
 		rows, err := d.pool.Query(ctx, `
 			SELECT hash FROM transactions
@@ -1239,7 +1224,6 @@ func (d *DB) SearchSuggestions(ctx context.Context, query string, limit int) ([]
 		}
 	}
 
-	// Search addresses
 	if len(query) >= 2 && query[:2] == "0x" {
 		rows, err := d.pool.Query(ctx, `
 			SELECT address, tx_count FROM address_stats
@@ -1267,7 +1251,6 @@ func (d *DB) SearchSuggestions(ctx context.Context, query string, limit int) ([]
 		}
 	}
 
-	// Search tokens by symbol or name
 	if len(query) >= 1 {
 		rows, err := d.pool.Query(ctx, `
 			SELECT address, symbol, name FROM tokens
@@ -1318,9 +1301,6 @@ func truncateHash(hash string) string {
 	return hash[:10] + "..." + hash[len(hash)-6:]
 }
 
-// Gas tracker queries
-
-// GasPercentiles holds the calculated gas percentile values
 type GasPercentiles struct {
 	SlowWei   *uint64
 	NormalWei *uint64
@@ -1328,12 +1308,9 @@ type GasPercentiles struct {
 	BaseFee   *uint64
 }
 
-// GetGasPercentiles calculates gas price percentiles from recent transactions
 func (d *DB) GetGasPercentiles(ctx context.Context, numBlocks int, slowPct, avgPct, fastPct float64) (*GasPercentiles, error) {
 	var slow, normal, fast, baseFee *uint64
 
-	// Query gas price percentiles from recent transactions
-	// First try recent blocks, then fall back to recent transactions if no data
 	query := `
 		WITH recent_txs AS (
 			SELECT t.gas_price

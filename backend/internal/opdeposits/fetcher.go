@@ -20,7 +20,6 @@ import (
 // TransactionDeposited(address indexed from, address indexed to, uint256 indexed version, bytes opaqueData)
 var transactionDepositedTopic = crypto.Keccak256Hash([]byte("TransactionDeposited(address,address,uint256,bytes)"))
 
-// FetcherConfig holds configuration for the L1 deposit fetcher.
 type FetcherConfig struct {
 	L1RPCURL              string
 	OptimismPortalAddress common.Address
@@ -30,7 +29,6 @@ type FetcherConfig struct {
 	ConfirmationBlocks    uint64 // L1 confirmation buffer (default: 12)
 }
 
-// Fetcher watches L1 for TransactionDeposited events and populates the op_deposits table.
 type Fetcher struct {
 	db     *db.DB
 	config *FetcherConfig
@@ -40,7 +38,6 @@ type Fetcher struct {
 	cancel   context.CancelFunc
 }
 
-// NewFetcher creates a new L1 deposit fetcher.
 func NewFetcher(database *db.DB, cfg *FetcherConfig) *Fetcher {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Fetcher{
@@ -51,7 +48,6 @@ func NewFetcher(database *db.DB, cfg *FetcherConfig) *Fetcher {
 	}
 }
 
-// Start begins the L1 event watching loop.
 func (f *Fetcher) Start(ctx context.Context) error {
 	client, err := ethclient.Dial(f.config.L1RPCURL)
 	if err != nil {
@@ -63,7 +59,6 @@ func (f *Fetcher) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop gracefully stops the fetcher.
 func (f *Fetcher) Stop() {
 	f.cancel()
 }
@@ -87,19 +82,16 @@ func (f *Fetcher) run(ctx context.Context) {
 }
 
 func (f *Fetcher) poll(ctx context.Context) error {
-	// Determine start block
 	fromBlock, err := f.getStartBlock(ctx)
 	if err != nil {
 		return err
 	}
 
-	// Get L1 chain head
 	l1Head, err := f.l1Client.BlockNumber(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get L1 block number: %w", err)
 	}
 
-	// Apply confirmation buffer
 	safeHead := l1Head
 	if safeHead > f.config.ConfirmationBlocks {
 		safeHead -= f.config.ConfirmationBlocks
@@ -111,7 +103,6 @@ func (f *Fetcher) poll(ctx context.Context) error {
 		return nil // Already caught up
 	}
 
-	// Process in batches
 	batchSize := uint64(f.config.BatchSize)
 	for batchStart := fromBlock; batchStart <= safeHead; batchStart += batchSize {
 		batchEnd := batchStart + batchSize - 1
@@ -139,7 +130,6 @@ func (f *Fetcher) poll(ctx context.Context) error {
 }
 
 func (f *Fetcher) getStartBlock(ctx context.Context) (uint64, error) {
-	// Check DB for last indexed L1 block
 	lastIndexed, err := f.db.GetLastIndexedL1Block(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get last indexed L1 block: %w", err)
@@ -149,12 +139,10 @@ func (f *Fetcher) getStartBlock(ctx context.Context) (uint64, error) {
 		return lastIndexed + 1, nil
 	}
 
-	// Use configured start block
 	if f.config.StartBlock > 0 {
 		return f.config.StartBlock, nil
 	}
 
-	// Default: start from current L1 head minus confirmation blocks
 	l1Head, err := f.l1Client.BlockNumber(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get L1 block number: %w", err)
@@ -185,12 +173,10 @@ func (f *Fetcher) fetchDepositEvents(ctx context.Context, fromBlock, toBlock uin
 			continue
 		}
 
-		// Parse indexed fields
 		fromAddr := common.BytesToAddress(logEntry.Topics[1].Bytes())
 		toAddr := common.BytesToAddress(logEntry.Topics[2].Bytes())
 		// version := logEntry.Topics[3] — unused but kept for documentation
 
-		// Parse opaqueData from log data
 		if len(logEntry.Data) < 64 {
 			continue
 		}
@@ -206,7 +192,6 @@ func (f *Fetcher) fetchDepositEvents(ctx context.Context, fromBlock, toBlock uin
 		}
 		opaqueData := logEntry.Data[offset+32 : offset+32+length]
 
-		// Parse opaque data fields
 		mint, value, gasLimit, isCreation, data, err := ParseOpaqueData(opaqueData)
 		if err != nil {
 			log.Warn("op_deposits: failed to parse opaque data",
@@ -215,16 +200,13 @@ func (f *Fetcher) fetchDepositEvents(ctx context.Context, fromBlock, toBlock uin
 			continue
 		}
 
-		// Compute deposit destination
 		var depositTo *common.Address
 		if !isCreation {
 			depositTo = &toAddr
 		}
 
-		// Compute source hash
 		sourceHash := ComputeSourceHash(logEntry.BlockHash, uint64(logEntry.Index))
 
-		// Compute L2 deposit tx hash
 		l2TxHash, err := ComputeL2DepositTxHash(sourceHash, fromAddr, depositTo, mint, value, gasLimit, false, data)
 		if err != nil {
 			log.Warn("op_deposits: failed to compute L2 tx hash",
@@ -233,7 +215,6 @@ func (f *Fetcher) fetchDepositEvents(ctx context.Context, fromBlock, toBlock uin
 			continue
 		}
 
-		// Get L1 block timestamp
 		l1Block, err := f.l1Client.HeaderByNumber(ctx, new(big.Int).SetUint64(logEntry.BlockNumber))
 		var l1Timestamp *uint64
 		if err == nil && l1Block != nil {

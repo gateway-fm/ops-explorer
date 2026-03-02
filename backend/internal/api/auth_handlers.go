@@ -12,20 +12,15 @@ import (
 )
 
 const (
-	// AuthCookieName is the name of the cookie that stores the JWT
-	AuthCookieName = "explorer_auth"
-	// StateCookieName is the name of the cookie that stores the OAuth state
+	AuthCookieName  = "explorer_auth"
 	StateCookieName = "explorer_oauth_state"
-	// CookieMaxAge is the max age of the auth cookie (30 minutes)
-	CookieMaxAge = 30 * 60
+	CookieMaxAge    = 30 * 60 // 30 minutes
 )
 
-// InitiateLoginRequest is the request body for POST /api/auth/login
 type InitiateLoginRequest struct {
 	ReturnURL string `json:"return_url,omitempty"`
 }
 
-// InitiateLoginResponse is the response from POST /api/auth/login
 type InitiateLoginResponse struct {
 	OAuthSessionID string      `json:"oauth_session_id"`
 	AuthSessionID  string      `json:"auth_session_id"`
@@ -33,8 +28,6 @@ type InitiateLoginResponse struct {
 	State          string      `json:"state"`
 }
 
-// handleAuthLogin initiates the SSO login flow
-// POST /api/auth/login
 func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	if s.ssoClient == nil || !s.ssoClient.IsEnabled() {
 		writeError(w, http.StatusServiceUnavailable, "SSO is not configured")
@@ -49,7 +42,6 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Generate state for CSRF protection
 	returnURL := req.ReturnURL
 	if returnURL == "" {
 		returnURL = "/"
@@ -61,7 +53,6 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Call privacy-proxy's OAuth authorize endpoint
 	authResp, err := s.ssoClient.InitiateAuthorization(r.Context(), state)
 	if err != nil {
 		log.Printf("Failed to initiate authorization: %v", err)
@@ -77,8 +68,6 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleAuthCallback handles the OAuth callback
-// GET /api/auth/callback?code=xxx&state=yyy
 func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 	if s.ssoClient == nil || !s.ssoClient.IsEnabled() {
 		writeError(w, http.StatusServiceUnavailable, "SSO is not configured")
@@ -98,14 +87,12 @@ func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate state
 	returnURL, valid := s.ssoClient.ValidateState(state)
 	if !valid {
 		writeError(w, http.StatusBadRequest, "Invalid or expired state parameter")
 		return
 	}
 
-	// Exchange code for token
 	tokenResp, err := s.ssoClient.ExchangeCode(r.Context(), code)
 	if err != nil {
 		log.Printf("Failed to exchange code: %v", err)
@@ -113,7 +100,6 @@ func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set auth cookie
 	http.SetCookie(w, &http.Cookie{
 		Name:     AuthCookieName,
 		Value:    tokenResp.AccessToken,
@@ -124,28 +110,22 @@ func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		Secure:   r.TLS != nil,
 	})
 
-	// Redirect to the original page
 	http.Redirect(w, r, returnURL, http.StatusFound)
 }
 
-// handleAuthStatus returns the current authentication status
-// GET /api/auth/status
 func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	status := auth.AuthStatus{
 		Authenticated: false,
 	}
 
-	// Check for auth cookie
 	cookie, err := r.Cookie(AuthCookieName)
 	if err != nil || cookie.Value == "" {
 		writeJSON(w, status)
 		return
 	}
 
-	// Extract claims from JWT
 	claims, err := auth.ExtractClaims(cookie.Value)
 	if err != nil {
-		// Invalid token - clear cookie
 		http.SetCookie(w, &http.Cookie{
 			Name:   AuthCookieName,
 			Value:  "",
@@ -156,9 +136,7 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if expired
 	if claims.IsExpired() {
-		// Clear expired cookie
 		http.SetCookie(w, &http.Cookie{
 			Name:   AuthCookieName,
 			Value:  "",
@@ -176,8 +154,6 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status)
 }
 
-// handleAuthLogout clears the authentication cookie
-// POST /api/auth/logout
 func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:   AuthCookieName,
@@ -189,8 +165,6 @@ func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"logged_out": true})
 }
 
-// handleAuthSessionStatus checks the status of an OAuth session
-// GET /api/auth/session/{id}/status
 func (s *Server) handleAuthSessionStatus(w http.ResponseWriter, r *http.Request) {
 	if s.ssoClient == nil || !s.ssoClient.IsEnabled() {
 		writeError(w, http.StatusServiceUnavailable, "SSO is not configured")
@@ -213,8 +187,6 @@ func (s *Server) handleAuthSessionStatus(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, status)
 }
 
-// GetAuthDID extracts the DID from the auth cookie
-// Returns empty string if not authenticated
 func (s *Server) GetAuthDID(r *http.Request) string {
 	cookie, err := r.Cookie(AuthCookieName)
 	if err != nil || cookie.Value == "" {
@@ -229,8 +201,6 @@ func (s *Server) GetAuthDID(r *http.Request) string {
 	return claims.GetDID()
 }
 
-// GetAuthToken extracts the JWT token from the auth cookie
-// Returns empty string if not authenticated
 func (s *Server) GetAuthToken(r *http.Request) string {
 	cookie, err := r.Cookie(AuthCookieName)
 	if err != nil {
@@ -239,14 +209,12 @@ func (s *Server) GetAuthToken(r *http.Request) string {
 	return cookie.Value
 }
 
-// writeError writes an error response
 func writeError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
 
-// refreshAuthMiddleware refreshes the auth cookie if it's close to expiring
 func (s *Server) refreshAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie(AuthCookieName)

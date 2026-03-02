@@ -18,13 +18,11 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 )
 
-// RealtimeConfig holds configuration for the realtime indexer
 type RealtimeConfig struct {
 	ConfirmationBlocks int           // Blocks to wait before processing (default: 1)
 	PollInterval       time.Duration // Fallback poll interval if WS fails
 }
 
-// RealtimeIndexer handles real-time block indexing using WebSocket subscriptions
 type RealtimeIndexer struct {
 	db       *db.DB
 	rpc      *rpc.Client
@@ -54,7 +52,6 @@ type RealtimeIndexer struct {
 	indexRequests chan indexRequest
 }
 
-// NewRealtimeIndexer creates a new realtime indexer
 func NewRealtimeIndexer(
 	database *db.DB,
 	rpcClient *rpc.Client,
@@ -81,26 +78,22 @@ func NewRealtimeIndexer(
 	}
 }
 
-// SetEventBus sets the event bus for publishing indexer events
 func (r *RealtimeIndexer) SetEventBus(bus *events.Bus) {
 	r.eventBus = bus
 }
 
-// SetLastProcessedBlock sets the last processed block number
 func (r *RealtimeIndexer) SetLastProcessedBlock(blockNum uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.lastProcessedBlock = blockNum
 }
 
-// GetLastProcessedBlock returns the last processed block number
 func (r *RealtimeIndexer) GetLastProcessedBlock() uint64 {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.lastProcessedBlock
 }
 
-// IndexBlock indexes a specific block on-demand and waits for completion
 func (r *RealtimeIndexer) IndexBlock(ctx context.Context, blockNumber uint64) error {
 	done := make(chan error, 1)
 	select {
@@ -117,7 +110,6 @@ func (r *RealtimeIndexer) IndexBlock(ctx context.Context, blockNumber uint64) er
 	}
 }
 
-// Start begins the realtime indexing process
 func (r *RealtimeIndexer) Start(ctx context.Context, startBlock uint64) error {
 	r.SetLastProcessedBlock(startBlock)
 
@@ -125,7 +117,6 @@ func (r *RealtimeIndexer) Start(ctx context.Context, startBlock uint64) error {
 		"from_block", startBlock,
 		"confirmation_blocks", r.config.ConfirmationBlocks)
 
-	// Try to use WebSocket subscription for new block headers
 	headers := make(chan *ethtypes.Header)
 	sub, err := r.rpc.SubscribeNewHead(ctx, headers)
 	if err != nil {
@@ -137,12 +128,10 @@ func (r *RealtimeIndexer) Start(ctx context.Context, startBlock uint64) error {
 	return r.runSubscriptionMode(ctx, headers, sub)
 }
 
-// Stop gracefully stops the realtime indexer
 func (r *RealtimeIndexer) Stop() {
 	r.cancel()
 }
 
-// runSubscriptionMode runs the indexer using WebSocket subscriptions
 func (r *RealtimeIndexer) runSubscriptionMode(ctx context.Context, headers <-chan *ethtypes.Header, sub ethereum.Subscription) error {
 	defer sub.Unsubscribe()
 
@@ -159,7 +148,6 @@ func (r *RealtimeIndexer) runSubscriptionMode(ctx context.Context, headers <-cha
 			return r.runPollingMode(ctx)
 
 		case req := <-r.indexRequests:
-			// On-demand indexing request
 			err := r.processBlock(ctx, req.blockNumber)
 			req.done <- err
 
@@ -171,10 +159,8 @@ func (r *RealtimeIndexer) runSubscriptionMode(ctx context.Context, headers <-cha
 			latestBlock := header.Number.Uint64()
 			safeBlock := latestBlock - uint64(r.config.ConfirmationBlocks)
 
-			// Process blocks up to the safe block
 			lastProcessed := r.GetLastProcessedBlock()
 			for blockNum := lastProcessed + 1; blockNum <= safeBlock; blockNum++ {
-				// Check for on-demand requests between blocks
 				select {
 				case req := <-r.indexRequests:
 					err := r.processBlock(ctx, req.blockNumber)
@@ -182,7 +168,6 @@ func (r *RealtimeIndexer) runSubscriptionMode(ctx context.Context, headers <-cha
 				default:
 				}
 
-				// Check for reorg before processing
 				if blockNum > 0 {
 					reorgDepth, err := r.detectReorg(ctx, blockNum-1)
 					if err != nil {
@@ -204,7 +189,6 @@ func (r *RealtimeIndexer) runSubscriptionMode(ctx context.Context, headers <-cha
 
 				r.SetLastProcessedBlock(blockNum)
 
-				// Update sync status every 10 blocks
 				if blockNum%10 == 0 {
 					r.db.UpdateSyncStatus(ctx, blockNum, true)
 				}
@@ -213,7 +197,7 @@ func (r *RealtimeIndexer) runSubscriptionMode(ctx context.Context, headers <-cha
 	}
 }
 
-// runPollingMode runs the indexer using polling (fallback mode)
+// runPollingMode is the fallback when WebSocket subscriptions are unavailable
 func (r *RealtimeIndexer) runPollingMode(ctx context.Context) error {
 	ticker := time.NewTicker(r.config.PollInterval)
 	defer ticker.Stop()
@@ -227,7 +211,6 @@ func (r *RealtimeIndexer) runPollingMode(ctx context.Context) error {
 			return r.ctx.Err()
 
 		case req := <-r.indexRequests:
-			// On-demand indexing request
 			err := r.processBlock(ctx, req.blockNumber)
 			req.done <- err
 
@@ -242,7 +225,6 @@ func (r *RealtimeIndexer) runPollingMode(ctx context.Context) error {
 			lastProcessed := r.GetLastProcessedBlock()
 
 			for blockNum := lastProcessed + 1; blockNum <= safeBlock; blockNum++ {
-				// Check for on-demand requests
 				select {
 				case req := <-r.indexRequests:
 					err := r.processBlock(ctx, req.blockNumber)
@@ -250,7 +232,6 @@ func (r *RealtimeIndexer) runPollingMode(ctx context.Context) error {
 				default:
 				}
 
-				// Check for reorg
 				if blockNum > 0 {
 					reorgDepth, err := r.detectReorg(ctx, blockNum-1)
 					if err != nil {
@@ -272,7 +253,6 @@ func (r *RealtimeIndexer) runPollingMode(ctx context.Context) error {
 
 				r.SetLastProcessedBlock(blockNum)
 
-				// Update sync status
 				if blockNum%10 == 0 {
 					r.db.UpdateSyncStatus(ctx, blockNum, true)
 				}
@@ -281,7 +261,6 @@ func (r *RealtimeIndexer) runPollingMode(ctx context.Context) error {
 	}
 }
 
-// processBlock processes a single block
 func (r *RealtimeIndexer) processBlock(ctx context.Context, number uint64) error {
 	// Use raw JSON-RPC path for OP Stack chains
 	if r.idxCfg.EnableOPDeposits {
@@ -302,7 +281,6 @@ func (r *RealtimeIndexer) processBlock(ctx context.Context, number uint64) error
 	return r.insertEmptyBlock(ctx, block)
 }
 
-// processBlockRaw processes a single block using raw JSON-RPC for OP Stack support
 func (r *RealtimeIndexer) processBlockRaw(ctx context.Context, number uint64) error {
 	idx := &Indexer{
 		db:               r.db,
@@ -318,7 +296,6 @@ func (r *RealtimeIndexer) processBlockRaw(ctx context.Context, number uint64) er
 	return idx.processBlockRaw(ctx, number)
 }
 
-// insertEmptyBlock inserts a block with no transactions
 func (r *RealtimeIndexer) insertEmptyBlock(ctx context.Context, block *ethtypes.Block) error {
 	var baseFeePerGas *uint64
 	if block.BaseFee() != nil {
@@ -359,7 +336,6 @@ func (r *RealtimeIndexer) insertEmptyBlock(ctx context.Context, block *ethtypes.
 		AddressStats:         make(map[string]*db.AddressStatsDelta),
 	}
 
-	// Publish new block event
 	if r.eventBus != nil {
 		r.eventBus.PublishNewBlock(b.Block)
 	}
@@ -367,9 +343,7 @@ func (r *RealtimeIndexer) insertEmptyBlock(ctx context.Context, block *ethtypes.
 	return r.db.InsertBlockDataBatch(ctx, b)
 }
 
-// processBlockWithTxs processes a block with transactions
 func (r *RealtimeIndexer) processBlockWithTxs(ctx context.Context, block *ethtypes.Block) error {
-	// Create a temporary Indexer instance to reuse processBlockParallel logic
 	idx := &Indexer{
 		db:               r.db,
 		rpc:              r.rpc,
@@ -384,7 +358,6 @@ func (r *RealtimeIndexer) processBlockWithTxs(ctx context.Context, block *ethtyp
 	return idx.processBlockParallel(ctx, block)
 }
 
-// detectReorg checks if recent blocks have been reorganized
 func (r *RealtimeIndexer) detectReorg(ctx context.Context, blockNumber uint64) (uint64, error) {
 	maxReorgCheck := uint64(10)
 	for depth := uint64(0); depth < maxReorgCheck && blockNumber > depth; depth++ {
@@ -421,7 +394,6 @@ func (r *RealtimeIndexer) detectReorg(ctx context.Context, blockNumber uint64) (
 	return 0, nil
 }
 
-// handleReorg reverts blocks from the given block number onwards
 func (r *RealtimeIndexer) handleReorg(ctx context.Context, fromBlock uint64) error {
 	log.Info("realtime: reverting blocks due to reorg", "from_block", fromBlock)
 

@@ -32,7 +32,6 @@ func New(url string) (*Client, error) {
 	return &Client{eth: eth, raw: raw}, nil
 }
 
-// Raw returns the underlying raw RPC client for trace/debug calls
 func (c *Client) Raw() *rpc.Client {
 	return c.raw
 }
@@ -73,22 +72,17 @@ func (c *Client) CallContract(ctx context.Context, to common.Address, data []byt
 	return c.eth.CallContract(ctx, msg, nil)
 }
 
-// GetTransactionByHash fetches a transaction from RPC and converts it to our type
-// Returns nil, nil if transaction not found
 func (c *Client) GetTransactionByHash(ctx context.Context, hash common.Hash) (*explorerTypes.Transaction, error) {
 	tx, isPending, err := c.eth.TransactionByHash(ctx, hash)
 	if err != nil {
 		return nil, err
 	}
 
-	// Get receipt for status and gas used (may fail on some OP Stack nodes)
 	receipt, err := c.eth.TransactionReceipt(ctx, hash)
 	if err != nil {
 		log.Warn("failed to fetch receipt for tx lookup", "tx", hash.Hex(), "error", err)
-		// Continue without receipt
 	}
 
-	// Get sender
 	chainID, err := c.eth.ChainID(ctx)
 	if err != nil {
 		return nil, err
@@ -126,7 +120,6 @@ func (c *Client) GetTransactionByHash(ctx context.Context, hash common.Hash) (*e
 		gasUsed = receipt.GasUsed
 		status = int(receipt.Status)
 	} else {
-		// Without receipt: assume success, use gas limit
 		gasUsed = tx.Gas()
 		status = 1
 	}
@@ -146,8 +139,6 @@ func (c *Client) GetTransactionByHash(ctx context.Context, hash common.Hash) (*e
 	}, nil
 }
 
-// GetBlockByNumber fetches a block from RPC and converts it to our type
-// Returns nil, nil if block not found
 func (c *Client) GetBlockByNumber(ctx context.Context, number uint64) (*explorerTypes.Block, error) {
 	block, err := c.eth.BlockByNumber(ctx, big.NewInt(int64(number)))
 	if err != nil {
@@ -166,7 +157,6 @@ func (c *Client) GetBlockByNumber(ctx context.Context, number uint64) (*explorer
 	}, nil
 }
 
-// GetBlockTransactions fetches all transactions for a block from RPC
 func (c *Client) GetBlockTransactions(ctx context.Context, number uint64) ([]*explorerTypes.Transaction, error) {
 	block, err := c.eth.BlockByNumber(ctx, big.NewInt(int64(number)))
 	if err != nil {
@@ -223,7 +213,6 @@ func (c *Client) GetBlockTransactions(ctx context.Context, number uint64) ([]*ex
 	return txs, nil
 }
 
-// ReceiptResult holds the result of a receipt fetch
 type ReceiptResult struct {
 	TxHash  common.Hash
 	Receipt *types.Receipt
@@ -239,8 +228,7 @@ func (c *Client) FetchReceiptsBatch(ctx context.Context, txHashes []common.Hash,
 		return make(map[common.Hash]*types.Receipt), nil
 	}
 
-	// Create rate limiter
-	limiter := rate.NewLimiter(rate.Limit(rateLimit), rateLimit/10+1) // burst of 10% of rate limit
+	limiter := rate.NewLimiter(rate.Limit(rateLimit), rateLimit/10+1)
 
 	results := make(map[common.Hash]*types.Receipt)
 	var mu sync.Mutex
@@ -252,9 +240,8 @@ func (c *Client) FetchReceiptsBatch(ctx context.Context, txHashes []common.Hash,
 	for _, hash := range txHashes {
 		hash := hash // capture loop variable
 		g.Go(func() error {
-			// Wait for rate limiter
 			if err := limiter.Wait(ctx); err != nil {
-				return err // context cancellation is fatal
+				return err
 			}
 
 			receipt, err := c.eth.TransactionReceipt(ctx, hash)
@@ -264,7 +251,7 @@ func (c *Client) FetchReceiptsBatch(ctx context.Context, txHashes []common.Hash,
 				mu.Unlock()
 				log.Warn("failed to fetch receipt, tx will be indexed without receipt data",
 					"tx", hash.Hex(), "error", err)
-				return nil // skip this receipt, don't fail the batch
+				return nil
 			}
 
 			mu.Lock()
@@ -286,7 +273,6 @@ func (c *Client) FetchReceiptsBatch(ctx context.Context, txHashes []common.Hash,
 	return results, nil
 }
 
-// TokenMetadataResult holds the result of a token metadata fetch
 type TokenMetadataResult struct {
 	Address  common.Address
 	Symbol   string
@@ -295,13 +281,11 @@ type TokenMetadataResult struct {
 	Err      error
 }
 
-// FetchTokenMetadataBatch fetches token metadata in parallel with rate limiting
 func (c *Client) FetchTokenMetadataBatch(ctx context.Context, addresses []common.Address, workers int, rateLimit int) (map[common.Address]*TokenMetadataResult, error) {
 	if len(addresses) == 0 {
 		return make(map[common.Address]*TokenMetadataResult), nil
 	}
 
-	// Create rate limiter (3 calls per token: symbol, name, decimals)
 	limiter := rate.NewLimiter(rate.Limit(rateLimit), rateLimit/10+1)
 
 	results := make(map[common.Address]*TokenMetadataResult)
@@ -373,12 +357,9 @@ func (c *Client) FetchTokenMetadataBatch(ctx context.Context, addresses []common
 	return results, nil
 }
 
-// parseStringResult parses a string from Solidity ABI-encoded data
 func parseStringResult(data []byte) string {
 	if len(data) < 64 {
-		// Try to parse as raw bytes (non-standard tokens)
 		result := string(data)
-		// Remove null bytes
 		for i := 0; i < len(result); i++ {
 			if result[i] == 0 {
 				return result[:i]
@@ -387,7 +368,6 @@ func parseStringResult(data []byte) string {
 		return result
 	}
 
-	// ABI-encoded string: offset (32 bytes) + length (32 bytes) + data
 	offset := new(big.Int).SetBytes(data[:32]).Uint64()
 	if offset >= uint64(len(data)) {
 		return ""
@@ -403,7 +383,6 @@ func parseStringResult(data []byte) string {
 	}
 
 	result := string(data[offset+32 : offset+32+length])
-	// Remove null bytes
 	for i := 0; i < len(result); i++ {
 		if result[i] == 0 {
 			return result[:i]
@@ -412,7 +391,6 @@ func parseStringResult(data []byte) string {
 	return result
 }
 
-// FetchBalanceBatch fetches token balances in parallel
 func (c *Client) FetchBalanceBatch(ctx context.Context, requests []BalanceRequest, workers int, rateLimit int) map[string]*big.Int {
 	if len(requests) == 0 {
 		return make(map[string]*big.Int)
@@ -455,32 +433,26 @@ func (c *Client) FetchBalanceBatch(ctx context.Context, requests []BalanceReques
 	return results
 }
 
-// BalanceRequest represents a request to fetch a token balance
 type BalanceRequest struct {
 	Address      common.Address
 	TokenAddress common.Address
 	BlockNumber  uint64
 }
 
-// SubscribeNewHead subscribes to new block headers via WebSocket
 func (c *Client) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error) {
 	return c.eth.SubscribeNewHead(ctx, ch)
 }
 
-// RawBlockResponse is the raw response from eth_getBlockByNumber with total difficulty
 type RawBlockResponse struct {
 	TotalDifficulty string `json:"totalDifficulty"`
 }
 
-// GetTotalDifficulty fetches the total difficulty for a block number
-// Returns "0" if not available (e.g., post-merge chains)
 func (c *Client) GetTotalDifficulty(ctx context.Context, blockNumber uint64) string {
 	var result RawBlockResponse
 	err := c.raw.CallContext(ctx, &result, "eth_getBlockByNumber", toHex(blockNumber), false)
 	if err != nil || result.TotalDifficulty == "" {
 		return "0"
 	}
-	// Convert hex to decimal string
 	td := new(big.Int)
 	if _, ok := td.SetString(result.TotalDifficulty, 0); !ok {
 		return "0"
@@ -488,7 +460,6 @@ func (c *Client) GetTotalDifficulty(ctx context.Context, blockNumber uint64) str
 	return td.String()
 }
 
-// toHex converts a uint64 to a hex string
 func toHex(n uint64) string {
 	return "0x" + big.NewInt(int64(n)).Text(16)
 }

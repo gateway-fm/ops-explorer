@@ -8,7 +8,6 @@ import (
 	"time"
 )
 
-// JWTClaims represents the claims in the access token from privacy-proxy
 type JWTClaims struct {
 	Subject   string `json:"sub"` // DID
 	ExpiresAt int64  `json:"exp"`
@@ -25,7 +24,6 @@ func ExtractClaims(token string) (*JWTClaims, error) {
 		return nil, fmt.Errorf("invalid JWT format")
 	}
 
-	// Decode the payload (second part)
 	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
 		// Try standard base64 with padding
@@ -43,17 +41,14 @@ func ExtractClaims(token string) (*JWTClaims, error) {
 	return &claims, nil
 }
 
-// IsExpired returns true if the token has expired
 func (c *JWTClaims) IsExpired() bool {
 	return time.Now().Unix() > c.ExpiresAt
 }
 
-// GetDID returns the DID (subject) from the claims
 func (c *JWTClaims) GetDID() string {
 	return c.Subject
 }
 
-// TimeToExpiry returns the duration until the token expires
 func (c *JWTClaims) TimeToExpiry() time.Duration {
 	return time.Until(time.Unix(c.ExpiresAt, 0))
 }

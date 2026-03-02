@@ -43,7 +43,6 @@ func (s JSONString) MarshalJSON() ([]byte, error) {
 	return []byte(`"` + escaped + `"`), nil
 }
 
-// Block represents a blockchain block
 type Block struct {
 	Number           uint64    `json:"number"`
 	Hash             string    `json:"hash"`
@@ -53,20 +52,18 @@ type Block struct {
 	GasLimit         uint64    `json:"gasLimit"`
 	BaseFeePerGas    *uint64   `json:"baseFeePerGas,omitempty"`
 	TransactionCount int       `json:"transactionCount"`
-	// Additional block fields (Blockscout parity)
 	Size             uint64    `json:"size"`
-	Difficulty       string    `json:"difficulty"`       // Stored as string for large values
-	TotalDifficulty  string    `json:"totalDifficulty"`  // Cumulative difficulty
-	Nonce            string    `json:"nonce"`            // 8-byte hex string
-	Miner            string    `json:"miner"`            // Block producer/validator address
-	ExtraData        string    `json:"extraData"`        // Arbitrary data (hex encoded)
-	StateRoot        string    `json:"stateRoot"`        // Merkle root of state trie
-	TransactionsRoot string    `json:"transactionsRoot"` // Merkle root of transactions
-	ReceiptsRoot     string    `json:"receiptsRoot"`     // Merkle root of receipts
+	Difficulty       string    `json:"difficulty"`
+	TotalDifficulty  string    `json:"totalDifficulty"`
+	Nonce            string    `json:"nonce"`
+	Miner            string    `json:"miner"`
+	ExtraData        string    `json:"extraData"`
+	StateRoot        string    `json:"stateRoot"`
+	TransactionsRoot string    `json:"transactionsRoot"`
+	ReceiptsRoot     string    `json:"receiptsRoot"`
 	CreatedAt        time.Time `json:"createdAt"`
 }
 
-// Transaction represents a blockchain transaction
 type Transaction struct {
 	Hash                  string     `json:"hash"`
 	BlockNumber           uint64     `json:"blockNumber"`
@@ -88,18 +85,16 @@ type Transaction struct {
 	Error                 *string    `json:"error,omitempty"`
 	RevertReason          *string    `json:"revertReason,omitempty"`
 	CreatedAt             time.Time  `json:"createdAt"`
-	// Computed transaction categories (coin_transfer, contract_call, contract_creation, token_transfer)
 	TxCategories          []string   `json:"txCategories,omitempty"`
 	TokenTransferCount    int        `json:"tokenTransferCount,omitempty"`
 }
 
-// Token represents an ERC20/ERC721 token
 type Token struct {
 	Address            string     `json:"address"`
 	Symbol             string     `json:"symbol"`
 	Name               *string    `json:"name,omitempty"`
 	Decimals           int        `json:"decimals"`
-	TokenType          string     `json:"tokenType"` // ERC20, ERC721, NATIVE
+	TokenType          string     `json:"tokenType"`
 	TotalSupply        *string    `json:"totalSupply,omitempty"`
 	HolderCount        int        `json:"holderCount"`
 	TransferCount      int        `json:"transferCount"`
@@ -112,7 +107,6 @@ type Token struct {
 	CreatedAt          time.Time  `json:"createdAt"`
 }
 
-// TokenTransfer represents an ERC20/ERC721 token transfer
 type TokenTransfer struct {
 	ID           int64      `json:"id"`
 	TxHash       string     `json:"txHash"`
@@ -123,13 +117,12 @@ type TokenTransfer struct {
 	Value        JSONString `json:"value"`
 	BlockNumber  uint64     `json:"blockNumber"`
 	Timestamp    *uint64    `json:"timestamp,omitempty"`
-	TransferType string     `json:"transferType"` // transfer, mint, burn, deposit, withdrawal
-	TokenType    string     `json:"tokenType"`    // ERC20, ERC721
-	TokenID      *string    `json:"tokenId,omitempty"` // For NFTs
+	TransferType string     `json:"transferType"`
+	TokenType    string     `json:"tokenType"`
+	TokenID      *string    `json:"tokenId,omitempty"`
 	IsInternal   bool       `json:"isInternal"`
 }
 
-// Balance represents a token balance at a specific block
 type Balance struct {
 	Address      string     `json:"address"`
 	TokenAddress string     `json:"tokenAddress"`
@@ -137,7 +130,6 @@ type Balance struct {
 	Balance      JSONString `json:"balance"`
 }
 
-// Counter represents a pre-computed count for an address
 type Counter struct {
 	Address     string    `json:"address"`
 	CounterType string    `json:"counterType"`
@@ -145,7 +137,6 @@ type Counter struct {
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
-// AddressStats represents statistics for an address
 type AddressStats struct {
 	Address            string    `json:"address"`
 	TxCount            int       `json:"txCount"`
@@ -157,7 +148,6 @@ type AddressStats struct {
 	UpdatedAt          time.Time `json:"updatedAt"`
 }
 
-// Contract represents a deployed smart contract
 type Contract struct {
 	Address          string          `json:"address"`
 	Bytecode         string          `json:"bytecode"`
@@ -175,7 +165,6 @@ type Contract struct {
 	CreatedAt        time.Time       `json:"createdAt"`
 }
 
-// Log represents an event log
 type Log struct {
 	ID          int64   `json:"id"`
 	TxHash      string  `json:"txHash"`
@@ -191,7 +180,6 @@ type Log struct {
 	Removed     bool    `json:"removed"`
 }
 
-// InternalTransaction represents an internal transaction from traces
 type InternalTransaction struct {
 	ID           int64      `json:"id"`
 	TxHash       string     `json:"txHash"`
@@ -204,12 +192,11 @@ type InternalTransaction struct {
 	GasUsed      *uint64    `json:"gasUsed,omitempty"`
 	Input        *string    `json:"input,omitempty"`
 	Output       *string    `json:"output,omitempty"`
-	CallType     string     `json:"callType"` // call, delegatecall, staticcall, create, create2
+	CallType     string     `json:"callType"`
 	Error        *string    `json:"error,omitempty"`
 	Timestamp    *uint64    `json:"timestamp,omitempty"`
 }
 
-// SyncStatus represents the indexer sync status
 type SyncStatus struct {
 	ID                 int64     `json:"id"`
 	LastIndexedBlock   uint64    `json:"lastIndexedBlock"`
@@ -219,7 +206,6 @@ type SyncStatus struct {
 	UpdatedAt          time.Time `json:"updatedAt"`
 }
 
-// AddressInfo combines address stats with live balance
 type AddressInfo struct {
 	Address            string     `json:"address"`
 	Balance            JSONString `json:"balance"`
@@ -229,7 +215,6 @@ type AddressInfo struct {
 	IsContract         bool       `json:"isContract"`
 }
 
-// ChainStats represents overall chain statistics
 type ChainStats struct {
 	TotalBlocks       int64   `json:"totalBlocks"`
 	TotalTransactions int64   `json:"totalTransactions"`
@@ -239,14 +224,12 @@ type ChainStats struct {
 	PrivacyEnabled    bool    `json:"privacyEnabled"`
 }
 
-// PaginatedResponse for cursor-based pagination
 type PaginatedResponse[T any] struct {
 	Data       []T     `json:"data"`
 	NextCursor *string `json:"nextCursor,omitempty"`
 	HasMore    bool    `json:"hasMore"`
 }
 
-// OffsetPaginatedResponse for offset-based pagination
 type OffsetPaginatedResponse[T any] struct {
 	Data       []T   `json:"data"`
 	Total      int64 `json:"total"`
@@ -255,7 +238,6 @@ type OffsetPaginatedResponse[T any] struct {
 	TotalPages int   `json:"totalPages"`
 }
 
-// AccountListItem for top accounts page
 type AccountListItem struct {
 	Address    string     `json:"address"`
 	Balance    JSONString `json:"balance"`
@@ -263,9 +245,8 @@ type AccountListItem struct {
 	IsContract bool       `json:"isContract"`
 }
 
-// Search types
 type SearchSuggestion struct {
-	Type  string `json:"type"`  // block, transaction, address, token
+	Type  string `json:"type"`
 	Value string `json:"value"`
 	Label string `json:"label"`
 }
@@ -275,13 +256,11 @@ type SearchSuggestionsResponse struct {
 	Suggestions []SearchSuggestion `json:"suggestions"`
 }
 
-// Transaction history data point for charts
 type TxHistoryPoint struct {
 	Timestamp uint64 `json:"timestamp"`
 	Count     int64  `json:"count"`
 }
 
-// TokenHolder represents a token holder
 type TokenHolder struct {
 	Address     string     `json:"address"`
 	Balance     JSONString `json:"balance"`
@@ -289,7 +268,6 @@ type TokenHolder struct {
 	IsContract  bool       `json:"isContract"`
 }
 
-// TransferType constants
 const (
 	TransferTypeTransfer   = "transfer"
 	TransferTypeMint       = "mint"
@@ -298,14 +276,12 @@ const (
 	TransferTypeWithdrawal = "withdrawal"
 )
 
-// TokenType constants
 const (
 	TokenTypeERC20  = "ERC20"
 	TokenTypeERC721 = "ERC721"
 	TokenTypeNative = "NATIVE"
 )
 
-// CallType constants for internal transactions
 const (
 	CallTypeCall         = "call"
 	CallTypeDelegateCall = "delegatecall"
@@ -314,20 +290,17 @@ const (
 	CallTypeCreate2      = "create2"
 )
 
-// TxCategory constants for transaction categorization
 const (
-	TxCategoryCoinTransfer      = "coin_transfer"      // Native coin was transferred (value > 0)
-	TxCategoryContractCall      = "contract_call"      // Called a contract with input data
-	TxCategoryContractCreation  = "contract_creation"  // Deployed a new contract
-	TxCategoryTokenTransfer     = "token_transfer"     // Involved ERC20/ERC721 transfers
+	TxCategoryCoinTransfer      = "coin_transfer"
+	TxCategoryContractCall      = "contract_call"
+	TxCategoryContractCreation  = "contract_creation"
+	TxCategoryTokenTransfer     = "token_transfer"
 )
 
-// TxType constants
 const (
-	TxTypeDeposit = 126 // OP Stack deposit transaction (0x7E)
+	TxTypeDeposit = 126 // 0x7E
 )
 
-// OPDeposit represents L1 metadata for an OP Stack deposit transaction
 type OPDeposit struct {
 	L2TxHash        string  `json:"l2TxHash"`
 	L1BlockNumber   uint64  `json:"l1BlockNumber"`
@@ -337,7 +310,6 @@ type OPDeposit struct {
 	CreatedAt       time.Time `json:"createdAt"`
 }
 
-// TransactionWithDeposit is a transaction with optional OP deposit metadata
 type TransactionWithDeposit struct {
 	Transaction
 	OPDeposit *OPDeposit `json:"opDeposit,omitempty"`
