@@ -7,8 +7,6 @@ RUN go mod download
 
 COPY . .
 
-# Build all binaries
-RUN CGO_ENABLED=0 GOOS=linux go build -o /explorer ./cmd/explorer
 RUN CGO_ENABLED=0 GOOS=linux go build -o /api ./cmd/api
 RUN CGO_ENABLED=0 GOOS=linux go build -o /indexer ./cmd/indexer
 
@@ -24,10 +22,7 @@ RUN mkdir -p /opt/solc && \
         chmod +x /opt/solc/solc-${version}; \
     done
 
-# Copy all binaries
-COPY --from=builder /explorer /explorer
 COPY --from=builder /api /api
 COPY --from=builder /indexer /indexer
 
-# Default to the combined explorer (for backwards compatibility)
-ENTRYPOINT ["/explorer"]
+ENTRYPOINT ["/api"]

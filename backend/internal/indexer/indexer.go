@@ -17,7 +17,6 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 )
 
-// Config holds parallelization settings for the indexer
 type Config struct {
 	RPCWorkers           int
 	RPCRateLimit         int
@@ -86,12 +85,10 @@ type Indexer struct {
 	catchupRunning bool
 }
 
-// SetEventBus sets the event bus for publishing indexer events
 func (i *Indexer) SetEventBus(bus *events.Bus) {
 	i.eventBus = bus
 }
 
-// GetCatchupProgress returns the catchup progress if catchup is running
 func (i *Indexer) GetCatchupProgress() (processed int64, total uint64, percentComplete float64, isRunning bool) {
 	if i.catchupIndexer == nil || !i.catchupRunning {
 		return 0, 0, 100, false
@@ -100,12 +97,10 @@ func (i *Indexer) GetCatchupProgress() (processed int64, total uint64, percentCo
 	return processed, total, percentComplete, true
 }
 
-// IsCatchupRunning returns true if catchup indexing is in progress
 func (i *Indexer) IsCatchupRunning() bool {
 	return i.catchupRunning
 }
 
-// GetMissingRangeProgress returns the missing range collector progress
 func (i *Indexer) GetMissingRangeProgress() (minFetched, maxFetched, chainHead uint64, backfillComplete bool, totalMissing int64) {
 	if i.missingRangeCollector == nil {
 		return 0, 0, 0, true, 0
@@ -121,7 +116,6 @@ type indexRequest struct {
 }
 
 func New(database *db.DB, rpcClient *rpc.Client, pollInterval time.Duration, startBlock uint64) *Indexer {
-	// Default config for backwards compatibility
 	return NewWithConfig(database, rpcClient, pollInterval, startBlock, &Config{
 		RPCWorkers:           50,
 		RPCRateLimit:         500,
@@ -151,7 +145,6 @@ func NewWithConfig(database *db.DB, rpcClient *rpc.Client, pollInterval time.Dur
 		contractCache: NewContractCache(),
 	}
 
-	// Initialize balance workers if async balance is enabled
 	if cfg.EnableAsyncBalance && cfg.BalanceWorkers > 0 {
 		idx.balanceWorkers = NewBalanceWorkerPool(database, rpcClient, cfg.BalanceWorkers, cfg.RPCRateLimit)
 	}
@@ -159,8 +152,8 @@ func NewWithConfig(database *db.DB, rpcClient *rpc.Client, pollInterval time.Dur
 	return idx
 }
 
-// IndexBlock indexes a specific block on-demand and waits for completion.
-// This is used by the API when a user requests data that hasn't been indexed yet.
+// IndexBlock indexes a specific block on-demand, used by the API when
+// a user requests data that hasn't been indexed yet.
 func (i *Indexer) IndexBlock(ctx context.Context, blockNumber uint64) error {
 	done := make(chan error, 1)
 	select {
@@ -183,14 +176,12 @@ func (i *Indexer) Start(ctx context.Context) error {
 		log.Error("failed to get latest indexed block", "error", err)
 	}
 
-	// Pre-load token cache from database
 	if err := i.tokenCache.LoadFromDB(ctx, i.db); err != nil {
 		log.Warn("failed to pre-load token cache", "error", err)
 	} else {
 		log.Info("loaded tokens into cache", "count", i.tokenCache.Size())
 	}
 
-	// Check tracing support if enabled
 	if i.config.EnableTracing {
 		supported, err := i.rpc.CheckTracingSupport(ctx)
 		if err != nil {
@@ -204,31 +195,26 @@ func (i *Indexer) Start(ctx context.Context) error {
 		}
 	}
 
-	// Start balance workers if enabled
 	if i.balanceWorkers != nil {
 		i.balanceWorkers.Start()
 	}
 
-	// Get latest block on chain
 	latestOnChain, err := i.rpc.BlockNumber(ctx)
 	if err != nil {
 		return err
 	}
 
-	// Get block count to determine if we have gaps
 	blockCount, err := i.db.GetBlockCount(ctx)
 	if err != nil {
 		log.Warn("failed to get block count", "error", err)
 	}
 
-	// Calculate expected blocks vs actual (to detect gaps)
 	var expectedBlocks uint64
 	if lastIndexed > i.startBlock {
 		expectedBlocks = lastIndexed - i.startBlock + 1
 	}
 	hasGaps := blockCount < int64(expectedBlocks)
 
-	// Calculate forward catchup needed
 	blocksToSync := uint64(0)
 	if latestOnChain > lastIndexed {
 		blocksToSync = latestOnChain - lastIndexed
@@ -242,32 +228,23 @@ func (i *Indexer) Start(ctx context.Context) error {
 		"has_gaps", hasGaps,
 		"blocks_behind", blocksToSync)
 
-	// Update sync status
 	i.db.UpdateSyncStatus(ctx, lastIndexed, true)
-
-	// Use catchup mode with missing range collector if:
-	// 1. CatchupEnabled is true AND
-	// 2. Either we have gaps OR we're significantly behind chain head
 	catchupThreshold := uint64(100)
 	useCatchup := i.config.CatchupEnabled && (hasGaps || blocksToSync > catchupThreshold)
 
 	if useCatchup {
-		// Start with missing range collector for intelligent backfilling
 		return i.startWithMissingRangeCollector(ctx, latestOnChain)
 	}
 
-	// Use the standard single-loop mode for small gaps
 	return i.startStandardMode(ctx, lastIndexed)
 }
 
-// startWithCatchup runs both catchup and realtime indexers in parallel
 func (i *Indexer) startWithCatchup(ctx context.Context, lastIndexed, latestOnChain uint64) error {
 	log.Info("starting catchup mode",
 		"from_block", lastIndexed+1,
 		"to_block", latestOnChain,
 		"workers", i.config.CatchupWorkers)
 
-	// Create catchup indexer
 	catchupCfg := &CatchupConfig{
 		Workers:   i.config.CatchupWorkers,
 		BatchSize: i.config.CatchupBatchSize,
@@ -281,7 +258,6 @@ func (i *Indexer) startWithCatchup(ctx context.Context, lastIndexed, latestOnCha
 	)
 	i.catchupIndexer.SetEventBus(i.eventBus)
 
-	// Create realtime indexer
 	realtimeCfg := &RealtimeConfig{
 		ConfirmationBlocks: 1,
 		PollInterval:       i.pollInterval,
@@ -294,32 +270,25 @@ func (i *Indexer) startWithCatchup(ctx context.Context, lastIndexed, latestOnCha
 	)
 	i.realtimeIndexer.SetEventBus(i.eventBus)
 
-	// Set up catchup completion callback
 	i.catchupRunning = true
 	i.catchupIndexer.SetOnComplete(func() {
 		i.catchupRunning = false
 		log.Info("catchup indexing completed, realtime indexer continues")
 	})
 
-	// Start catchup indexer (processes historical blocks)
-	// Target block is the latest on-chain when we started, minus confirmation blocks
 	targetBlock := latestOnChain - 1
 	if err := i.catchupIndexer.Start(ctx, lastIndexed+1, targetBlock); err != nil {
 		return err
 	}
 
-	// Start realtime indexer (handles new blocks)
-	// It will start from the target block and process new blocks as they come
 	go func() {
 		if err := i.realtimeIndexer.Start(ctx, targetBlock); err != nil {
 			log.Error("realtime indexer error", "error", err)
 		}
 	}()
 
-	// Wait for context cancellation
 	<-ctx.Done()
 
-	// Stop both indexers
 	if i.catchupIndexer != nil {
 		i.catchupIndexer.Stop()
 	}
@@ -333,15 +302,12 @@ func (i *Indexer) startWithCatchup(ctx context.Context, lastIndexed, latestOnCha
 	return ctx.Err()
 }
 
-// startWithMissingRangeCollector uses the Blockscout-style missing range collector
-// to discover and backfill all gaps from genesis to chain head
 func (i *Indexer) startWithMissingRangeCollector(ctx context.Context, latestOnChain uint64) error {
 	log.Info("starting with missing range collector",
 		"start_block", i.startBlock,
 		"chain_head", latestOnChain,
 		"workers", i.config.CatchupWorkers)
 
-	// Create missing range collector configuration
 	collectorCfg := &MissingRangeCollectorConfig{
 		BatchSize:            100000,                  // Scan 100k blocks at a time
 		BackwardScanInterval: 10 * time.Millisecond,  // Fast initial backward scan
@@ -350,13 +316,11 @@ func (i *Indexer) startWithMissingRangeCollector(ctx context.Context, latestOnCh
 		LastBlock:            latestOnChain,          // Scan up to current chain head
 	}
 
-	// Create and start the missing range collector
 	i.missingRangeCollector = NewMissingRangeCollector(i.db, i.rpc, collectorCfg)
 	if err := i.missingRangeCollector.Start(ctx); err != nil {
 		return err
 	}
 
-	// Create catchup indexer
 	catchupCfg := &CatchupConfig{
 		Workers:   i.config.CatchupWorkers,
 		BatchSize: i.config.CatchupBatchSize,
@@ -371,7 +335,6 @@ func (i *Indexer) startWithMissingRangeCollector(ctx context.Context, latestOnCh
 	i.catchupIndexer.SetEventBus(i.eventBus)
 	i.catchupIndexer.SetCollector(i.missingRangeCollector)
 
-	// Create realtime indexer for new blocks
 	realtimeCfg := &RealtimeConfig{
 		ConfirmationBlocks: 1,
 		PollInterval:       i.pollInterval,
@@ -384,29 +347,24 @@ func (i *Indexer) startWithMissingRangeCollector(ctx context.Context, latestOnCh
 	)
 	i.realtimeIndexer.SetEventBus(i.eventBus)
 
-	// Set up catchup completion callback
 	i.catchupRunning = true
 	i.catchupIndexer.SetOnComplete(func() {
 		i.catchupRunning = false
 		log.Info("catchup indexing completed, realtime indexer continues")
 	})
 
-	// Start catchup indexer (processes missing blocks from collector)
 	if err := i.catchupIndexer.Start(ctx, i.startBlock, latestOnChain); err != nil {
 		return err
 	}
 
-	// Start realtime indexer (handles new blocks as they arrive)
 	go func() {
 		if err := i.realtimeIndexer.Start(ctx, latestOnChain); err != nil {
 			log.Error("realtime indexer error", "error", err)
 		}
 	}()
 
-	// Wait for context cancellation
 	<-ctx.Done()
 
-	// Stop all components
 	if i.missingRangeCollector != nil {
 		i.missingRangeCollector.Stop()
 	}
@@ -423,7 +381,6 @@ func (i *Indexer) startWithMissingRangeCollector(ctx context.Context, latestOnCh
 	return ctx.Err()
 }
 
-// startStandardMode runs the original single-loop indexer mode
 func (i *Indexer) startStandardMode(ctx context.Context, lastIndexed uint64) error {
 	log.Info("starting standard mode",
 		"workers", i.config.RPCWorkers,
@@ -436,7 +393,6 @@ func (i *Indexer) startStandardMode(ctx context.Context, lastIndexed uint64) err
 	for {
 		select {
 		case <-ctx.Done():
-			// Stop balance workers gracefully
 			if i.balanceWorkers != nil {
 				i.balanceWorkers.Stop()
 			}
@@ -444,7 +400,6 @@ func (i *Indexer) startStandardMode(ctx context.Context, lastIndexed uint64) err
 			return ctx.Err()
 
 		case req := <-i.indexRequests:
-			// On-demand indexing request from API
 			err := i.processBlock(ctx, req.blockNumber)
 			req.done <- err
 
@@ -455,7 +410,6 @@ func (i *Indexer) startStandardMode(ctx context.Context, lastIndexed uint64) err
 				continue
 			}
 
-			// Check for reorg on the last indexed block before continuing
 			if lastIndexed > 0 {
 				reorgDepth, err := i.detectReorg(ctx, lastIndexed)
 				if err != nil {
@@ -471,7 +425,6 @@ func (i *Indexer) startStandardMode(ctx context.Context, lastIndexed uint64) err
 			}
 
 			for blockNum := lastIndexed + 1; blockNum <= latestOnChain; blockNum++ {
-				// Check for on-demand requests between blocks to stay responsive
 				select {
 				case req := <-i.indexRequests:
 					err := i.processBlock(ctx, req.blockNumber)
@@ -485,7 +438,6 @@ func (i *Indexer) startStandardMode(ctx context.Context, lastIndexed uint64) err
 				}
 				lastIndexed = blockNum
 
-				// Update sync status every 10 blocks
 				if blockNum%10 == 0 {
 					i.db.UpdateSyncStatus(ctx, lastIndexed, true)
 				}
@@ -494,21 +446,16 @@ func (i *Indexer) startStandardMode(ctx context.Context, lastIndexed uint64) err
 	}
 }
 
-// detectReorg checks if recent blocks have been reorganized
-// Returns the depth of the reorg (number of blocks to revert), or 0 if no reorg
 func (i *Indexer) detectReorg(ctx context.Context, blockNumber uint64) (uint64, error) {
-	// Check the last few blocks for reorg
-	maxReorgCheck := uint64(10) // Check up to 10 blocks back
+	maxReorgCheck := uint64(10)
 	for depth := uint64(0); depth < maxReorgCheck && blockNumber > depth; depth++ {
 		checkBlock := blockNumber - depth
 
-		// Get stored block
 		storedBlock, err := i.db.GetBlock(ctx, checkBlock)
 		if err != nil || storedBlock == nil {
 			continue
 		}
 
-		// Get chain block hash — use raw path when OP deposits are enabled
 		var chainHash string
 		if i.config.EnableOPDeposits {
 			chainHash, err = i.rpc.RawBlockHash(ctx, checkBlock)
@@ -523,7 +470,6 @@ func (i *Indexer) detectReorg(ctx context.Context, blockNumber uint64) (uint64, 
 			return 0, err
 		}
 
-		// Compare hashes
 		if storedBlock.Hash != chainHash {
 			log.Warn("reorg detected",
 				"block", checkBlock,
@@ -535,7 +481,6 @@ func (i *Indexer) detectReorg(ctx context.Context, blockNumber uint64) (uint64, 
 	return 0, nil
 }
 
-// handleReorg reverts blocks from the given block number onwards
 func (i *Indexer) handleReorg(ctx context.Context, fromBlock uint64) error {
 	log.Info("reverting blocks due to reorg", "from_block", fromBlock)
 
@@ -567,7 +512,6 @@ func (i *Indexer) processBlock(ctx context.Context, number uint64) error {
 		return err
 	}
 
-	// Use parallel processing for blocks with transactions
 	txCount := len(block.Transactions())
 	if txCount > 0 {
 		return i.processBlockParallel(ctx, block)
@@ -653,19 +597,16 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 	rawTxs := rawBlock.Transactions
 	blockTimestamp := uint64(rawBlock.Timestamp)
 
-	// 1. Collect all transaction hashes
 	txHashes := make([]common.Hash, len(rawTxs))
 	for idx, tx := range rawTxs {
 		txHashes[idx] = tx.Hash
 	}
 
-	// 2. Fetch all receipts in parallel (receipts work fine for type 0x7E)
 	receipts, err := i.rpc.FetchReceiptsBatch(ctx, txHashes, i.config.RPCWorkers, i.config.RPCRateLimit)
 	if err != nil {
 		return err
 	}
 
-	// 3. Build block data structure
 	blockData := &db.BlockData{
 		Block: &types.Block{
 			Number:           blockNumber,
@@ -696,14 +637,10 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 		SkipAddressStats:     i.config.SkipAddressStats,
 	}
 
-	// Track new tokens that need metadata fetching
 	newTokenAddresses := make([]common.Address, 0)
 	newTokenTxHashes := make(map[common.Address]string)
-
-	// Track balance work for async processing
 	balanceWork := make([]BalanceWork, 0)
 
-	// 4. Process all transactions and receipts
 	for idx, rawTx := range rawTxs {
 		receipt := receipts[rawTx.Hash] // nil if receipt was unavailable
 
@@ -716,7 +653,6 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 			to = &toStr
 		}
 
-		// Store full input data
 		inputData := ""
 		if len(rawTx.Input) > 0 {
 			inputData = common.Bytes2Hex(rawTx.Input)
@@ -731,13 +667,11 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 		gasLimit := uint64(rawTx.Gas)
 		txType := int(rawTx.Type)
 
-		// Gas price: nil/0 for deposit txs
 		var gasPrice uint64
 		if rawTx.GasPrice != nil {
 			gasPrice = rawTx.GasPrice.ToInt().Uint64()
 		}
 
-		// Value
 		value := "0"
 		if rawTx.Value != nil {
 			value = rawTx.Value.ToInt().String()
@@ -770,7 +704,6 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 			status = 1
 		}
 
-		// Add transaction
 		blockData.Transactions = append(blockData.Transactions, &types.Transaction{
 			Hash:                 rawTx.Hash.Hex(),
 			BlockNumber:          blockNumber,
@@ -790,16 +723,13 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 			Error:                txError,
 		})
 
-		// Update address stats for sender
 		i.updateAddressStatsDelta(blockData.AddressStats, from, blockNumber, false)
 
-		// Update address stats for recipient
 		if to != nil {
 			isContract := i.contractCache.Has(*to)
 			i.updateAddressStatsDelta(blockData.AddressStats, *to, blockNumber, isContract)
 		}
 
-		// Check for contract creation (requires receipt for contract address)
 		if receipt != nil && rawTx.To == nil && receipt.ContractAddress != (common.Address{}) {
 			contractAddr := receipt.ContractAddress.Hex()
 			code, err := i.rpc.GetCode(ctx, receipt.ContractAddress)
@@ -819,7 +749,6 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 			}
 		}
 
-		// Process logs (requires receipt)
 		if receipt == nil {
 			continue
 		}
@@ -856,7 +785,6 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 				Removed:     logEntry.Removed,
 			})
 
-			// Process token transfers
 			if len(logEntry.Topics) >= 3 && logEntry.Topics[0] == transferTopic {
 				fromAddr := common.BytesToAddress(logEntry.Topics[1].Bytes())
 				toAddr := common.BytesToAddress(logEntry.Topics[2].Bytes())
@@ -898,7 +826,6 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 					IsInternal:   false,
 				})
 
-				// Queue balance tracking
 				if fromAddr != zeroAddress {
 					balanceWork = append(balanceWork, BalanceWork{
 						Address:      fromAddr,
@@ -914,7 +841,6 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 					})
 				}
 
-				// Check if this is a new token
 				if !i.tokenCache.Has(logEntry.Address.Hex()) {
 					if _, exists := newTokenTxHashes[logEntry.Address]; !exists {
 						newTokenAddresses = append(newTokenAddresses, logEntry.Address)
@@ -922,7 +848,6 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 					}
 				}
 
-				// Update transfer counts in address stats
 				if delta, ok := blockData.AddressStats[strings.ToLower(from)]; ok {
 					delta.TokenTransferDelta++
 				}
@@ -935,7 +860,6 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 		}
 	}
 
-	// 5. Fetch internal transactions (traces) if enabled
 	if i.tracingSupported && len(txHashes) > 0 {
 		internalTxs, err := i.rpc.FetchTracesBatch(ctx, txHashes, blockNumber, blockTimestamp,
 			i.config.TraceWorkers, i.config.TraceRateLimit)
@@ -953,7 +877,6 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 		}
 	}
 
-	// 6. Fetch metadata for new tokens in parallel
 	if len(newTokenAddresses) > 0 {
 		tokenMetadata, err := i.rpc.FetchTokenMetadataBatch(ctx, newTokenAddresses, i.config.TokenMetadataWorkers, i.config.RPCRateLimit)
 		if err != nil {
@@ -978,12 +901,10 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 		}
 	}
 
-	// 7. Insert all data atomically
 	if err := i.db.InsertBlockDataBatch(ctx, blockData); err != nil {
 		return err
 	}
 
-	// 8. Queue balance work for async processing
 	if i.balanceWorkers != nil && len(balanceWork) > 0 {
 		queued := i.balanceWorkers.QueueWorkBatch(balanceWork)
 		if queued < len(balanceWork) {
@@ -991,7 +912,6 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 		}
 	}
 
-	// 9. Publish events
 	if i.eventBus != nil {
 		i.eventBus.PublishNewBlock(blockData.Block)
 		for _, tx := range blockData.Transactions {
@@ -999,7 +919,6 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 		}
 	}
 
-	// Log progress
 	elapsed := time.Since(start)
 	if blockNumber%100 == 0 || elapsed > 2*time.Second {
 		log.Info("indexed block (raw)",
@@ -1013,33 +932,28 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 	return nil
 }
 
-// processBlockParallel processes a block using parallel RPC calls and batch DB inserts
 func (i *Indexer) processBlockParallel(ctx context.Context, block *ethtypes.Block) error {
 	start := time.Now()
 	blockNumber := block.NumberU64()
 	txs := block.Transactions()
 	blockTimestamp := block.Time()
 
-	// Get chain ID for transaction signing (needed for legacy txs with chainID 0)
 	chainID, err := i.rpc.ChainID(ctx)
 	if err != nil {
 		return err
 	}
 	signer := ethtypes.LatestSignerForChainID(chainID)
 
-	// 1. Collect all transaction hashes
 	txHashes := make([]common.Hash, len(txs))
 	for idx, tx := range txs {
 		txHashes[idx] = tx.Hash()
 	}
 
-	// 2. Fetch all receipts in parallel
 	receipts, err := i.rpc.FetchReceiptsBatch(ctx, txHashes, i.config.RPCWorkers, i.config.RPCRateLimit)
 	if err != nil {
 		return err
 	}
 
-	// 3. Build block data structure
 	var baseFeePerGas *uint64
 	if block.BaseFee() != nil {
 		baseFee := block.BaseFee().Uint64()
@@ -1080,18 +994,13 @@ func (i *Indexer) processBlockParallel(ctx context.Context, block *ethtypes.Bloc
 		SkipAddressStats:     i.config.SkipAddressStats,
 	}
 
-	// Track new tokens that need metadata fetching
 	newTokenAddresses := make([]common.Address, 0)
 	newTokenTxHashes := make(map[common.Address]string)
-
-	// Track balance work for async processing
 	balanceWork := make([]BalanceWork, 0)
 
-	// 4. Process all transactions and receipts
 	for idx, tx := range txs {
 		receipt := receipts[tx.Hash()] // nil if receipt was unavailable
 
-		// Get sender using pre-fetched signer
 		from, err := ethtypes.Sender(signer, tx)
 		if err != nil {
 			log.Warn("failed to get sender for tx", "tx", tx.Hash().Hex(), "error", err)
@@ -1104,7 +1013,6 @@ func (i *Indexer) processBlockParallel(ctx context.Context, block *ethtypes.Bloc
 			to = &toStr
 		}
 
-		// Store full input data
 		inputData := ""
 		if len(tx.Data()) > 0 {
 			inputData = common.Bytes2Hex(tx.Data())
@@ -1145,7 +1053,6 @@ func (i *Indexer) processBlockParallel(ctx context.Context, block *ethtypes.Bloc
 			status = 1
 		}
 
-		// Add transaction
 		blockData.Transactions = append(blockData.Transactions, &types.Transaction{
 			Hash:                 tx.Hash().Hex(),
 			BlockNumber:          blockNumber,
@@ -1165,16 +1072,13 @@ func (i *Indexer) processBlockParallel(ctx context.Context, block *ethtypes.Bloc
 			Error:                txError,
 		})
 
-		// Update address stats for sender
 		i.updateAddressStatsDelta(blockData.AddressStats, from.Hex(), blockNumber, false)
 
-		// Update address stats for recipient
 		if to != nil {
 			isContract := i.contractCache.Has(*to)
 			i.updateAddressStatsDelta(blockData.AddressStats, *to, blockNumber, isContract)
 		}
 
-		// Check for contract creation (requires receipt for contract address)
 		if receipt != nil && tx.To() == nil && receipt.ContractAddress != (common.Address{}) {
 			contractAddr := receipt.ContractAddress.Hex()
 			code, err := i.rpc.GetCode(ctx, receipt.ContractAddress)
@@ -1194,7 +1098,6 @@ func (i *Indexer) processBlockParallel(ctx context.Context, block *ethtypes.Bloc
 			}
 		}
 
-		// Process logs (requires receipt)
 		if receipt == nil {
 			continue
 		}
@@ -1231,7 +1134,6 @@ func (i *Indexer) processBlockParallel(ctx context.Context, block *ethtypes.Bloc
 				Removed:     logEntry.Removed,
 			})
 
-			// Process token transfers
 			if len(logEntry.Topics) >= 3 && logEntry.Topics[0] == transferTopic {
 				fromAddr := common.BytesToAddress(logEntry.Topics[1].Bytes())
 				toAddr := common.BytesToAddress(logEntry.Topics[2].Bytes())
@@ -1273,7 +1175,6 @@ func (i *Indexer) processBlockParallel(ctx context.Context, block *ethtypes.Bloc
 					IsInternal:   false,
 				})
 
-				// Queue balance tracking (async if enabled)
 				if fromAddr != zeroAddress {
 					balanceWork = append(balanceWork, BalanceWork{
 						Address:      fromAddr,
@@ -1289,16 +1190,13 @@ func (i *Indexer) processBlockParallel(ctx context.Context, block *ethtypes.Bloc
 					})
 				}
 
-				// Check if this is a new token
 				if !i.tokenCache.Has(logEntry.Address.Hex()) {
-					// Check if we already queued this token in this block
 					if _, exists := newTokenTxHashes[logEntry.Address]; !exists {
 						newTokenAddresses = append(newTokenAddresses, logEntry.Address)
 						newTokenTxHashes[logEntry.Address] = tx.Hash().Hex()
 					}
 				}
 
-				// Update transfer counts in address stats
 				if delta, ok := blockData.AddressStats[strings.ToLower(from.Hex())]; ok {
 					delta.TokenTransferDelta++
 				}
@@ -1311,7 +1209,6 @@ func (i *Indexer) processBlockParallel(ctx context.Context, block *ethtypes.Bloc
 		}
 	}
 
-	// 5. Fetch internal transactions (traces) if enabled
 	if i.tracingSupported && len(txHashes) > 0 {
 		internalTxs, err := i.rpc.FetchTracesBatch(ctx, txHashes, blockNumber, blockTimestamp,
 			i.config.TraceWorkers, i.config.TraceRateLimit)
@@ -1320,7 +1217,6 @@ func (i *Indexer) processBlockParallel(ctx context.Context, block *ethtypes.Bloc
 		} else if len(internalTxs) > 0 {
 			blockData.InternalTransactions = internalTxs
 
-			// Update internal tx counts in address stats
 			for _, it := range internalTxs {
 				i.updateAddressStatsDeltaInternal(blockData.AddressStats, it.From, blockNumber)
 				if it.To != nil {
@@ -1330,7 +1226,6 @@ func (i *Indexer) processBlockParallel(ctx context.Context, block *ethtypes.Bloc
 		}
 	}
 
-	// 6. Fetch metadata for new tokens in parallel
 	if len(newTokenAddresses) > 0 {
 		tokenMetadata, err := i.rpc.FetchTokenMetadataBatch(ctx, newTokenAddresses, i.config.TokenMetadataWorkers, i.config.RPCRateLimit)
 		if err != nil {
@@ -1355,12 +1250,10 @@ func (i *Indexer) processBlockParallel(ctx context.Context, block *ethtypes.Bloc
 		}
 	}
 
-	// 7. Insert all data atomically
 	if err := i.db.InsertBlockDataBatch(ctx, blockData); err != nil {
 		return err
 	}
 
-	// 8. Queue balance work for async processing
 	if i.balanceWorkers != nil && len(balanceWork) > 0 {
 		queued := i.balanceWorkers.QueueWorkBatch(balanceWork)
 		if queued < len(balanceWork) {
@@ -1368,18 +1261,14 @@ func (i *Indexer) processBlockParallel(ctx context.Context, block *ethtypes.Bloc
 		}
 	}
 
-	// 9. Publish events to the event bus
 	if i.eventBus != nil {
-		// Publish new block event
 		i.eventBus.PublishNewBlock(blockData.Block)
 
-		// Publish new transaction events
 		for _, tx := range blockData.Transactions {
 			i.eventBus.PublishNewTransaction(tx)
 		}
 	}
 
-	// Log progress
 	elapsed := time.Since(start)
 	if blockNumber%100 == 0 || elapsed > 2*time.Second {
 		log.Info("indexed block",
@@ -1393,7 +1282,6 @@ func (i *Indexer) processBlockParallel(ctx context.Context, block *ethtypes.Bloc
 	return nil
 }
 
-// updateAddressStatsDelta updates or creates an address stats delta entry
 func (i *Indexer) updateAddressStatsDelta(stats map[string]*db.AddressStatsDelta, address string, blockNumber uint64, isContract bool) {
 	key := strings.ToLower(address)
 	if delta, ok := stats[key]; ok {
@@ -1411,7 +1299,6 @@ func (i *Indexer) updateAddressStatsDelta(stats map[string]*db.AddressStatsDelta
 	}
 }
 
-// updateAddressStatsDeltaInternal updates address stats for internal transactions
 func (i *Indexer) updateAddressStatsDeltaInternal(stats map[string]*db.AddressStatsDelta, address string, blockNumber uint64) {
 	key := strings.ToLower(address)
 	if delta, ok := stats[key]; ok {
@@ -1444,18 +1331,15 @@ func (i *Indexer) processTransaction(ctx context.Context, tx *ethtypes.Transacti
 		to = &toStr
 	}
 
-	// Store full input data
 	inputData := ""
 	if len(tx.Data()) > 0 {
 		inputData = common.Bytes2Hex(tx.Data())
 	}
 
-	// Extract additional transaction fields
 	nonce := tx.Nonce()
 	gasLimit := tx.Gas()
 	txType := int(tx.Type())
 
-	// Extract EIP-1559 fields if available
 	var maxFeePerGas, maxPriorityFeePerGas *uint64
 	if tx.Type() == ethtypes.DynamicFeeTxType {
 		if tx.GasFeeCap() != nil {
@@ -1508,16 +1392,13 @@ func (i *Indexer) processTransaction(ctx context.Context, tx *ethtypes.Transacti
 		return err
 	}
 
-	// Check for contract creation (requires receipt for contract address)
 	isContractCreation := receipt != nil && tx.To() == nil && receipt.ContractAddress != (common.Address{})
 	if isContractCreation {
 		contractAddr := receipt.ContractAddress.Hex()
-		// Fetch deployed bytecode
 		code, err := i.rpc.GetCode(ctx, receipt.ContractAddress)
 		if err != nil {
 			log.Error("failed to get contract code", "address", contractAddr, "error", err)
 		} else if len(code) > 0 {
-			// Compute bytecode hash
 			bytecodeHash := common.BytesToHash(common.FromHex(common.Bytes2Hex(code))).Hex()
 
 			contract := &types.Contract{
@@ -1535,31 +1416,25 @@ func (i *Indexer) processTransaction(ctx context.Context, tx *ethtypes.Transacti
 				log.Info("indexed contract", "address", contractAddr, "creator", from.Hex())
 			}
 
-			// Update address stats marking it as a contract
 			if err := i.db.UpsertAddressStats(ctx, contractAddr, block.NumberU64(), true); err != nil {
 				log.Error("failed to update address stats for contract", "address", contractAddr, "error", err)
 			}
 		}
 	}
 
-	// Update address stats for sender
 	if err := i.db.UpsertAddressStats(ctx, from.Hex(), block.NumberU64(), false); err != nil {
 		log.Error("failed to update address stats", "address", from.Hex(), "error", err)
 	}
 
-	// Update address stats for recipient
 	if to != nil {
-		// Check if recipient is a contract
 		isContract, _ := i.db.IsContract(ctx, *to)
 		if err := i.db.UpsertAddressStats(ctx, *to, block.NumberU64(), isContract); err != nil {
 			log.Error("failed to update address stats", "address", *to, "error", err)
 		}
 	}
 
-	// Block timestamp for logs and transfers
 	blockTimestamp := block.Time()
 
-	// Process all logs
 	for _, logEntry := range receipt.Logs {
 		var topic0, topic1, topic2, topic3 *string
 		if len(logEntry.Topics) > 0 {
@@ -1597,14 +1472,12 @@ func (i *Indexer) processTransaction(ctx context.Context, tx *ethtypes.Transacti
 		}
 	}
 
-	// Process token transfers
 	transferCount := 0
 	for _, logEntry := range receipt.Logs {
 		if len(logEntry.Topics) >= 3 && logEntry.Topics[0] == transferTopic {
 			fromAddr := common.BytesToAddress(logEntry.Topics[1].Bytes())
 			toAddr := common.BytesToAddress(logEntry.Topics[2].Bytes())
 
-			// Determine transfer type
 			transferType := types.TransferTypeTransfer
 			if fromAddr == zeroAddress {
 				transferType = types.TransferTypeMint
@@ -1612,8 +1485,7 @@ func (i *Indexer) processTransaction(ctx context.Context, tx *ethtypes.Transacti
 				transferType = types.TransferTypeBurn
 			}
 
-			// Determine token type (ERC20 vs ERC721)
-			// ERC721 transfers have 4 topics (with tokenId in topic[3])
+			// ERC721 transfers have 4 topics (with tokenId in topic[3]),
 			// ERC20 transfers have 3 topics
 			tokenType := types.TokenTypeERC20
 			var tokenID *string
@@ -1623,12 +1495,10 @@ func (i *Indexer) processTransaction(ctx context.Context, tx *ethtypes.Transacti
 				tokenID = &tid
 			}
 
-			// Parse value from data for ERC20 transfers
 			value := "0"
 			if tokenType == types.TokenTypeERC20 && len(logEntry.Data) > 0 {
 				value = new(big.Int).SetBytes(logEntry.Data).String()
 			} else if tokenType == types.TokenTypeERC721 {
-				// For ERC721, the "value" is typically 1 (one NFT)
 				value = "1"
 			}
 
@@ -1651,17 +1521,14 @@ func (i *Indexer) processTransaction(ctx context.Context, tx *ethtypes.Transacti
 			} else {
 				transferCount++
 
-				// Track balances for sender and receiver
 				i.trackBalance(ctx, fromAddr, logEntry.Address, block.NumberU64())
 				i.trackBalance(ctx, toAddr, logEntry.Address, block.NumberU64())
 			}
 
-			// Try to detect and index token metadata
 			i.maybeIndexToken(ctx, logEntry.Address, block.NumberU64(), tx.Hash().Hex())
 		}
 	}
 
-	// Update token transfer counts in address stats
 	if transferCount > 0 {
 		i.db.UpdateAddressStatsCounters(ctx, from.Hex(), 0, transferCount)
 		if to != nil {
@@ -1672,15 +1539,11 @@ func (i *Indexer) processTransaction(ctx context.Context, tx *ethtypes.Transacti
 	return nil
 }
 
-// trackBalance queries and stores the balance for an address on a token at the given block
-// This is used by the legacy sequential processing path
 func (i *Indexer) trackBalance(ctx context.Context, addr common.Address, tokenAddress common.Address, blockNumber uint64) {
-	// Skip zero address
 	if addr == zeroAddress {
 		return
 	}
 
-	// If async balance workers are enabled, queue the work
 	if i.balanceWorkers != nil {
 		i.balanceWorkers.QueueWork(BalanceWork{
 			Address:      addr,
@@ -1690,7 +1553,6 @@ func (i *Indexer) trackBalance(ctx context.Context, addr common.Address, tokenAd
 		return
 	}
 
-	// Fallback to synchronous balance tracking
 	addrPadded := common.LeftPadBytes(addr.Bytes(), 32)
 	callData := append(common.FromHex("0x70a08231"), addrPadded...)
 
@@ -1717,10 +1579,7 @@ func (i *Indexer) trackBalance(ctx context.Context, addr common.Address, tokenAd
 	}
 }
 
-// maybeIndexToken attempts to detect and index token metadata for an ERC20/ERC721 token
-// This is used by the legacy sequential processing path
 func (i *Indexer) maybeIndexToken(ctx context.Context, tokenAddress common.Address, blockNumber uint64, txHash string) {
-	// Check cache first (fast path)
 	if i.tokenCache.Has(tokenAddress.Hex()) {
 		return
 	}
@@ -1732,7 +1591,6 @@ func (i *Indexer) maybeIndexToken(ctx context.Context, tokenAddress common.Addre
 		return
 	}
 
-	// Try to fetch token metadata
 	symbol, name, decimals, err := i.fetchTokenMetadata(ctx, tokenAddress)
 	if err != nil {
 		return
@@ -1756,7 +1614,6 @@ func (i *Indexer) maybeIndexToken(ctx context.Context, tokenAddress common.Addre
 	}
 }
 
-// fetchTokenMetadata attempts to fetch ERC20 token metadata
 func (i *Indexer) fetchTokenMetadata(ctx context.Context, tokenAddress common.Address) (symbol string, name *string, decimals int, err error) {
 	// ERC20 symbol() = 0x95d89b41
 	symbolData, err := i.rpc.CallContract(ctx, tokenAddress, common.FromHex("0x95d89b41"))
@@ -1788,7 +1645,6 @@ func (i *Indexer) fetchTokenMetadata(ctx context.Context, tokenAddress common.Ad
 	return symbol, name, decimals, nil
 }
 
-// parseStringResult parses a string from Solidity ABI-encoded data
 func parseStringResult(data []byte) string {
 	if len(data) < 64 {
 		// Try to parse as raw bytes

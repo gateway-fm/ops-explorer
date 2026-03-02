@@ -8,7 +8,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// InsertOPDepositsBatch inserts multiple OP deposit records in a single transaction
 func (d *DB) InsertOPDepositsBatch(ctx context.Context, deposits []*types.OPDeposit) error {
 	if len(deposits) == 0 {
 		return nil
@@ -37,7 +36,6 @@ func (d *DB) InsertOPDepositsBatch(ctx context.Context, deposits []*types.OPDepo
 	return tx.Commit(ctx)
 }
 
-// GetOPDeposit fetches the OP deposit metadata for an L2 transaction hash
 func (d *DB) GetOPDeposit(ctx context.Context, l2TxHash string) (*types.OPDeposit, error) {
 	var dep types.OPDeposit
 	err := d.pool.QueryRow(ctx, `
@@ -55,7 +53,6 @@ func (d *DB) GetOPDeposit(ctx context.Context, l2TxHash string) (*types.OPDeposi
 	return &dep, nil
 }
 
-// GetLastIndexedL1Block returns the highest L1 block number in the op_deposits table
 func (d *DB) GetLastIndexedL1Block(ctx context.Context) (uint64, error) {
 	var blockNum *uint64
 	err := d.pool.QueryRow(ctx, `

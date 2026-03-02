@@ -9,18 +9,15 @@ import (
 	gorillaWS "github.com/gorilla/websocket"
 )
 
-// Upgrader specifies parameters for upgrading an HTTP connection to a WebSocket connection
 var upgrader = gorillaWS.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
+	// TODO: restrict origins in production
 	CheckOrigin: func(r *http.Request) bool {
-		// Allow all origins in development
-		// In production, you should check the origin
 		return true
 	},
 }
 
-// handleWebSocket handles WebSocket connections
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	if s.wsHub == nil {
 		http.Error(w, "WebSocket not available", http.StatusServiceUnavailable)
@@ -37,7 +34,6 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	s.wsHub.Register(client)
 
-	// Start read and write pumps in separate goroutines
 	go client.WritePump()
 	go client.ReadPump()
 }

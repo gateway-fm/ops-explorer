@@ -18,7 +18,6 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// CallFrame represents a single call frame in the trace
 type CallFrame struct {
 	Type    string       `json:"type"`
 	From    string       `json:"from"`
@@ -32,36 +31,29 @@ type CallFrame struct {
 	Calls   []CallFrame  `json:"calls,omitempty"`
 }
 
-// TraceConfig for debug_traceBlockByNumber
 type TraceConfig struct {
 	Tracer string `json:"tracer"`
 }
 
-// TraceBlockResult represents the result of tracing a block
 type TraceBlockResult struct {
 	TxHash string    `json:"txHash"`
 	Result CallFrame `json:"result"`
 }
 
-// CheckTracingSupport checks if the RPC node supports tracing
 func (c *Client) CheckTracingSupport(ctx context.Context) (bool, error) {
-	// Try to call debug_traceBlockByNumber on block 0 to check support
 	var result json.RawMessage
 	err := c.raw.CallContext(ctx, &result, "debug_traceBlockByNumber", "0x0", &TraceConfig{Tracer: "callTracer"})
 	if err != nil {
-		// Check if it's a method not found error
 		if strings.Contains(err.Error(), "method not found") ||
 		   strings.Contains(err.Error(), "not supported") ||
 		   strings.Contains(err.Error(), "does not exist") {
 			return false, nil
 		}
-		// Other errors might indicate the block doesn't exist, but tracing is supported
 		return true, nil
 	}
 	return true, nil
 }
 
-// TraceBlock fetches all traces for a block using debug_traceBlockByNumber
 func (c *Client) TraceBlock(ctx context.Context, blockNumber uint64) (map[string]*CallFrame, error) {
 	blockHex := fmt.Sprintf("0x%x", blockNumber)
 
@@ -84,7 +76,6 @@ func (c *Client) TraceBlock(ctx context.Context, blockNumber uint64) (map[string
 	return traces, nil
 }
 
-// TraceTransaction fetches traces for a single transaction
 func (c *Client) TraceTransaction(ctx context.Context, txHash common.Hash) (*CallFrame, error) {
 	var result CallFrame
 
@@ -96,7 +87,6 @@ func (c *Client) TraceTransaction(ctx context.Context, txHash common.Hash) (*Cal
 	return &result, nil
 }
 
-// FlattenCallFrame converts a nested CallFrame into flat InternalTransaction records
 func FlattenCallFrame(frame *CallFrame, txHash string, blockNumber uint64, timestamp *uint64) []*explorerTypes.InternalTransaction {
 	var result []*explorerTypes.InternalTransaction
 	flattenCallFrameRecursive(frame, txHash, blockNumber, timestamp, []int{}, &result)
@@ -104,7 +94,6 @@ func FlattenCallFrame(frame *CallFrame, txHash string, blockNumber uint64, times
 }
 
 func flattenCallFrameRecursive(frame *CallFrame, txHash string, blockNumber uint64, timestamp *uint64, path []int, result *[]*explorerTypes.InternalTransaction) {
-	// Build trace address string (e.g., "0,1,2")
 	traceAddr := ""
 	if len(path) > 0 {
 		parts := make([]string, len(path))
@@ -114,22 +103,18 @@ func flattenCallFrameRecursive(frame *CallFrame, txHash string, blockNumber uint
 		traceAddr = strings.Join(parts, ",")
 	}
 
-	// Convert value to string
 	value := "0"
 	if frame.Value != nil {
 		value = (*big.Int)(frame.Value).String()
 	}
 
-	// Determine call type
 	callType := strings.ToLower(frame.Type)
 	switch callType {
 	case "call", "delegatecall", "staticcall", "create", "create2":
-		// Valid call types
 	default:
 		callType = "call"
 	}
 
-	// Build internal transaction
 	var to *string
 	if frame.To != "" {
 		toAddr := frame.To
@@ -175,30 +160,25 @@ func flattenCallFrameRecursive(frame *CallFrame, txHash string, blockNumber uint
 
 	*result = append(*result, internalTx)
 
-	// Recursively process child calls
 	for i, child := range frame.Calls {
 		childPath := append(append([]int{}, path...), i)
 		flattenCallFrameRecursive(&child, txHash, blockNumber, timestamp, childPath, result)
 	}
 }
 
-// TraceResult holds the result of a trace fetch
 type TraceResult struct {
 	TxHash       string
 	InternalTxs  []*explorerTypes.InternalTransaction
 	Err          error
 }
 
-// FetchTracesBatch fetches traces for multiple transactions in parallel with rate limiting
 func (c *Client) FetchTracesBatch(ctx context.Context, txHashes []common.Hash, blockNumber uint64, timestamp uint64, workers int, rateLimit int) ([]*explorerTypes.InternalTransaction, error) {
 	if len(txHashes) == 0 {
 		return nil, nil
 	}
 
-	// Try block-level tracing first (more efficient)
 	blockTraces, err := c.TraceBlock(ctx, blockNumber)
 	if err == nil && len(blockTraces) > 0 {
-		// Successfully got block traces
 		var allInternalTxs []*explorerTypes.InternalTransaction
 		ts := timestamp
 
@@ -208,8 +188,7 @@ func (c *Client) FetchTracesBatch(ctx context.Context, txHashes []common.Hash, b
 				continue
 			}
 			internalTxs := FlattenCallFrame(frame, txHash.Hex(), blockNumber, &ts)
-			// Skip the root call (already represented by the transaction itself)
-			if len(internalTxs) > 1 {
+			if len(internalTxs) > 1 { // skip root call
 				allInternalTxs = append(allInternalTxs, internalTxs[1:]...)
 			}
 		}
@@ -217,7 +196,6 @@ func (c *Client) FetchTracesBatch(ctx context.Context, txHashes []common.Hash, b
 		return allInternalTxs, nil
 	}
 
-	// Fallback to per-transaction tracing
 	log.Warn("block tracing failed, falling back to per-tx tracing", "block", blockNumber, "error", err)
 
 	limiter := rate.NewLimiter(rate.Limit(rateLimit), rateLimit/10+1)
@@ -243,7 +221,6 @@ func (c *Client) FetchTracesBatch(ctx context.Context, txHashes []common.Hash, b
 			}
 
 			internalTxs := FlattenCallFrame(frame, hash.Hex(), blockNumber, &ts)
-			// Skip the root call
 			if len(internalTxs) > 1 {
 				mu.Lock()
 				results = append(results, internalTxs[1:]...)

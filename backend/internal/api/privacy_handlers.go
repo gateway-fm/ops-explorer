@@ -13,25 +13,21 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// getViewerIdentity extracts the viewer identity from request (DID from auth cookie only, SSO-only)
 func (s *Server) getViewerIdentity(r *http.Request) privacy.ViewerIdentity {
 	return privacy.ViewerIdentity{
 		DID: s.GetAuthDID(r),
 	}
 }
 
-// handleGetViewableAddresses returns all addresses viewable by the authenticated user
 func (s *Server) handleGetViewableAddresses(w http.ResponseWriter, r *http.Request) {
 	viewer := s.getViewerIdentity(r)
 
-	// DID is required (SSO-only)
 	if viewer.DID == "" {
 		http.Error(w, "authentication required (sign in via Privado SSO)", http.StatusBadRequest)
 		return
 	}
 
 	if !s.privacyClient.IsEnabled() {
-		// Privacy not configured - return empty response
 		writeJSON(w, privacy.ViewableAddressesResponse{
 			ViewerDID:          viewer.DID,
 			OwnAddresses:       []privacy.OwnAddress{},
@@ -49,11 +45,9 @@ func (s *Server) handleGetViewableAddresses(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, result)
 }
 
-// handleCheckAddressVisibility checks if a specific address is visible to the user
 func (s *Server) handleCheckAddressVisibility(w http.ResponseWriter, r *http.Request) {
 	viewer := s.getViewerIdentity(r)
 
-	// DID is required (SSO-only)
 	if viewer.DID == "" {
 		http.Error(w, "authentication required (sign in via Privado SSO)", http.StatusBadRequest)
 		return
@@ -66,7 +60,6 @@ func (s *Server) handleCheckAddressVisibility(w http.ResponseWriter, r *http.Req
 	}
 
 	if !s.privacyClient.IsEnabled() {
-		// Privacy not configured - all addresses visible
 		writeJSON(w, privacy.AddressVisibility{
 			Address: strings.ToLower(address),
 			Visible: true,
@@ -85,11 +78,9 @@ func (s *Server) handleCheckAddressVisibility(w http.ResponseWriter, r *http.Req
 	writeJSON(w, result)
 }
 
-// handleBatchCheckAddresses checks visibility of multiple addresses at once
 func (s *Server) handleBatchCheckAddresses(w http.ResponseWriter, r *http.Request) {
 	viewer := s.getViewerIdentity(r)
 
-	// DID is required (SSO-only)
 	if viewer.DID == "" {
 		http.Error(w, "authentication required (sign in via Privado SSO)", http.StatusBadRequest)
 		return
@@ -114,7 +105,6 @@ func (s *Server) handleBatchCheckAddresses(w http.ResponseWriter, r *http.Reques
 	}
 
 	if !s.privacyClient.IsEnabled() {
-		// Privacy not configured - all addresses visible
 		results := make(map[string]*privacy.AddressVisibility)
 		for _, addr := range req.Addresses {
 			results[strings.ToLower(addr)] = &privacy.AddressVisibility{
@@ -137,9 +127,7 @@ func (s *Server) handleBatchCheckAddresses(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, map[string]any{"results": results})
 }
 
-// checkAddressVisibility is a helper for use in other handlers.
-// Returns nil if privacy is not enabled (no gating needed).
-// Otherwise always calls the privacy-proxy, even for anonymous viewers.
+// checkAddressVisibility returns nil if privacy is not enabled (no gating needed).
 // Fails closed: on error returns HIDDEN to prevent leaking private data.
 func (s *Server) checkAddressVisibility(r *http.Request, address string) *privacy.AddressVisibility {
 	if !s.privacyClient.IsEnabled() {
@@ -165,13 +153,10 @@ func (s *Server) checkAddressVisibility(r *http.Request, address string) *privac
 	return vis
 }
 
-// filterAddressesForVisibility filters a list of addresses based on visibility
-// Returns map of address -> display info
 func (s *Server) filterAddressesForVisibility(r *http.Request, addresses []string) map[string]AddressDisplayInfo {
 	viewer := s.getViewerIdentity(r)
 	result := make(map[string]AddressDisplayInfo)
 
-	// If no identity or privacy not enabled, all addresses are visible
 	if viewer.DID == "" || !s.privacyClient.IsEnabled() {
 		for _, addr := range addresses {
 			result[addr] = AddressDisplayInfo{
@@ -183,7 +168,6 @@ func (s *Server) filterAddressesForVisibility(r *http.Request, addresses []strin
 		return result
 	}
 
-	// Check visibility in batch
 	visibilities, err := s.privacyClient.CheckAddressesWithIdentity(r.Context(), viewer, addresses)
 	if err != nil {
 		// Fail open on error
@@ -222,7 +206,6 @@ func (s *Server) filterAddressesForVisibility(r *http.Request, addresses []strin
 	return result
 }
 
-// AddressDisplayInfo contains display information for an address
 type AddressDisplayInfo struct {
 	Address     string                     `json:"address"`
 	DisplayName string                     `json:"display_name"`
@@ -230,21 +213,16 @@ type AddressDisplayInfo struct {
 	Visibility  *privacy.AddressVisibility `json:"visibility,omitempty"`
 }
 
-// GrantedAddressResponse is the response for viewing an address via a disclosure grant
 // SECURITY: Addresses are redacted based on disclosure_level before being sent to the frontend.
 type GrantedAddressResponse struct {
-	// Display address - pseudonym for pseudonymous, "[REDACTED]" for redacted, real for full
 	DisplayAddress  string `json:"display_address"`
 	DisclosureLevel string `json:"disclosure_level"`
 	GrantID         string `json:"grant_id"`
-	// Address info (balance, txCount) - always included
 	Balance    string `json:"balance"`
 	TxCount    int64  `json:"tx_count"`
 	IsContract bool   `json:"is_contract"`
 }
 
-// handleGetGrantedAddress returns address info for a disclosed address via grant
-// GET /api/privacy/grant/:grant_id/:address_id
 // SECURITY: This endpoint uses opaque address_id - the real address is never exposed to the frontend
 // for pseudonymous/redacted disclosures.
 func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request) {
@@ -256,7 +234,7 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// SECURITY: Require authenticated viewer to prevent unauthorized access (IDOR)
+	// Require authenticated viewer to prevent unauthorized access (IDOR)
 	viewer := s.getViewerIdentity(r)
 	if viewer.DID == "" {
 		http.Error(w, "authentication required (sign in via Privado SSO)", http.StatusUnauthorized)
@@ -268,10 +246,8 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Resolve the address_id to get real address and disclosure level
 	resolved, err := s.privacyClient.ResolveAddressID(r.Context(), grantID, addressID)
 	if err != nil {
-		// Check if it's a not found or forbidden error
 		errStr := err.Error()
 		if strings.Contains(errStr, "not found") {
 			http.Error(w, "grant or address not found", http.StatusNotFound)
@@ -287,28 +263,24 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 
 	ctx := r.Context()
 
-	// Fetch address stats using the real address (backend only)
 	stats, err := s.db.GetAddressStats(ctx, resolved.RealAddress)
 	if err != nil {
 		http.Error(w, "failed to get address stats: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Fetch balance from RPC
 	balance, err := s.rpc.GetBalance(ctx, common.HexToAddress(resolved.RealAddress))
 	if err != nil {
 		http.Error(w, "failed to get balance: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Check if it's a contract
 	code, err := s.rpc.GetCode(ctx, common.HexToAddress(resolved.RealAddress))
 	if err != nil {
 		http.Error(w, "failed to check contract status: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Determine display address based on disclosure level
 	// SECURITY: Never expose real address for non-full disclosures
 	var displayAddress string
 	switch resolved.DisclosureLevel {
@@ -338,10 +310,9 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, response)
 }
 
-// PseudonymizedTransaction is a transaction with addresses pseudonymized for privacy
-// SECURITY: All addresses are replaced with pseudonyms - the real addresses are never exposed
+// SECURITY: All addresses are replaced with pseudonyms - the real addresses are never exposed.
+// TxHash is hidden for non-full disclosures to prevent lookup on other explorers.
 type PseudonymizedTransaction struct {
-	// TxHash is hidden for non-full disclosures to prevent lookup on other explorers
 	TxHash         *string          `json:"tx_hash,omitempty"`
 	BlockNumber    uint64           `json:"block_number"`
 	BlockTimestamp uint64           `json:"block_timestamp"`
@@ -350,22 +321,16 @@ type PseudonymizedTransaction struct {
 	Value          types.JSONString `json:"value"`
 	GasUsed        uint64           `json:"gas_used"`
 	Status         int              `json:"status"`
-	// Direction relative to the disclosed address: "in", "out", or "self"
 	Direction string `json:"direction"`
 }
 
-// PseudonymizedTransactionsResponse is the response for granted address transactions
 type PseudonymizedTransactionsResponse struct {
 	Transactions    []PseudonymizedTransaction `json:"transactions"`
 	DisclosureLevel string                     `json:"disclosure_level"`
-	// AddressLabels maps pseudonyms to their roles for UI display
-	// e.g., {"Address-KDCM": "This Address", "External-1": "External Address"}
 	AddressLabels map[string]string `json:"address_labels"`
 	HasMore       bool              `json:"has_more"`
 }
 
-// handleGetGrantedAddressTransactions returns pseudonymized transactions for a disclosed address
-// GET /api/privacy/grant/:grant_id/:address_id/transactions
 // SECURITY: Addresses are pseudonymized based on disclosure_level before being sent to the frontend.
 // For non-full disclosures, tx hashes are hidden to prevent lookup on other explorers.
 func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *http.Request) {
@@ -377,7 +342,7 @@ func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *h
 		return
 	}
 
-	// SECURITY: Require authenticated viewer to prevent unauthorized access (IDOR)
+	// Require authenticated viewer to prevent unauthorized access (IDOR)
 	viewer := s.getViewerIdentity(r)
 	if viewer.DID == "" {
 		http.Error(w, "authentication required (sign in via Privado SSO)", http.StatusUnauthorized)
@@ -389,7 +354,6 @@ func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *h
 		return
 	}
 
-	// Resolve the address_id to get real address and disclosure level
 	resolved, err := s.privacyClient.ResolveAddressID(r.Context(), grantID, addressID)
 	if err != nil {
 		errStr := err.Error()
@@ -405,7 +369,6 @@ func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *h
 		return
 	}
 
-	// For redacted disclosures, don't show transactions at all
 	if resolved.DisclosureLevel == "redacted" {
 		writeJSON(w, PseudonymizedTransactionsResponse{
 			Transactions:    []PseudonymizedTransaction{},
@@ -418,28 +381,23 @@ func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *h
 
 	ctx := r.Context()
 
-	// Parse pagination params
 	limit := parseLimit(r)
 	beforeBlock := parseBeforeBlock(r)
 
-	// Normalize the address to match database format (checksummed)
 	normalizedAddress := common.HexToAddress(resolved.RealAddress).Hex()
 
-	// Fetch transactions using the real address (backend only)
 	txs, err := s.db.GetTransactionsByAddress(ctx, normalizedAddress, limit+1, beforeBlock)
 	if err != nil {
 		http.Error(w, "failed to get transactions: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Check if there are more results
 	hasMore := len(txs) > limit
 	if hasMore {
 		txs = txs[:limit]
 	}
 
-	// Determine the disclosed address pseudonym
-	disclosedPseudonym := resolved.RealAddress // For full disclosure, use real address
+	disclosedPseudonym := resolved.RealAddress
 	if resolved.DisclosureLevel == "pseudonymous" {
 		disclosedPseudonym = resolved.Pseudonym
 		if disclosedPseudonym == "" {
@@ -447,9 +405,6 @@ func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *h
 		}
 	}
 
-	// Build pseudonym mapping for external addresses
-	// For full disclosure: use real addresses
-	// For pseudonymous: use consistent pseudonyms like "External-1", "External-2"
 	externalPseudonyms := make(map[string]string)
 	externalCounter := 1
 	addressLabels := map[string]string{
@@ -471,7 +426,6 @@ func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *h
 		return pseudo
 	}
 
-	// Pseudonymize transactions
 	normalizedDisclosed := strings.ToLower(resolved.RealAddress)
 	pseudoTxs := make([]PseudonymizedTransaction, 0, len(txs))
 
@@ -484,19 +438,16 @@ func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *h
 			Status:         tx.Status,
 		}
 
-		// Only include tx hash for full disclosure
 		if resolved.DisclosureLevel == "full" {
 			pseudoTx.TxHash = &tx.Hash
 		}
 
-		// Pseudonymize from address
 		if strings.ToLower(tx.From) == normalizedDisclosed {
 			pseudoTx.From = disclosedPseudonym
 		} else {
 			pseudoTx.From = getExternalPseudonym(tx.From)
 		}
 
-		// Pseudonymize to address
 		if tx.To != nil {
 			if strings.ToLower(*tx.To) == normalizedDisclosed {
 				to := disclosedPseudonym
@@ -507,7 +458,6 @@ func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *h
 			}
 		}
 
-		// Determine direction
 		fromIsDisclosed := strings.ToLower(tx.From) == normalizedDisclosed
 		toIsDisclosed := tx.To != nil && strings.ToLower(*tx.To) == normalizedDisclosed
 		if fromIsDisclosed && toIsDisclosed {
@@ -529,11 +479,9 @@ func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *h
 	})
 }
 
-// generateExternalPseudonym creates a consistent pseudonym for an external address
-// The pseudonym is derived from a hash of the address + grantID to ensure consistency
-// within the same grant but different across grants
+// generateExternalPseudonym creates a consistent pseudonym derived from address + grantID,
+// ensuring the same address always maps to the same pseudonym within a grant.
 func generateExternalPseudonym(address, grantID string, counter int) string {
-	// Use hash to ensure same address always gets same pseudonym within a grant
 	h := sha256.New()
 	h.Write([]byte(strings.ToLower(address)))
 	h.Write([]byte(":"))

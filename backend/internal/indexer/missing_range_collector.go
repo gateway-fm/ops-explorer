@@ -10,7 +10,6 @@ import (
 	"explorer/internal/rpc"
 )
 
-// MissingRangeCollectorConfig holds configuration for the collector
 type MissingRangeCollectorConfig struct {
 	// BatchSize is the number of blocks to scan in each batch
 	BatchSize uint64
@@ -24,7 +23,6 @@ type MissingRangeCollectorConfig struct {
 	LastBlock uint64
 }
 
-// DefaultMissingRangeCollectorConfig returns default configuration
 func DefaultMissingRangeCollectorConfig() *MissingRangeCollectorConfig {
 	return &MissingRangeCollectorConfig{
 		BatchSize:            100000,
@@ -35,8 +33,8 @@ func DefaultMissingRangeCollectorConfig() *MissingRangeCollectorConfig {
 	}
 }
 
-// MissingRangeCollector discovers and tracks missing block ranges
-// Following Blockscout's pattern: bidirectional scanning with persistent state
+// MissingRangeCollector discovers and tracks missing block ranges using
+// bidirectional scanning with persistent state (following Blockscout's pattern).
 type MissingRangeCollector struct {
 	db     *db.DB
 	rpc    *rpc.Client
@@ -60,7 +58,6 @@ type MissingRangeCollector struct {
 	wg     sync.WaitGroup
 }
 
-// NewMissingRangeCollector creates a new collector
 func NewMissingRangeCollector(database *db.DB, rpcClient *rpc.Client, cfg *MissingRangeCollectorConfig) *MissingRangeCollector {
 	if cfg == nil {
 		cfg = DefaultMissingRangeCollectorConfig()
@@ -76,29 +73,24 @@ func NewMissingRangeCollector(database *db.DB, rpcClient *rpc.Client, cfg *Missi
 	}
 }
 
-// Start begins the missing range collection process
 func (c *MissingRangeCollector) Start(ctx context.Context) error {
-	// Get chain head
 	chainHead, err := c.rpc.BlockNumber(ctx)
 	if err != nil {
 		return err
 	}
 	c.chainHead = chainHead
 
-	// Determine last block to index
 	lastBlock := c.config.LastBlock
 	if lastBlock == 0 || lastBlock > chainHead {
 		lastBlock = chainHead
 	}
 
-	// Load existing progress from database
 	progress, err := c.db.GetIndexerProgress(ctx)
 	if err != nil {
 		log.Warn("failed to load indexer progress, starting fresh", "error", err)
 	}
 
 	if progress != nil && progress.MaxFetchedBlock > 0 {
-		// Resume from saved state
 		c.minFetchedBlock = progress.MinFetchedBlock
 		c.maxFetchedBlock = progress.MaxFetchedBlock
 		c.backfillComplete = progress.BackfillComplete
@@ -108,37 +100,31 @@ func (c *MissingRangeCollector) Start(ctx context.Context) error {
 			"max_fetched", c.maxFetchedBlock,
 			"backfill_complete", c.backfillComplete)
 	} else {
-		// Initialize from current state
 		minIndexed, maxIndexed, err := c.db.GetMinMaxIndexedBlocks(ctx)
 		if err != nil {
 			return err
 		}
 
 		if maxIndexed > 0 {
-			// We have some blocks indexed - start from there
 			c.minFetchedBlock = minIndexed
 			c.maxFetchedBlock = maxIndexed
 			log.Info("initializing from existing blocks",
 				"min_indexed", minIndexed,
 				"max_indexed", maxIndexed)
 		} else {
-			// Empty database - start from chain head and scan backward
 			c.minFetchedBlock = lastBlock
 			c.maxFetchedBlock = lastBlock
 			log.Info("empty database, starting from chain head",
 				"chain_head", lastBlock)
 		}
 
-		// Save initial state
 		c.db.UpdateIndexerProgress(ctx, c.minFetchedBlock, c.maxFetchedBlock, false)
 	}
 
-	// Do initial scan to find missing ranges
 	if err := c.initialScan(ctx, lastBlock); err != nil {
 		return err
 	}
 
-	// Start background scanners
 	c.wg.Add(2)
 	go c.backwardScanner()
 	go c.forwardScanner()
@@ -151,17 +137,14 @@ func (c *MissingRangeCollector) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop gracefully stops the collector
 func (c *MissingRangeCollector) Stop() {
 	c.cancel()
 	c.wg.Wait()
 }
 
-// initialScan performs the initial scan to discover existing gaps
 func (c *MissingRangeCollector) initialScan(ctx context.Context, lastBlock uint64) error {
 	log.Info("starting initial gap scan", "from", c.config.FirstBlock, "to", lastBlock)
 
-	// Scan in chunks to avoid memory issues
 	batchSize := c.config.BatchSize
 	totalRanges := 0
 
@@ -191,7 +174,6 @@ func (c *MissingRangeCollector) initialScan(ctx context.Context, lastBlock uint6
 			totalRanges += len(ranges)
 		}
 
-		// Log progress for large scans
 		if toBlock%100000 == 0 || toBlock == lastBlock {
 			log.Info("initial scan progress",
 				"scanned_to", toBlock,
@@ -208,11 +190,9 @@ func (c *MissingRangeCollector) initialScan(ctx context.Context, lastBlock uint6
 	return nil
 }
 
-// backwardScanner scans backward toward genesis looking for gaps
 func (c *MissingRangeCollector) backwardScanner() {
 	defer c.wg.Done()
 
-	// Use faster interval initially, then slow down after backfill is complete
 	ticker := time.NewTicker(c.config.BackwardScanInterval)
 	defer ticker.Stop()
 
@@ -223,7 +203,6 @@ func (c *MissingRangeCollector) backwardScanner() {
 		case <-ticker.C:
 			c.scanBackward()
 
-			// Check if backfill is complete
 			c.mu.RLock()
 			if c.minFetchedBlock <= c.config.FirstBlock && !c.backfillComplete {
 				c.mu.RUnlock()
@@ -242,7 +221,6 @@ func (c *MissingRangeCollector) backwardScanner() {
 	}
 }
 
-// forwardScanner scans forward to track new blocks on the chain
 func (c *MissingRangeCollector) forwardScanner() {
 	defer c.wg.Done()
 
@@ -259,7 +237,6 @@ func (c *MissingRangeCollector) forwardScanner() {
 	}
 }
 
-// scanBackward scans a batch of blocks backward toward genesis
 func (c *MissingRangeCollector) scanBackward() {
 	c.mu.Lock()
 	if c.minFetchedBlock <= c.config.FirstBlock {
@@ -267,7 +244,6 @@ func (c *MissingRangeCollector) scanBackward() {
 		return
 	}
 
-	// Calculate range to scan
 	toBlock := c.minFetchedBlock - 1
 	fromBlock := uint64(0)
 	if toBlock > c.config.BatchSize {
@@ -281,14 +257,12 @@ func (c *MissingRangeCollector) scanBackward() {
 		return
 	}
 
-	// Find missing blocks in this range
 	ranges, err := c.db.FindMissingBlocksInRange(c.ctx, fromBlock, toBlock)
 	if err != nil {
 		log.Error("backward scan failed", "from", fromBlock, "to", toBlock, "error", err)
 		return
 	}
 
-	// Save any missing ranges found
 	if len(ranges) > 0 {
 		if err := c.db.SaveMissingRanges(c.ctx, ranges); err != nil {
 			log.Error("failed to save missing ranges", "error", err)
@@ -306,16 +280,13 @@ func (c *MissingRangeCollector) scanBackward() {
 			"missing_blocks", missingCount)
 	}
 
-	// Update progress
 	c.mu.Lock()
 	c.minFetchedBlock = fromBlock
 	c.db.UpdateIndexerProgress(c.ctx, c.minFetchedBlock, c.maxFetchedBlock, c.backfillComplete)
 	c.mu.Unlock()
 }
 
-// scanForward scans forward to track new blocks
 func (c *MissingRangeCollector) scanForward() {
-	// Get current chain head
 	chainHead, err := c.rpc.BlockNumber(c.ctx)
 	if err != nil {
 		log.Error("failed to get chain head", "error", err)
@@ -332,14 +303,12 @@ func (c *MissingRangeCollector) scanForward() {
 	toBlock := chainHead
 	c.mu.Unlock()
 
-	// Find any missing blocks in the new range
 	ranges, err := c.db.FindMissingBlocksInRange(c.ctx, fromBlock, toBlock)
 	if err != nil {
 		log.Error("forward scan failed", "from", fromBlock, "to", toBlock, "error", err)
 		return
 	}
 
-	// Save any missing ranges found
 	if len(ranges) > 0 {
 		if err := c.db.SaveMissingRanges(c.ctx, ranges); err != nil {
 			log.Error("failed to save missing ranges", "error", err)
@@ -357,7 +326,6 @@ func (c *MissingRangeCollector) scanForward() {
 			"missing_blocks", missingCount)
 	}
 
-	// Update progress
 	c.mu.Lock()
 	c.maxFetchedBlock = toBlock
 	c.chainHead = chainHead
@@ -365,29 +333,24 @@ func (c *MissingRangeCollector) scanForward() {
 	c.mu.Unlock()
 }
 
-// GetProgress returns the current scanning progress
 func (c *MissingRangeCollector) GetProgress() (minFetched, maxFetched, chainHead uint64, backfillComplete bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.minFetchedBlock, c.maxFetchedBlock, c.chainHead, c.backfillComplete
 }
 
-// GetMissingRangesBatch retrieves a batch of missing ranges for processing
 func (c *MissingRangeCollector) GetMissingRangesBatch(ctx context.Context, batchSize int) ([]db.BlockRange, error) {
 	return c.db.GetMissingRangesBatch(ctx, batchSize)
 }
 
-// MarkBlockProcessed marks a block as processed (removes it from missing ranges)
 func (c *MissingRangeCollector) MarkBlockProcessed(ctx context.Context, blockNumber uint64) error {
 	return c.db.DeleteMissingRangeByBlock(ctx, blockNumber)
 }
 
-// GetTotalMissingBlocks returns the total number of blocks still missing
 func (c *MissingRangeCollector) GetTotalMissingBlocks(ctx context.Context) (int64, error) {
 	return c.db.GetTotalMissingBlocks(ctx)
 }
 
-// IsBackfillComplete returns true if the initial backfill scan is complete
 func (c *MissingRangeCollector) IsBackfillComplete() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

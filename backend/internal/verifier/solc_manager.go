@@ -11,14 +11,12 @@ import (
 	"sync"
 )
 
-// SolcManager manages multiple solc compiler versions
 type SolcManager struct {
 	basePath string
 	versions map[string]string // version -> path
 	mu       sync.RWMutex
 }
 
-// NewSolcManager creates a new SolcManager
 func NewSolcManager(basePath string) *SolcManager {
 	sm := &SolcManager{
 		basePath: basePath,
@@ -28,17 +26,14 @@ func NewSolcManager(basePath string) *SolcManager {
 	return sm
 }
 
-// scanVersions scans the base path for available solc versions
 func (sm *SolcManager) scanVersions() {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	// Check if base path exists
 	if _, err := os.Stat(sm.basePath); os.IsNotExist(err) {
 		return
 	}
 
-	// Scan for solc binaries
 	entries, err := os.ReadDir(sm.basePath)
 	if err != nil {
 		return
@@ -59,17 +54,14 @@ func (sm *SolcManager) scanVersions() {
 		}
 	}
 
-	// Also check for "solc" binary without version suffix
 	solcPath := filepath.Join(sm.basePath, "solc")
 	if _, err := os.Stat(solcPath); err == nil {
-		// Try to get version from the binary
 		if version, err := sm.getVersionFromBinary(solcPath); err == nil {
 			sm.versions[version] = solcPath
 		}
 	}
 }
 
-// getVersionFromBinary extracts the version from a solc binary
 func (sm *SolcManager) getVersionFromBinary(path string) (string, error) {
 	cmd := exec.Command(path, "--version")
 	output, err := cmd.Output()
@@ -77,7 +69,6 @@ func (sm *SolcManager) getVersionFromBinary(path string) (string, error) {
 		return "", err
 	}
 
-	// Parse version from output like "solc, the solidity compiler commandline interface\nVersion: 0.8.19+commit...."
 	versionRegex := regexp.MustCompile(`Version:\s*(\d+\.\d+\.\d+)`)
 	matches := versionRegex.FindStringSubmatch(string(output))
 	if len(matches) != 2 {
@@ -87,23 +78,20 @@ func (sm *SolcManager) getVersionFromBinary(path string) (string, error) {
 	return matches[1], nil
 }
 
-// GetCompiler returns the path to a specific solc version
 func (sm *SolcManager) GetCompiler(version string) (string, error) {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 
-	// Normalize version (remove 'v' prefix and '+commit...' suffix if present)
+	// Strip 'v' prefix and '+commit...' suffix for version matching
 	version = strings.TrimPrefix(version, "v")
 	if idx := strings.Index(version, "+"); idx != -1 {
 		version = version[:idx]
 	}
 
-	// Check for exact match
 	if path, ok := sm.versions[version]; ok {
 		return path, nil
 	}
 
-	// Check for partial match (e.g., "0.8" matches "0.8.19")
 	for v, path := range sm.versions {
 		if strings.HasPrefix(v, version) {
 			return path, nil
@@ -113,13 +101,11 @@ func (sm *SolcManager) GetCompiler(version string) (string, error) {
 	return "", fmt.Errorf("compiler version %s not found", version)
 }
 
-// HasVersion checks if a specific version is available
 func (sm *SolcManager) HasVersion(version string) bool {
 	_, err := sm.GetCompiler(version)
 	return err == nil
 }
 
-// ListVersions returns all available compiler versions
 func (sm *SolcManager) ListVersions() []CompilerVersion {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
@@ -132,7 +118,6 @@ func (sm *SolcManager) ListVersions() []CompilerVersion {
 		})
 	}
 
-	// Sort by version (descending)
 	sort.Slice(versions, func(i, j int) bool {
 		return compareVersions(versions[i].Version, versions[j].Version) > 0
 	})
@@ -140,8 +125,6 @@ func (sm *SolcManager) ListVersions() []CompilerVersion {
 	return versions
 }
 
-// compareVersions compares two semver versions
-// Returns positive if v1 > v2, negative if v1 < v2, 0 if equal
 func compareVersions(v1, v2 string) int {
 	parts1 := strings.Split(v1, ".")
 	parts2 := strings.Split(v2, ".")
@@ -163,12 +146,10 @@ func compareVersions(v1, v2 string) int {
 	return 0
 }
 
-// Refresh rescans for available compiler versions
 func (sm *SolcManager) Refresh() {
 	sm.scanVersions()
 }
 
-// Count returns the number of available compiler versions
 func (sm *SolcManager) Count() int {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()

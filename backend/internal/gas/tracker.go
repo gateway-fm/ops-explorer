@@ -10,7 +10,6 @@ import (
 	"explorer/internal/log"
 )
 
-// GasPrice represents a gas price tier
 type GasPrice struct {
 	Price       float64  `json:"price"`       // Gwei
 	PriceWei    string   `json:"priceWei"`    // Wei (string for precision)
@@ -18,7 +17,6 @@ type GasPrice struct {
 	PriorityFee *float64 `json:"priorityFee"` // Priority fee (Gwei) for EIP-1559
 }
 
-// GasPrices contains all gas price tiers
 type GasPrices struct {
 	Slow      *GasPrice `json:"slow"`
 	Normal    *GasPrice `json:"normal"`
@@ -26,12 +24,10 @@ type GasPrices struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-// Database is the interface for gas-related database queries
 type Database interface {
 	GetGasPercentiles(ctx context.Context, numBlocks int, slowPct, avgPct, fastPct float64) (*db.GasPercentiles, error)
 }
 
-// Config holds tracker configuration
 type Config struct {
 	CacheTTL        time.Duration // Default: 30s
 	NumBlocks       int           // Default: 200
@@ -40,7 +36,6 @@ type Config struct {
 	FastPercentile  int           // Default: 90
 }
 
-// DefaultConfig returns the default configuration
 func DefaultConfig() *Config {
 	return &Config{
 		CacheTTL:       30 * time.Second,
@@ -51,7 +46,6 @@ func DefaultConfig() *Config {
 	}
 }
 
-// Tracker calculates and caches gas prices
 type Tracker struct {
 	db             Database
 	mu             sync.RWMutex
@@ -63,7 +57,6 @@ type Tracker struct {
 	fastPercentile int
 }
 
-// NewTracker creates a new gas tracker
 func NewTracker(database Database, cfg *Config) *Tracker {
 	if cfg == nil {
 		cfg = DefaultConfig()
@@ -78,7 +71,6 @@ func NewTracker(database Database, cfg *Config) *Tracker {
 	}
 }
 
-// GetGasPrices returns cached gas prices or calculates fresh ones
 func (t *Tracker) GetGasPrices(ctx context.Context) (*GasPrices, error) {
 	t.mu.RLock()
 	if t.cached != nil && time.Since(t.cached.UpdatedAt) < t.cacheTTL {
@@ -87,7 +79,6 @@ func (t *Tracker) GetGasPrices(ctx context.Context) (*GasPrices, error) {
 	}
 	t.mu.RUnlock()
 
-	// Calculate fresh prices
 	prices, err := t.calculate(ctx)
 	if err != nil {
 		return nil, err
@@ -100,7 +91,6 @@ func (t *Tracker) GetGasPrices(ctx context.Context) (*GasPrices, error) {
 	return prices, nil
 }
 
-// calculate fetches gas percentiles and builds GasPrices
 func (t *Tracker) calculate(ctx context.Context) (*GasPrices, error) {
 	percentiles, err := t.db.GetGasPercentiles(
 		ctx,
@@ -113,12 +103,10 @@ func (t *Tracker) calculate(ctx context.Context) (*GasPrices, error) {
 		return nil, err
 	}
 
-	// Convert to GasPrices
 	prices := &GasPrices{
 		UpdatedAt: time.Now(),
 	}
 
-	// Helper to convert wei to gwei
 	weiToGwei := func(wei *uint64) float64 {
 		if wei == nil || *wei == 0 {
 			return 0
@@ -126,14 +114,12 @@ func (t *Tracker) calculate(ctx context.Context) (*GasPrices, error) {
 		return float64(*wei) / 1e9
 	}
 
-	// Calculate base fee in gwei if available
 	var baseFeeGwei *float64
 	if percentiles.BaseFee != nil && *percentiles.BaseFee > 0 {
 		bf := weiToGwei(percentiles.BaseFee)
 		baseFeeGwei = &bf
 	}
 
-	// Build slow price
 	if percentiles.SlowWei != nil && *percentiles.SlowWei > 0 {
 		slowGwei := weiToGwei(percentiles.SlowWei)
 		var priorityFee *float64
@@ -149,7 +135,6 @@ func (t *Tracker) calculate(ctx context.Context) (*GasPrices, error) {
 		}
 	}
 
-	// Build normal price
 	if percentiles.NormalWei != nil && *percentiles.NormalWei > 0 {
 		normalGwei := weiToGwei(percentiles.NormalWei)
 		var priorityFee *float64
@@ -165,7 +150,6 @@ func (t *Tracker) calculate(ctx context.Context) (*GasPrices, error) {
 		}
 	}
 
-	// Build fast price
 	if percentiles.FastWei != nil && *percentiles.FastWei > 0 {
 		fastGwei := weiToGwei(percentiles.FastWei)
 		var priorityFee *float64
@@ -184,7 +168,6 @@ func (t *Tracker) calculate(ctx context.Context) (*GasPrices, error) {
 	return prices, nil
 }
 
-// StartBackgroundRefresh starts a goroutine that refreshes the cache periodically
 func (t *Tracker) StartBackgroundRefresh(ctx context.Context) {
 	ticker := time.NewTicker(t.cacheTTL / 2) // Refresh before expiry
 	go func() {

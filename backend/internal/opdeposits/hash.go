@@ -12,10 +12,8 @@ import (
 // depositTxType is the EIP-2718 type byte for OP Stack deposit transactions.
 const depositTxType = 0x7E
 
-// ComputeSourceHash computes the sourceHash for a user-deposited transaction.
 // sourceHash = keccak256(bytes32(0) || keccak256(l1BlockHash || bytes32(logIndex)))
 func ComputeSourceHash(l1BlockHash common.Hash, logIndex uint64) common.Hash {
-	// Inner hash: keccak256(l1BlockHash || bytes32(logIndex))
 	var logIndexBytes [32]byte
 	binary.BigEndian.PutUint64(logIndexBytes[24:], logIndex)
 
@@ -24,9 +22,8 @@ func ComputeSourceHash(l1BlockHash common.Hash, logIndex uint64) common.Hash {
 	copy(innerInput[32:], logIndexBytes[:])
 	innerHash := crypto.Keccak256Hash(innerInput)
 
-	// Outer hash: keccak256(bytes32(0) || innerHash)
 	// Domain 0 = user deposit
-	var domain [32]byte // all zeros = domain 0
+	var domain [32]byte
 	outerInput := make([]byte, 64)
 	copy(outerInput[:32], domain[:])
 	copy(outerInput[32:], innerHash.Bytes())
@@ -34,7 +31,6 @@ func ComputeSourceHash(l1BlockHash common.Hash, logIndex uint64) common.Hash {
 	return crypto.Keccak256Hash(outerInput)
 }
 
-// depositTxFields holds the fields for RLP encoding a deposit transaction.
 type depositTxFields struct {
 	SourceHash  common.Hash
 	From        common.Address
@@ -46,8 +42,7 @@ type depositTxFields struct {
 	Data        []byte
 }
 
-// ComputeL2DepositTxHash computes the L2 transaction hash from deposit event data.
-// The L2 tx hash is keccak256(0x7E || RLP([sourceHash, from, to, mint, value, gas, isSystemTx, data]))
+// L2 tx hash = keccak256(0x7E || RLP([sourceHash, from, to, mint, value, gas, isSystemTx, data]))
 func ComputeL2DepositTxHash(sourceHash common.Hash, from common.Address, to *common.Address, mint, value *big.Int, gas uint64, isSystemTx bool, data []byte) (common.Hash, error) {
 	if mint == nil {
 		mint = big.NewInt(0)
@@ -67,13 +62,11 @@ func ComputeL2DepositTxHash(sourceHash common.Hash, from common.Address, to *com
 		Data:       data,
 	}
 
-	// RLP encode the fields
 	encoded, err := rlp.EncodeToBytes(fields)
 	if err != nil {
 		return common.Hash{}, err
 	}
 
-	// Prepend the deposit type byte
 	txBytes := make([]byte, 1+len(encoded))
 	txBytes[0] = depositTxType
 	copy(txBytes[1:], encoded)
@@ -81,16 +74,15 @@ func ComputeL2DepositTxHash(sourceHash common.Hash, from common.Address, to *com
 	return crypto.Keccak256Hash(txBytes), nil
 }
 
-// ParseOpaqueData parses the opaqueData from a TransactionDeposited event.
 // opaqueData layout:
-//   [0:32]   - msg.value (uint256)
-//   [32:64]  - value (uint256)
-//   [64:72]  - gasLimit (uint64)
-//   [72:73]  - isCreation (bool, 0 or 1)
-//   [73:]    - data (remaining bytes)
+//
+//	[0:32]   - msg.value (uint256)
+//	[32:64]  - value (uint256)
+//	[64:72]  - gasLimit (uint64)
+//	[72:73]  - isCreation (bool, 0 or 1)
+//	[73:]    - data (remaining bytes)
 func ParseOpaqueData(opaqueData []byte) (msgValue, value *big.Int, gasLimit uint64, isCreation bool, data []byte, err error) {
 	if len(opaqueData) < 73 {
-		// Minimum: 32 (mint) + 32 (value) + 8 (gas) + 1 (isCreation) = 73
 		return nil, nil, 0, false, nil, nil
 	}
 

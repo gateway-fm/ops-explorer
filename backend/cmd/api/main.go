@@ -39,22 +39,18 @@ func main() {
 		log.Fatal("failed to create rpc client", "error", err)
 	}
 
-	// Create event bus for real-time updates
 	eventBus := events.NewBus()
 	defer eventBus.Close()
 
-	// Create price service (ETH price from CoinGecko, refresh every 60 seconds)
 	priceService := price.NewService("ethereum", "usd", 60*time.Second)
 	priceService.SetEventBus(eventBus)
 
-	// Create server config
 	serverCfg := &api.ServerConfig{
 		SolcPath:            cfg.SolcPath,
 		UseSourcifyFallback: cfg.UseSourcifyFallback,
 		MetricsEnabled:      cfg.MetricsEnabled,
 	}
 
-	// Initialize privacy and SSO clients (opt-in: only when PRIVACY_PROXY_URL is set)
 	var privacyClient *privacy.Client
 	var ssoClient *auth.SSOClient
 	if cfg.PrivacyEnabled && cfg.PrivacyProxyURL != "" {
@@ -63,12 +59,9 @@ func main() {
 		log.Info("privacy integration enabled", "proxy_url", cfg.PrivacyProxyURL)
 	}
 
-	// API-only mode: no indexer required
 	server := api.New(database, rpcClient, nil, priceService, eventBus, cfg.APIPort, serverCfg, privacyClient, ssoClient)
 
 	ctx, cancel := context.WithCancel(context.Background())
-
-	// Start background price refresh
 	priceService.StartBackgroundRefresh(ctx)
 	defer cancel()
 

@@ -11,7 +11,6 @@ import (
 	"explorer/internal/events"
 )
 
-// PriceData represents the current price information
 type PriceData struct {
 	Price          float64   `json:"price"`
 	Currency       string    `json:"currency"`
@@ -21,7 +20,6 @@ type PriceData struct {
 	LastUpdated    time.Time `json:"lastUpdated"`
 }
 
-// Service fetches and caches cryptocurrency prices
 type Service struct {
 	mu          sync.RWMutex
 	cache       *PriceData
@@ -33,12 +31,10 @@ type Service struct {
 	eventBus    *events.Bus
 }
 
-// SetEventBus sets the event bus for publishing price update events
 func (s *Service) SetEventBus(bus *events.Bus) {
 	s.eventBus = bus
 }
 
-// CoinGecko API response structure
 type coingeckoResponse map[string]struct {
 	USD          float64 `json:"usd"`
 	USDChange24h float64 `json:"usd_24h_change"`
@@ -46,7 +42,6 @@ type coingeckoResponse map[string]struct {
 	USDVolume24h float64 `json:"usd_24h_vol"`
 }
 
-// NewService creates a new price service
 func NewService(coinID, currency string, cacheTTL time.Duration) *Service {
 	return &Service{
 		cacheTTL:   cacheTTL,
@@ -56,7 +51,6 @@ func NewService(coinID, currency string, cacheTTL time.Duration) *Service {
 	}
 }
 
-// GetPrice returns the current price, fetching from API if cache is expired
 func (s *Service) GetPrice(ctx context.Context) (*PriceData, error) {
 	s.mu.RLock()
 	if s.cache != nil && time.Now().Before(s.cacheExpiry) {
@@ -65,21 +59,17 @@ func (s *Service) GetPrice(ctx context.Context) (*PriceData, error) {
 	}
 	s.mu.RUnlock()
 
-	// Cache expired or empty, fetch new price
 	return s.fetchAndCache(ctx)
 }
 
-// fetchAndCache fetches price from CoinGecko and updates cache
 func (s *Service) fetchAndCache(ctx context.Context) (*PriceData, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Double-check cache (another goroutine might have updated it)
 	if s.cache != nil && time.Now().Before(s.cacheExpiry) {
 		return s.cache, nil
 	}
 
-	// Fetch from CoinGecko
 	url := fmt.Sprintf(
 		"https://api.coingecko.com/api/v3/simple/price?ids=%s&vs_currencies=%s&include_24hr_change=true&include_market_cap=true&include_24hr_vol=true",
 		s.coinID,
@@ -88,7 +78,6 @@ func (s *Service) fetchAndCache(ctx context.Context) (*PriceData, error) {
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		// Return stale cache if available
 		if s.cache != nil {
 			return s.cache, nil
 		}
@@ -99,7 +88,6 @@ func (s *Service) fetchAndCache(ctx context.Context) (*PriceData, error) {
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		// Return stale cache if available
 		if s.cache != nil {
 			return s.cache, nil
 		}
@@ -108,7 +96,6 @@ func (s *Service) fetchAndCache(ctx context.Context) (*PriceData, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		// Return stale cache if available
 		if s.cache != nil {
 			return s.cache, nil
 		}
@@ -141,7 +128,6 @@ func (s *Service) fetchAndCache(ctx context.Context) (*PriceData, error) {
 	}
 	s.cacheExpiry = time.Now().Add(s.cacheTTL)
 
-	// Publish price update event
 	if s.eventBus != nil {
 		s.eventBus.PublishPriceUpdate(s.cache)
 	}
@@ -149,10 +135,8 @@ func (s *Service) fetchAndCache(ctx context.Context) (*PriceData, error) {
 	return s.cache, nil
 }
 
-// StartBackgroundRefresh starts a background goroutine to keep the cache fresh
 func (s *Service) StartBackgroundRefresh(ctx context.Context) {
 	go func() {
-		// Initial fetch
 		s.fetchAndCache(ctx)
 
 		ticker := time.NewTicker(s.cacheTTL)

@@ -95,20 +95,17 @@ func (s *Server) handleGetBlock(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// Try database first
 	block, err := s.db.GetBlock(ctx, number)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// If not in DB, trigger on-demand indexing
 	if block == nil {
 		if err := s.indexer.IndexBlock(ctx, number); err != nil {
 			http.Error(w, "block not found", http.StatusNotFound)
 			return
 		}
-		// Now fetch from DB
 		block, err = s.db.GetBlock(ctx, number)
 		if err != nil || block == nil {
 			http.Error(w, "block not found after indexing", http.StatusInternalServerError)
@@ -116,7 +113,6 @@ func (s *Server) handleGetBlock(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Get transactions from DB
 	txs, err := s.db.GetTransactionsByBlock(ctx, number)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -130,18 +126,15 @@ func (s *Server) handleGetBlock(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetTransactions(w http.ResponseWriter, r *http.Request) {
-	// Check if using page-based pagination
 	pageStr := r.URL.Query().Get("page")
 	if pageStr != "" {
 		s.handleGetTransactionsPaginated(w, r)
 		return
 	}
 
-	// Cursor-based pagination (legacy)
 	limit := parseLimit(r)
 	beforeBlock := parseBeforeBlock(r)
 
-	// Use category-aware query
 	txs, err := s.db.GetTransactionsWithCategories(r.Context(), limit+1, beforeBlock)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -169,7 +162,6 @@ func (s *Server) handleGetTransactionsPaginated(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	// Use category-aware query
 	txs, total, err := s.db.GetTransactionsPaginatedWithCategories(r.Context(), page, pageSize)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -202,36 +194,30 @@ func (s *Server) handleGetTransaction(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// Try database first with category-aware query
 	tx, err := s.db.GetTransactionWithCategories(ctx, hash)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// If not in DB, try to find and index the block containing this tx
 	if tx == nil {
-		// Get tx from RPC to find its block number
 		rpcTx, _, err := s.rpc.TransactionByHash(ctx, common.HexToHash(hash))
 		if err != nil {
 			http.Error(w, "transaction not found", http.StatusNotFound)
 			return
 		}
 
-		// Get receipt to find block number
 		receipt, err := s.rpc.TransactionReceipt(ctx, common.HexToHash(hash))
 		if err != nil || receipt.BlockNumber == nil {
 			http.Error(w, "transaction not found or pending", http.StatusNotFound)
 			return
 		}
 
-		// Trigger on-demand indexing of the block
 		if err := s.indexer.IndexBlock(ctx, receipt.BlockNumber.Uint64()); err != nil {
 			http.Error(w, "failed to index block: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		// Now fetch from DB with categories
 		tx, err = s.db.GetTransactionWithCategories(ctx, rpcTx.Hash().Hex())
 		if err != nil || tx == nil {
 			http.Error(w, "transaction not found after indexing", http.StatusInternalServerError)
@@ -239,7 +225,6 @@ func (s *Server) handleGetTransaction(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Enrich deposit transactions with L1 metadata
 	if tx.TxType == types.TxTypeDeposit {
 		deposit, err := s.db.GetOPDeposit(ctx, tx.Hash)
 		if err == nil && deposit != nil {
@@ -354,7 +339,6 @@ func (s *Server) handleUpdateContractABI(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Validate that ABI is valid JSON array
 	var abiArray []json.RawMessage
 	if err := json.Unmarshal(req.ABI, &abiArray); err != nil {
 		http.Error(w, "abi must be a valid JSON array", http.StatusBadRequest)
@@ -443,14 +427,12 @@ func (s *Server) handleGetAccounts(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// Get accounts from database
 	accounts, total, err := s.db.GetAccountsPaginated(ctx, page, pageSize)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Fetch balances and contract status for each account
 	var accountList []types.AccountListItem
 	for _, acc := range accounts {
 		balance, err := s.rpc.GetBalance(ctx, common.HexToAddress(acc.Address))
@@ -481,19 +463,17 @@ func (s *Server) handleGetAccounts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetTransactionHistory(w http.ResponseWriter, r *http.Request) {
-	// Default: 14 days of data, grouped by day
-	// For dev environments with recent data, use smaller intervals
 	intervalStr := r.URL.Query().Get("interval")
 	limitStr := r.URL.Query().Get("limit")
 
-	interval := 60 // Default: 1 minute intervals for dev
+	interval := 60
 	if intervalStr != "" {
 		if i, err := strconv.Atoi(intervalStr); err == nil && i > 0 {
 			interval = i
 		}
 	}
 
-	limit := 30 // Default: 30 data points
+	limit := 30
 	if limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
 			limit = l
@@ -545,14 +525,12 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// Try as block number
 	if num, err := strconv.ParseUint(q, 10, 64); err == nil {
 		block, err := s.db.GetBlock(ctx, num)
 		if err == nil && block != nil {
 			writeJSON(w, map[string]any{"type": "block", "data": block})
 			return
 		}
-		// Try on-demand indexing
 		if err := s.indexer.IndexBlock(ctx, num); err == nil {
 			block, _ = s.db.GetBlock(ctx, num)
 			if block != nil {
@@ -562,14 +540,12 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Try as transaction hash
 	if strings.HasPrefix(q, "0x") && len(q) == 66 {
 		tx, err := s.db.GetTransaction(ctx, q)
 		if err == nil && tx != nil {
 			writeJSON(w, map[string]any{"type": "transaction", "data": tx})
 			return
 		}
-		// Try to find and index the block containing this tx
 		receipt, err := s.rpc.TransactionReceipt(ctx, common.HexToHash(q))
 		if err == nil && receipt.BlockNumber != nil {
 			if err := s.indexer.IndexBlock(ctx, receipt.BlockNumber.Uint64()); err == nil {
@@ -582,7 +558,6 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Try as address
 	if common.IsHexAddress(q) {
 		address := common.HexToAddress(q).Hex()
 
@@ -600,8 +575,6 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 
 	http.Error(w, "not found", http.StatusNotFound)
 }
-
-// Helpers
 
 func writeJSON(w http.ResponseWriter, data any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -647,12 +620,9 @@ func paginate[T any](items []T, limit int) types.PaginatedResponse[T] {
 	}
 }
 
-// Health check endpoints
-
 func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Check database connectivity
 	_, err := s.db.GetLatestBlockNumber(ctx)
 	if err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -660,7 +630,6 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check RPC connectivity
 	_, err = s.rpc.BlockNumber(ctx)
 	if err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -672,14 +641,12 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLivenessCheck(w http.ResponseWriter, r *http.Request) {
-	// Simple liveness check - just return OK if the server is running
 	writeJSON(w, map[string]any{"status": "alive"})
 }
 
 func (s *Server) handleReadinessCheck(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Check database connectivity
 	latestBlock, err := s.db.GetLatestBlockNumber(ctx)
 	if err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -687,7 +654,6 @@ func (s *Server) handleReadinessCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if we have at least one block indexed
 	if latestBlock == 0 {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		writeJSON(w, map[string]any{"ready": false, "reason": "no blocks indexed yet"})
@@ -696,8 +662,6 @@ func (s *Server) handleReadinessCheck(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, map[string]any{"ready": true, "lastIndexedBlock": latestBlock})
 }
-
-// Token endpoints
 
 func (s *Server) handleGetTokens(w http.ResponseWriter, r *http.Request) {
 	pageStr := r.URL.Query().Get("page")
@@ -907,8 +871,6 @@ func (s *Server) handleGetAllTransfers(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Internal transaction endpoints
-
 func (s *Server) handleGetTransactionInternalTxs(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 	if !strings.HasPrefix(hash, "0x") {
@@ -978,8 +940,6 @@ func (s *Server) handleGetAddressInternalTxs(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-// Log filtering endpoint
-
 func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 	addressStr := r.URL.Query().Get("address")
 	topic0Str := r.URL.Query().Get("topic0")
@@ -1028,8 +988,6 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, logs)
 }
 
-// Sync status endpoint
-
 func (s *Server) handleGetSyncStatus(w http.ResponseWriter, r *http.Request) {
 	status, err := s.db.GetSyncStatus(r.Context())
 	if err != nil {
@@ -1037,7 +995,6 @@ func (s *Server) handleGetSyncStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get latest block on chain for comparison
 	latestOnChain, err := s.rpc.BlockNumber(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -1051,8 +1008,6 @@ func (s *Server) handleGetSyncStatus(w http.ResponseWriter, r *http.Request) {
 		"isSynced":          status.LastIndexedBlock >= latestOnChain,
 	})
 }
-
-// Address logs endpoint
 
 func (s *Server) handleGetAddressLogs(w http.ResponseWriter, r *http.Request) {
 	address := chi.URLParam(r, "address")
@@ -1104,8 +1059,6 @@ func (s *Server) handleGetAddressLogs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Address token balances endpoint
-
 func (s *Server) handleGetAddressTokenBalances(w http.ResponseWriter, r *http.Request) {
 	address := chi.URLParam(r, "address")
 	if !common.IsHexAddress(address) {
@@ -1127,9 +1080,6 @@ func (s *Server) handleGetAddressTokenBalances(w http.ResponseWriter, r *http.Re
 	writeJSON(w, balances)
 }
 
-// Sourcify integration endpoints
-
-// handleFetchSourcify fetches verified contract info from Sourcify
 func (s *Server) handleFetchSourcify(w http.ResponseWriter, r *http.Request) {
 	address := chi.URLParam(r, "address")
 	if !common.IsHexAddress(address) {
@@ -1143,7 +1093,6 @@ func (s *Server) handleFetchSourcify(w http.ResponseWriter, r *http.Request) {
 		chainIDStr = "1" // Default to Ethereum mainnet
 	}
 
-	// Fetch from Sourcify
 	url := fmt.Sprintf("%s/files/%s/%s", sourcifyAPIBase, chainIDStr, address)
 	resp, err := http.Get(url)
 	if err != nil {
@@ -1163,7 +1112,6 @@ func (s *Server) handleFetchSourcify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse Sourcify response
 	var sourcifyFiles []struct {
 		Name    string `json:"name"`
 		Path    string `json:"path"`
@@ -1174,7 +1122,6 @@ func (s *Server) handleFetchSourcify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract ABI and source code
 	var abi json.RawMessage
 	var sourceCode string
 	var contractName string
@@ -1212,7 +1159,6 @@ func (s *Server) handleFetchSourcify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update contract in database
 	if err := s.db.VerifyContract(r.Context(), address, contractName, compilerVersion, false, sourceCode, abi, ""); err != nil {
 		http.Error(w, "failed to save contract: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -1227,7 +1173,6 @@ func (s *Server) handleFetchSourcify(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// isLocalChain checks if a chain ID is a local/development chain
 func isLocalChain(chainID string) bool {
 	localChains := map[string]bool{
 		"31337": true, // Hardhat/Anvil
@@ -1239,7 +1184,6 @@ func isLocalChain(chainID string) bool {
 	return localChains[chainID]
 }
 
-// handleVerifySourcify submits a contract for verification to Sourcify
 func (s *Server) handleVerifySourcify(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Address         string          `json:"address"`
@@ -1270,15 +1214,12 @@ func (s *Server) handleVerifySourcify(w http.ResponseWriter, r *http.Request) {
 		req.ChainID = "1"
 	}
 
-	// Handle local/development chains without Sourcify
+	// For local/dev chains, store verification directly without Sourcify
 	if isLocalChain(req.ChainID) {
-		// For local chains, store verification directly without Sourcify
-		// If ABI is provided, use it; otherwise store with empty ABI
 		var abi json.RawMessage
 		if len(req.ABI) > 0 {
 			abi = req.ABI
 		} else {
-			// Store empty array as placeholder - user can update ABI separately
 			abi = json.RawMessage("[]")
 		}
 
@@ -1296,7 +1237,6 @@ func (s *Server) handleVerifySourcify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build Sourcify verification request
 	sourcifyReq := map[string]any{
 		"address":  req.Address,
 		"chain":    req.ChainID,
@@ -1342,12 +1282,10 @@ func (s *Server) handleVerifySourcify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch the verified contract info from Sourcify
 	fetchURL := fmt.Sprintf("%s/files/%s/%s", sourcifyAPIBase, req.ChainID, common.HexToAddress(req.Address).Hex())
 	fetchResp, err := http.Get(fetchURL)
 	if err == nil && fetchResp.StatusCode == 200 {
 		defer fetchResp.Body.Close()
-		// Parse and save the verification result
 		var sourcifyFiles []struct {
 			Name    string `json:"name"`
 			Content string `json:"content"`
@@ -1384,38 +1322,31 @@ func (s *Server) handleVerifySourcify(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleVerifyContract handles contract verification using local solc or Sourcify fallback
 func (s *Server) handleVerifyContract(w http.ResponseWriter, r *http.Request) {
-	// Read request body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "failed to read request body", http.StatusBadRequest)
 		return
 	}
 
-	// Check if we have a local verifier
 	if s.verifier != nil {
-		// Try local verification first
 		result, err := s.verifier.VerifyFromJSON(r.Context(), body)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		// If local verification succeeded or returned an error, use that result directly.
-		// Only fall through to Sourcify if the compiler version is not available locally.
+		// Only fall through to Sourcify if the compiler version is not available locally
 		if result.Success || (result.Error != "" && !strings.Contains(result.Error, "compiler version")) {
 			writeJSON(w, result)
 			return
 		}
 	}
 
-	// Fall back to Sourcify verification - restore the body first
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	s.handleVerifySourcify(w, r)
 }
 
-// handleListCompilers returns the list of available solc compiler versions
 func (s *Server) handleListCompilers(w http.ResponseWriter, r *http.Request) {
 	if s.verifier == nil {
 		writeJSON(w, map[string]any{
@@ -1431,7 +1362,6 @@ func (s *Server) handleListCompilers(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleCheckSourcify checks if a contract is verified on Sourcify
 func (s *Server) handleCheckSourcify(w http.ResponseWriter, r *http.Request) {
 	address := chi.URLParam(r, "address")
 	if !common.IsHexAddress(address) {
@@ -1445,7 +1375,6 @@ func (s *Server) handleCheckSourcify(w http.ResponseWriter, r *http.Request) {
 		chainIDStr = "1"
 	}
 
-	// For local chains, check our database instead of Sourcify
 	if isLocalChain(chainIDStr) {
 		contract, err := s.db.GetContract(r.Context(), address)
 		if err != nil {
@@ -1468,7 +1397,6 @@ func (s *Server) handleCheckSourcify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check with Sourcify
 	url := fmt.Sprintf("%s/check-by-addresses?addresses=%s&chainIds=%s", sourcifyAPIBase, address, chainIDStr)
 	resp, err := http.Get(url)
 	if err != nil {

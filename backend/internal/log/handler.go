@@ -13,7 +13,6 @@ import (
 	"time"
 )
 
-// ANSI color codes
 const (
 	reset   = "\033[0m"
 	bold    = "\033[1m"
@@ -28,7 +27,6 @@ const (
 	gray    = "\033[90m"
 )
 
-// Level colors and labels
 var levelStyles = map[slog.Level]struct {
 	color string
 	label string
@@ -39,7 +37,6 @@ var levelStyles = map[slog.Level]struct {
 	slog.LevelError: {color: red, label: "ERROR"},
 }
 
-// TerminalHandler is a slog.Handler that outputs pretty-printed logs to a terminal.
 type TerminalHandler struct {
 	opts      *HandlerOptions
 	mu        *sync.Mutex
@@ -49,17 +46,12 @@ type TerminalHandler struct {
 	useColors bool
 }
 
-// HandlerOptions configures the terminal handler.
 type HandlerOptions struct {
-	// Level is the minimum level to log. Default: LevelInfo
-	Level slog.Leveler
-	// ShowSource shows file:line for error logs. Default: true
+	Level      slog.Leveler
 	ShowSource bool
-	// UseColors enables ANSI colors. Default: auto-detect TTY
-	UseColors *bool
+	UseColors  *bool
 }
 
-// NewTerminalHandler creates a new terminal handler.
 func NewTerminalHandler(w io.Writer, opts *HandlerOptions) *TerminalHandler {
 	if opts == nil {
 		opts = &HandlerOptions{}
@@ -68,17 +60,14 @@ func NewTerminalHandler(w io.Writer, opts *HandlerOptions) *TerminalHandler {
 		opts.Level = slog.LevelInfo
 	}
 
-	// Auto-detect colors if not explicitly set
 	useColors := true
 	if opts.UseColors != nil {
 		useColors = *opts.UseColors
 	} else if f, ok := w.(*os.File); ok {
-		// Check if output is a TTY
 		fi, err := f.Stat()
 		if err != nil || (fi.Mode()&os.ModeCharDevice) == 0 {
 			useColors = false
 		}
-		// Also disable if NO_COLOR env is set
 		if os.Getenv("NO_COLOR") != "" {
 			useColors = false
 		}
@@ -92,23 +81,19 @@ func NewTerminalHandler(w io.Writer, opts *HandlerOptions) *TerminalHandler {
 	}
 }
 
-// Enabled reports whether the handler handles records at the given level.
 func (h *TerminalHandler) Enabled(_ context.Context, level slog.Level) bool {
 	return level >= h.opts.Level.Level()
 }
 
-// Handle writes the log record to the terminal.
-// Format: INFO[02-01|15:04:05] message key=value key2=value2
+// Format: LEVEL[DD-MM|HH:MM:SS] message key=value key2=value2
 func (h *TerminalHandler) Handle(_ context.Context, r slog.Record) error {
 	var buf strings.Builder
 
-	// Get level style
 	style, ok := levelStyles[r.Level]
 	if !ok {
 		style = levelStyles[slog.LevelInfo]
 	}
 
-	// Format: LEVEL[DD-MM|HH:MM:SS]
 	timeStr := r.Time.Format("02-01|15:04:05")
 
 	if h.useColors {
@@ -127,7 +112,6 @@ func (h *TerminalHandler) Handle(_ context.Context, r slog.Record) error {
 	}
 	buf.WriteString(" ")
 
-	// Component/prefix (from groups)
 	if len(h.groups) > 0 {
 		prefix := strings.Join(h.groups, ".")
 		if h.useColors {
@@ -141,17 +125,14 @@ func (h *TerminalHandler) Handle(_ context.Context, r slog.Record) error {
 		}
 	}
 
-	// Message
 	buf.WriteString(r.Message)
 
-	// Attributes (from handler and record)
 	allAttrs := append(h.attrs, collectAttrs(r)...)
 	if len(allAttrs) > 0 {
 		buf.WriteString(" ")
 		h.writeAttrs(&buf, allAttrs)
 	}
 
-	// Source (for error level, if enabled)
 	if h.opts.ShowSource && r.Level >= slog.LevelError {
 		if r.PC != 0 {
 			fs := runtime.CallersFrames([]uintptr{r.PC})
@@ -175,7 +156,6 @@ func (h *TerminalHandler) Handle(_ context.Context, r slog.Record) error {
 	return err
 }
 
-// writeAttrs writes attributes in key=value format.
 func (h *TerminalHandler) writeAttrs(buf *strings.Builder, attrs []slog.Attr) {
 	for i, attr := range attrs {
 		if i > 0 {
@@ -195,12 +175,10 @@ func (h *TerminalHandler) writeAttrs(buf *strings.Builder, attrs []slog.Attr) {
 	}
 }
 
-// formatValue formats a slog.Value for display.
 func formatValue(v slog.Value) string {
 	switch v.Kind() {
 	case slog.KindString:
 		s := v.String()
-		// Quote strings with spaces
 		if strings.ContainsAny(s, " \t\n") {
 			return fmt.Sprintf("%q", s)
 		}
@@ -210,7 +188,6 @@ func formatValue(v slog.Value) string {
 	case slog.KindDuration:
 		return v.Duration().String()
 	case slog.KindGroup:
-		// Handle nested groups
 		attrs := v.Group()
 		if len(attrs) == 0 {
 			return "{}"
@@ -225,7 +202,6 @@ func formatValue(v slog.Value) string {
 	}
 }
 
-// collectAttrs collects all attributes from a record.
 func collectAttrs(r slog.Record) []slog.Attr {
 	var attrs []slog.Attr
 	r.Attrs(func(a slog.Attr) bool {
@@ -235,7 +211,6 @@ func collectAttrs(r slog.Record) []slog.Attr {
 	return attrs
 }
 
-// WithAttrs returns a new handler with the given attributes.
 func (h *TerminalHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return &TerminalHandler{
 		opts:      h.opts,
@@ -247,7 +222,6 @@ func (h *TerminalHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	}
 }
 
-// WithGroup returns a new handler with the given group name.
 func (h *TerminalHandler) WithGroup(name string) slog.Handler {
 	if name == "" {
 		return h

@@ -8,7 +8,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// BlockData holds all data for a block to be inserted atomically
 type BlockData struct {
 	Block                *types.Block
 	Transactions         []*types.Transaction
@@ -21,7 +20,6 @@ type BlockData struct {
 	SkipAddressStats     bool // Skip address_stats updates (for catchup mode to avoid deadlocks)
 }
 
-// AddressStatsDelta holds the changes to apply to address stats
 type AddressStatsDelta struct {
 	Address              string
 	TxCountDelta         int
@@ -31,7 +29,6 @@ type AddressStatsDelta struct {
 	BlockNumber          uint64
 }
 
-// InsertBlockDataBatch inserts all block data in a single transaction
 func (d *DB) InsertBlockDataBatch(ctx context.Context, data *BlockData) error {
 	tx, err := d.pool.Begin(ctx)
 	if err != nil {
@@ -39,7 +36,6 @@ func (d *DB) InsertBlockDataBatch(ctx context.Context, data *BlockData) error {
 	}
 	defer tx.Rollback(ctx)
 
-	// 1. Insert block
 	if data.Block != nil {
 		_, err = tx.Exec(ctx, `
 			INSERT INTO blocks (number, hash, parent_hash, timestamp, gas_used, gas_limit, base_fee_per_gas, transaction_count,
@@ -55,7 +51,6 @@ func (d *DB) InsertBlockDataBatch(ctx context.Context, data *BlockData) error {
 		}
 	}
 
-	// 2. Batch insert transactions
 	if len(data.Transactions) > 0 {
 		batch := &pgx.Batch{}
 		for _, t := range data.Transactions {
@@ -73,7 +68,6 @@ func (d *DB) InsertBlockDataBatch(ctx context.Context, data *BlockData) error {
 		}
 	}
 
-	// 3. Batch insert contracts (before logs/transfers for FK relationships)
 	if len(data.Contracts) > 0 {
 		batch := &pgx.Batch{}
 		for _, c := range data.Contracts {
@@ -91,7 +85,6 @@ func (d *DB) InsertBlockDataBatch(ctx context.Context, data *BlockData) error {
 		}
 	}
 
-	// 4. Batch insert tokens
 	if len(data.Tokens) > 0 {
 		batch := &pgx.Batch{}
 		for _, t := range data.Tokens {
@@ -111,7 +104,6 @@ func (d *DB) InsertBlockDataBatch(ctx context.Context, data *BlockData) error {
 		}
 	}
 
-	// 5. Batch insert logs
 	if len(data.Logs) > 0 {
 		batch := &pgx.Batch{}
 		for _, l := range data.Logs {
@@ -127,7 +119,6 @@ func (d *DB) InsertBlockDataBatch(ctx context.Context, data *BlockData) error {
 		}
 	}
 
-	// 6. Batch insert token transfers
 	if len(data.Transfers) > 0 {
 		batch := &pgx.Batch{}
 		for _, t := range data.Transfers {
@@ -145,7 +136,6 @@ func (d *DB) InsertBlockDataBatch(ctx context.Context, data *BlockData) error {
 		}
 	}
 
-	// 7. Batch insert internal transactions (traces)
 	if len(data.InternalTransactions) > 0 {
 		batch := &pgx.Batch{}
 		for _, it := range data.InternalTransactions {
@@ -163,7 +153,6 @@ func (d *DB) InsertBlockDataBatch(ctx context.Context, data *BlockData) error {
 		}
 	}
 
-	// 8. Batch upsert address stats (skip during catchup to avoid deadlocks)
 	if len(data.AddressStats) > 0 && !data.SkipAddressStats {
 		batch := &pgx.Batch{}
 		for _, s := range data.AddressStats {
@@ -188,15 +177,11 @@ func (d *DB) InsertBlockDataBatch(ctx context.Context, data *BlockData) error {
 	return tx.Commit(ctx)
 }
 
-// RebuildAddressStats rebuilds address_stats from transactions table
-// Call this after catchup completes to populate stats without deadlock issues
+// RebuildAddressStats rebuilds address_stats after catchup completes.
 func (d *DB) RebuildAddressStats(ctx context.Context) error {
-	// This runs as a single operation, no deadlocks possible
 	_, err := d.pool.Exec(ctx, `
-		-- Clear existing stats
 		TRUNCATE address_stats;
 
-		-- Rebuild from transactions
 		INSERT INTO address_stats (address, tx_count, internal_tx_count, token_transfer_count, first_seen, last_seen, is_contract, updated_at)
 		SELECT
 			addr,
@@ -208,7 +193,6 @@ func (d *DB) RebuildAddressStats(ctx context.Context) error {
 			COALESCE(is_contract, false),
 			NOW()
 		FROM (
-			-- Get all unique addresses with their stats
 			SELECT
 				a.address as addr,
 				tx.tx_count,
@@ -218,7 +202,6 @@ func (d *DB) RebuildAddressStats(ctx context.Context) error {
 				GREATEST(tx.last_seen, it.last_seen, tt.last_seen) as last_seen,
 				c.is_contract
 			FROM (
-				-- All unique addresses from transactions
 				SELECT from_address as address FROM transactions
 				UNION
 				SELECT to_address as address FROM transactions WHERE to_address IS NOT NULL
@@ -267,7 +250,6 @@ func (d *DB) RebuildAddressStats(ctx context.Context) error {
 	return err
 }
 
-// InsertBalancesBatch inserts multiple balances in a single transaction
 func (d *DB) InsertBalancesBatch(ctx context.Context, balances []*types.Balance) error {
 	if len(balances) == 0 {
 		return nil
@@ -296,7 +278,6 @@ func (d *DB) InsertBalancesBatch(ctx context.Context, balances []*types.Balance)
 	return tx.Commit(ctx)
 }
 
-// GetAllTokenAddresses returns all known token addresses (for cache pre-population)
 func (d *DB) GetAllTokenAddresses(ctx context.Context) ([]string, error) {
 	rows, err := d.pool.Query(ctx, `SELECT address FROM tokens`)
 	if err != nil {

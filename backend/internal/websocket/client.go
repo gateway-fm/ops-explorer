@@ -10,7 +10,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// Client represents a WebSocket client
 type Client struct {
 	hub    *Hub
 	conn   *websocket.Conn
@@ -21,13 +20,11 @@ type Client struct {
 	closed bool
 }
 
-// ClientMessage represents a message from the client
 type ClientMessage struct {
 	Action string   `json:"action"` // subscribe, unsubscribe
 	Topics []string `json:"topics"`
 }
 
-// NewClient creates a new client
 func NewClient(hub *Hub, conn *websocket.Conn, config *Config) *Client {
 	return &Client{
 		hub:    hub,
@@ -77,8 +74,7 @@ func (c *Client) WritePump() {
 		case message, ok := <-c.send:
 			c.conn.SetWriteDeadline(time.Now().Add(c.config.WriteWait))
 			if !ok {
-				// The hub closed the channel
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+						c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 
@@ -108,7 +104,6 @@ func (c *Client) WritePump() {
 	}
 }
 
-// handleMessage processes incoming client messages
 func (c *Client) handleMessage(message []byte) {
 	var msg ClientMessage
 	if err := json.Unmarshal(message, &msg); err != nil {
@@ -139,7 +134,6 @@ func (c *Client) handleMessage(message []byte) {
 	}
 }
 
-// isValidTopic checks if a topic is valid
 func isValidTopic(topic string) bool {
 	validTopics := map[string]bool{
 		"blocks":       true,
@@ -148,12 +142,11 @@ func isValidTopic(topic string) bool {
 		"sync":         true,
 	}
 
-	// Check static topics
 	if validTopics[topic] {
 		return true
 	}
 
-	// Check address-specific topics (address:0x...)
+	// address-specific topics (address:0x...)
 	if len(topic) > 8 && topic[:8] == "address:" {
 		return true
 	}
@@ -161,7 +154,6 @@ func isValidTopic(topic string) bool {
 	return false
 }
 
-// sendError sends an error message to the client
 func (c *Client) sendError(message string) {
 	msg, _ := json.Marshal(map[string]interface{}{
 		"type":    "error",
@@ -170,7 +162,6 @@ func (c *Client) sendError(message string) {
 	c.send <- msg
 }
 
-// sendSuccess sends a success message to the client
 func (c *Client) sendSuccess(action, topic string) {
 	msg, _ := json.Marshal(map[string]interface{}{
 		"type":   "success",
@@ -180,7 +171,6 @@ func (c *Client) sendSuccess(action, topic string) {
 	c.send <- msg
 }
 
-// Close closes the client connection
 func (c *Client) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -193,7 +183,6 @@ func (c *Client) Close() {
 	close(c.send)
 }
 
-// Topics returns the list of topics the client is subscribed to
 func (c *Client) Topics() []string {
 	topics := make([]string, 0, len(c.topics))
 	for topic := range c.topics {

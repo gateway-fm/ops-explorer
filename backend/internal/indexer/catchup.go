@@ -18,15 +18,12 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 )
 
-// CatchupConfig holds configuration for the catchup indexer
 type CatchupConfig struct {
 	Workers   int // Number of parallel block processing workers
 	BatchSize int // Number of blocks to fetch in each batch
 	QueueSize int // Size of the work queue
 }
 
-// CatchupIndexer handles historical block backfilling with parallel workers
-// Now pulls work from MissingRangeCollector instead of sequential ranges
 type CatchupIndexer struct {
 	db       *db.DB
 	rpc      *rpc.Client
@@ -64,7 +61,6 @@ type CatchupIndexer struct {
 	onComplete func()
 }
 
-// NewCatchupIndexer creates a new catchup indexer
 func NewCatchupIndexer(
 	database *db.DB,
 	rpcClient *rpc.Client,
@@ -92,27 +88,22 @@ func NewCatchupIndexer(
 	}
 }
 
-// SetEventBus sets the event bus for publishing indexer events
 func (c *CatchupIndexer) SetEventBus(bus *events.Bus) {
 	c.eventBus = bus
 }
 
-// SetOnComplete sets a callback to be called when catchup completes
 func (c *CatchupIndexer) SetOnComplete(fn func()) {
 	c.onComplete = fn
 }
 
-// SetCollector sets the missing range collector
 func (c *CatchupIndexer) SetCollector(collector *MissingRangeCollector) {
 	c.collector = collector
 }
 
-// Start begins the catchup indexing process
-// This runs continuously, polling for missing ranges from the collector.
-// It will process existing gaps and continue monitoring for new gaps
+// Start runs continuously, polling for missing ranges from the collector.
+// It processes existing gaps and continues monitoring for new gaps
 // that appear when the chain head advances.
 func (c *CatchupIndexer) Start(ctx context.Context, fromBlock, toBlock uint64) error {
-	// Get total missing blocks for progress tracking
 	if c.collector != nil {
 		total, _ := c.collector.GetTotalMissingBlocks(ctx)
 		c.totalMissing = total
@@ -124,27 +115,17 @@ func (c *CatchupIndexer) Start(ctx context.Context, fromBlock, toBlock uint64) e
 		"initial_missing", c.totalMissing,
 		"workers", c.config.Workers)
 
-	// Start workers - they will process blocks from the work queue
 	for i := 0; i < c.config.Workers; i++ {
 		c.wg.Add(1)
 		go c.worker(i)
 	}
 
-	// Start the block producer that feeds from missing ranges
-	// This runs continuously, polling for new ranges
 	c.wg.Add(1)
 	go c.blockProducerFromRanges()
-
-	// Note: We don't wait for completion here because catchup runs continuously.
-	// The blockProducerFromRanges() handles the completion callback internally
-	// when it goes idle (no missing ranges for a while).
 
 	return nil
 }
 
-// blockProducerFromRanges fetches missing ranges and enqueues blocks
-// This runs continuously, polling for new missing ranges that may be added
-// by the forward scanner when the chain head advances
 func (c *CatchupIndexer) blockProducerFromRanges() {
 	defer c.wg.Done()
 	defer close(c.workQueue)
@@ -154,7 +135,6 @@ func (c *CatchupIndexer) blockProducerFromRanges() {
 		batchSize = 100
 	}
 
-	// Track idle state for completion callback
 	idleCount := 0
 	completionCalled := false
 	pollInterval := 5 * time.Second // Poll every 5 seconds when idle
@@ -166,7 +146,6 @@ func (c *CatchupIndexer) blockProducerFromRanges() {
 		default:
 		}
 
-		// Get a batch of missing ranges from the collector or database
 		var ranges []db.BlockRange
 		var err error
 
@@ -224,7 +203,6 @@ func (c *CatchupIndexer) blockProducerFromRanges() {
 			}
 		}
 
-		// Reset idle counter when we have work
 		if idleCount > 0 {
 			log.Info("catchup: new missing ranges detected, resuming",
 				"ranges", len(ranges))
@@ -238,31 +216,26 @@ func (c *CatchupIndexer) blockProducerFromRanges() {
 			completionCalled = false
 		}
 
-		// Enqueue all blocks from the ranges
 		for _, r := range ranges {
 			for blockNum := r.FromNumber; blockNum <= r.ToNumber; blockNum++ {
 				select {
 				case <-c.ctx.Done():
 					return
 				case c.workQueue <- blockNum:
-					// Block enqueued successfully
 				}
 			}
 		}
 	}
 }
 
-// Stop gracefully stops the catchup indexer
 func (c *CatchupIndexer) Stop() {
 	c.cancel()
 	c.wg.Wait()
 }
 
-// Progress returns the current catchup progress
 func (c *CatchupIndexer) Progress() (processed int64, total uint64, percentComplete float64) {
 	processed = atomic.LoadInt64(&c.processedBlocks)
 
-	// Get current total missing (may have changed)
 	if c.collector != nil {
 		remaining, _ := c.collector.GetTotalMissingBlocks(c.ctx)
 		total = uint64(processed) + uint64(remaining)
@@ -276,7 +249,6 @@ func (c *CatchupIndexer) Progress() (processed int64, total uint64, percentCompl
 	return
 }
 
-// IsRunning returns true if the catchup indexer is still running
 func (c *CatchupIndexer) IsRunning() bool {
 	select {
 	case <-c.ctx.Done():
@@ -286,7 +258,6 @@ func (c *CatchupIndexer) IsRunning() bool {
 	}
 }
 
-// worker processes blocks from the work queue
 func (c *CatchupIndexer) worker(id int) {
 	defer c.wg.Done()
 
@@ -296,18 +267,16 @@ func (c *CatchupIndexer) worker(id int) {
 			return
 		case blockNum, ok := <-c.workQueue:
 			if !ok {
-				// Work queue closed, exit
 				return
 			}
 
-			// Check if block already exists (may have been indexed by another process)
+			// Block may have been indexed by another process in the meantime
 			exists, err := c.db.HasBlock(c.ctx, blockNum)
 			if err != nil {
 				log.Error("catchup: failed to check block existence", "block", blockNum, "error", err)
 				continue
 			}
 			if exists {
-				// Block already indexed, mark as processed and continue
 				if c.collector != nil {
 					c.collector.MarkBlockProcessed(c.ctx, blockNum)
 				}
@@ -321,7 +290,6 @@ func (c *CatchupIndexer) worker(id int) {
 				continue
 			}
 
-			// Mark block as processed in collector
 			if c.collector != nil {
 				c.collector.MarkBlockProcessed(c.ctx, blockNum)
 			} else {
@@ -330,7 +298,6 @@ func (c *CatchupIndexer) worker(id int) {
 
 			processed := atomic.AddInt64(&c.processedBlocks, 1)
 
-			// Log progress periodically
 			if time.Since(c.lastLogTime) > 5*time.Second {
 				c.lastLogTime = time.Now()
 
@@ -356,7 +323,6 @@ func (c *CatchupIndexer) worker(id int) {
 	}
 }
 
-// processBlock processes a single block
 func (c *CatchupIndexer) processBlock(number uint64) error {
 	// Use raw JSON-RPC path for OP Stack chains
 	if c.idxCfg.EnableOPDeposits {
@@ -377,14 +343,12 @@ func (c *CatchupIndexer) processBlock(number uint64) error {
 	return c.insertEmptyBlock(block)
 }
 
-// processBlockRaw processes a single block using raw JSON-RPC for OP Stack support
 func (c *CatchupIndexer) processBlockRaw(number uint64) error {
 	rawBlock, err := c.rpc.RawBlockByNumber(c.ctx, number)
 	if err != nil {
 		return err
 	}
 
-	// Create a temporary Indexer to reuse processBlockRaw/processBlockParallelRaw logic
 	catchupConfig := *c.idxCfg
 	catchupConfig.SkipAddressStats = true
 
@@ -406,7 +370,6 @@ func (c *CatchupIndexer) processBlockRaw(number uint64) error {
 	return idx.processBlockRaw(c.ctx, number)
 }
 
-// insertEmptyBlock inserts a block with no transactions
 func (c *CatchupIndexer) insertEmptyBlock(block *ethtypes.Block) error {
 	var baseFeePerGas *uint64
 	if block.BaseFee() != nil {
@@ -451,14 +414,11 @@ func (c *CatchupIndexer) insertEmptyBlock(block *ethtypes.Block) error {
 	return c.db.InsertBlockDataBatch(c.ctx, b)
 }
 
-// processBlockWithTxs processes a block with transactions (similar to main indexer)
 func (c *CatchupIndexer) processBlockWithTxs(block *ethtypes.Block) error {
-	// Create a config copy with SkipAddressStats enabled
 	catchupConfig := *c.idxCfg
 	catchupConfig.SkipAddressStats = true
 
-	// Create a temporary Indexer instance to reuse processBlockParallel logic
-	// This is a bit of a hack, but it avoids duplicating the complex block processing code
+	// Reuse Indexer's processBlockParallel to avoid duplicating block processing code
 	idx := &Indexer{
 		db:               c.db,
 		rpc:              c.rpc,

@@ -45,7 +45,6 @@ type RawTransaction struct {
 	DepositReceiptVersion *hexutil.Uint64 `json:"depositReceiptVersion,omitempty"`
 }
 
-// RawBlock represents a block from the JSON-RPC eth_getBlockByNumber response.
 type RawBlock struct {
 	Number           *hexutil.Big    `json:"number"`
 	Hash             common.Hash     `json:"hash"`
@@ -67,7 +66,6 @@ type RawBlock struct {
 	Transactions []RawTransaction `json:"transactions"`
 }
 
-// NumberU64 returns the block number as uint64.
 func (b *RawBlock) NumberU64() uint64 {
 	if b.Number == nil {
 		return 0
@@ -75,7 +73,6 @@ func (b *RawBlock) NumberU64() uint64 {
 	return b.Number.ToInt().Uint64()
 }
 
-// DifficultyString returns the difficulty as a decimal string.
 func (b *RawBlock) DifficultyString() string {
 	if b.Difficulty == nil {
 		return "0"
@@ -83,7 +80,6 @@ func (b *RawBlock) DifficultyString() string {
 	return b.Difficulty.ToInt().String()
 }
 
-// TotalDifficultyString returns the total difficulty as a decimal string.
 func (b *RawBlock) TotalDifficultyString() string {
 	if b.TotalDifficulty == nil {
 		return "0"
@@ -91,7 +87,6 @@ func (b *RawBlock) TotalDifficultyString() string {
 	return b.TotalDifficulty.ToInt().String()
 }
 
-// NonceHex returns the nonce as a hex string (0x prefixed, 16 chars).
 func (b *RawBlock) NonceHex() string {
 	if len(b.Nonce) == 8 {
 		return fmt.Sprintf("0x%016x", new(big.Int).SetBytes(b.Nonce).Uint64())
@@ -99,7 +94,6 @@ func (b *RawBlock) NonceHex() string {
 	return "0x0000000000000000"
 }
 
-// BaseFeeU64 returns the base fee as *uint64 (nil if not present).
 func (b *RawBlock) BaseFeeU64() *uint64 {
 	if b.BaseFeePerGas == nil {
 		return nil
@@ -108,8 +102,7 @@ func (b *RawBlock) BaseFeeU64() *uint64 {
 	return &v
 }
 
-// RawBlockByNumber fetches a block with full transaction objects via raw JSON-RPC.
-// This bypasses go-ethereum's transaction unmarshalling which fails on OP Stack
+// RawBlockByNumber bypasses go-ethereum's tx unmarshalling which fails on OP Stack
 // deposit transactions (type 0x7E).
 func (c *Client) RawBlockByNumber(ctx context.Context, number uint64) (*RawBlock, error) {
 	var raw RawBlock
@@ -123,8 +116,7 @@ func (c *Client) RawBlockByNumber(ctx context.Context, number uint64) (*RawBlock
 	return &raw, nil
 }
 
-// RawBlockHash fetches only the block hash for a given block number.
-// Used for lightweight reorg detection without fetching full transaction data.
+// RawBlockHash fetches only the block hash for lightweight reorg detection.
 func (c *Client) RawBlockHash(ctx context.Context, number uint64) (string, error) {
 	var raw struct {
 		Hash common.Hash `json:"hash"`
