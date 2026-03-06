@@ -14,6 +14,17 @@ type VerifyRequest struct {
 	ConstructorArgs  string            `json:"constructorArgs,omitempty"` // hex-encoded
 	EVMVersion       string            `json:"evmVersion,omitempty"`      // e.g., "london"
 	Libraries        map[string]string `json:"libraries,omitempty"`       // library name -> address
+	LicenseType      string            `json:"licenseType,omitempty"`     // e.g., "MIT"
+}
+
+type StandardJSONVerifyRequest struct {
+	Address         string          `json:"address"`
+	CompilerVersion string          `json:"compilerVersion"`
+	ContractName    string          `json:"contractName"`
+	ContractFile    string          `json:"contractFile,omitempty"`
+	StandardInput   json.RawMessage `json:"standardInput"`
+	ConstructorArgs string          `json:"constructorArgs,omitempty"`
+	LicenseType     string          `json:"licenseType,omitempty"`
 }
 
 type VerifyResponse struct {

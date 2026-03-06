@@ -1,0 +1,19 @@
+{
+  "language": "Solidity",
+  "sources": {
+    "Counter.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.13;\n\ncontract Counter {\n    uint256 public number;\n\n    constructor(uint256 _initialNumber) {\n        number = _initialNumber;\n    }\n\n    function setNumber(uint256 newNumber) public {\n        number = newNumber;\n    }\n\n    function increment() public {\n        number++;\n    }\n}\n"
+    }
+  },
+  "settings": {
+    "optimizer": {
+      "enabled": true,
+      "runs": 200
+    },
+    "outputSelection": {
+      "*": {
+        "*": ["abi", "evm.bytecode", "evm.deployedBytecode"]
+      }
+    }
+  }
+}

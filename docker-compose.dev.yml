@@ -27,6 +27,7 @@ services:
       retries: 5
 
   api:
+    platform: linux/amd64
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -37,6 +38,8 @@ services:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/explorer?sslmode=disable
       RPC_URL: http://anvil:8545
       API_PORT: "8080"
+    volumes:
+      - solc_binaries:/opt/solc
     depends_on:
       postgres:
         condition: service_healthy
@@ -57,6 +60,7 @@ services:
       CATCHUP_WORKERS: "2"
       RPC_WORKERS: "10"
       RPC_RATE_LIMIT: "100"
+      ENABLE_TRACING: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -82,3 +86,4 @@ services:
 volumes:
   postgres_dev_data:
   frontend_node_modules:
+  solc_binaries:

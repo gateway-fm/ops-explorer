@@ -11,7 +11,20 @@ export function formatHash(hash: string, chars = 8): string {
 }
 
 export function formatTimestamp(timestamp: number): string {
-  return new Date(timestamp * 1000).toLocaleString();
+  const date = new Date(timestamp * 1000);
+  const ago = formatTimeAgo(timestamp);
+
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const month = months[date.getUTCMonth()];
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const year = date.getUTCFullYear();
+  const hours = date.getUTCHours();
+  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+  const seconds = String(date.getUTCSeconds()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  const hours12 = hours % 12 || 12;
+
+  return `${ago} | ${month} ${day} ${year} ${hours12}:${minutes}:${seconds} ${ampm} (+00:00 UTC)`;
 }
 
 export function formatTimeAgo(timestamp: number): string {

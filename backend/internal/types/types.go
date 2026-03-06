@@ -163,6 +163,9 @@ type Contract struct {
 	SourceCode       *string         `json:"sourceCode,omitempty"`
 	ABI              json.RawMessage `json:"abi,omitempty"`
 	CreatedAt        time.Time       `json:"createdAt"`
+	LicenseType      *string         `json:"licenseType,omitempty"`
+	ConstructorArgs  *string         `json:"constructorArgs,omitempty"`
+	OptimizationRuns *int            `json:"optimizationRuns,omitempty"`
 }
 
 type Log struct {

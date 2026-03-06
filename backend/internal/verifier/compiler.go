@@ -44,7 +44,11 @@ func (c *Compiler) Compile(ctx context.Context, input *CompilerInput) (*Compiler
 		if ctx.Err() == context.DeadlineExceeded {
 			return nil, fmt.Errorf("compilation timed out")
 		}
-		return nil, fmt.Errorf("compilation failed: %s", stderr.String())
+		stderrStr := stderr.String()
+		if strings.Contains(stderrStr, "ld-linux") || strings.Contains(stderrStr, "Dynamic loader not found") || strings.Contains(stderrStr, "multiarch") {
+			return nil, fmt.Errorf("compiler binary for solc %s is not compatible with this platform architecture", c.version)
+		}
+		return nil, fmt.Errorf("compilation failed: %s", stderrStr)
 	}
 
 	var output CompilerOutput
@@ -102,6 +106,103 @@ func (c *Compiler) CompileSource(ctx context.Context, sources map[string]string,
 	}
 
 	return c.Compile(ctx, input)
+}
+
+func (c *Compiler) CompileStandardJSON(ctx context.Context, standardInput json.RawMessage) (*CompilerOutput, error) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(standardInput, &raw); err != nil {
+		return nil, fmt.Errorf("invalid standard JSON input: %w", err)
+	}
+
+	if _, ok := raw["language"]; !ok {
+		return nil, fmt.Errorf("standard JSON input missing 'language' field")
+	}
+	if _, ok := raw["sources"]; !ok {
+		return nil, fmt.Errorf("standard JSON input missing 'sources' field")
+	}
+
+	raw = ensureOutputSelection(raw)
+
+	inputJSON, err := json.Marshal(raw)
+	if err != nil {
+		return nil, fmt.Errorf("failed to re-marshal standard JSON input: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, c.path, "--standard-json")
+	cmd.Stdin = bytes.NewReader(inputJSON)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("compilation timed out")
+		}
+		stderrStr := stderr.String()
+		if strings.Contains(stderrStr, "ld-linux") || strings.Contains(stderrStr, "Dynamic loader not found") || strings.Contains(stderrStr, "multiarch") {
+			return nil, fmt.Errorf("compiler binary for solc %s is not compatible with this platform architecture", c.version)
+		}
+		return nil, fmt.Errorf("compilation failed: %s", stderrStr)
+	}
+
+	var output CompilerOutput
+	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
+		return nil, fmt.Errorf("failed to parse compiler output: %w", err)
+	}
+
+	return &output, nil
+}
+
+func ensureOutputSelection(input map[string]json.RawMessage) map[string]json.RawMessage {
+	requiredOutputs := []string{"abi", "evm.bytecode", "evm.deployedBytecode"}
+
+	settingsRaw, hasSettings := input["settings"]
+	var settings map[string]json.RawMessage
+	if hasSettings {
+		if err := json.Unmarshal(settingsRaw, &settings); err != nil {
+			settings = make(map[string]json.RawMessage)
+		}
+	} else {
+		settings = make(map[string]json.RawMessage)
+	}
+
+	osRaw, hasOS := settings["outputSelection"]
+	var outputSelection map[string]map[string][]string
+	if hasOS {
+		if err := json.Unmarshal(osRaw, &outputSelection); err != nil {
+			outputSelection = make(map[string]map[string][]string)
+		}
+	} else {
+		outputSelection = make(map[string]map[string][]string)
+	}
+
+	if _, ok := outputSelection["*"]; !ok {
+		outputSelection["*"] = make(map[string][]string)
+	}
+
+	existing := outputSelection["*"]["*"]
+	existingSet := make(map[string]bool)
+	for _, v := range existing {
+		existingSet[v] = true
+	}
+	for _, req := range requiredOutputs {
+		if !existingSet[req] {
+			existing = append(existing, req)
+		}
+	}
+	outputSelection["*"]["*"] = existing
+
+	osJSON, _ := json.Marshal(outputSelection)
+	settings["outputSelection"] = osJSON
+
+	settingsJSON, _ := json.Marshal(settings)
+	input["settings"] = settingsJSON
+
+	return input
 }
 
 func GetContractOutput(output *CompilerOutput, mainFile, contractName string) (*ContractOutput, error) {

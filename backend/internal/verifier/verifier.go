@@ -134,7 +134,138 @@ func (v *Verifier) storeVerification(ctx context.Context, req *VerifyRequest, ou
 	sourceCode := sourceBuilder.String()
 
 	return v.db.VerifyContract(ctx, req.Address, req.ContractName, req.CompilerVersion,
-		req.OptimizationUsed, sourceCode, output.ABI, req.EVMVersion)
+		req.OptimizationUsed, sourceCode, output.ABI, req.EVMVersion,
+		req.LicenseType, req.ConstructorArgs, req.OptimizationRuns)
+}
+
+func (v *Verifier) VerifyStandardJSON(ctx context.Context, data []byte) (*VerifyResponse, error) {
+	var req StandardJSONVerifyRequest
+	if err := json.Unmarshal(data, &req); err != nil {
+		return &VerifyResponse{
+			Error: fmt.Sprintf("invalid request: %v", err),
+		}, nil
+	}
+
+	if req.Address == "" {
+		return &VerifyResponse{Error: "address is required"}, nil
+	}
+	if req.CompilerVersion == "" {
+		return &VerifyResponse{Error: "compilerVersion is required"}, nil
+	}
+	if req.ContractName == "" {
+		return &VerifyResponse{Error: "contractName is required"}, nil
+	}
+	if len(req.StandardInput) == 0 {
+		return &VerifyResponse{Error: "standardInput is required"}, nil
+	}
+
+	return v.verifyWithStandardInput(ctx, &req)
+}
+
+func (v *Verifier) verifyWithStandardInput(ctx context.Context, req *StandardJSONVerifyRequest) (*VerifyResponse, error) {
+	response := &VerifyResponse{
+		Address:      req.Address,
+		ContractName: req.ContractName,
+	}
+
+	if !common.IsHexAddress(req.Address) {
+		response.Error = "invalid address"
+		return response, nil
+	}
+	address := common.HexToAddress(req.Address)
+
+	onChainCode, err := v.rpc.GetCode(ctx, address)
+	if err != nil {
+		response.Error = fmt.Sprintf("failed to fetch on-chain bytecode: %v", err)
+		return response, nil
+	}
+
+	if len(onChainCode) == 0 {
+		response.Error = "no bytecode at address (not a contract)"
+		return response, nil
+	}
+
+	onChainBytecode := common.Bytes2Hex(onChainCode)
+
+	compilerPath, err := v.solcManager.GetCompiler(req.CompilerVersion)
+	if err != nil {
+		response.Error = fmt.Sprintf("compiler version %s not available: %v", req.CompilerVersion, err)
+		return response, nil
+	}
+
+	compiler := NewCompiler(compilerPath, req.CompilerVersion)
+
+	output, err := compiler.CompileStandardJSON(ctx, req.StandardInput)
+	if err != nil {
+		response.Error = fmt.Sprintf("compilation failed: %v", err)
+		return response, nil
+	}
+
+	if HasErrors(output) {
+		errors := GetErrors(output)
+		response.Error = fmt.Sprintf("compilation errors: %s", strings.Join(errors, "; "))
+		return response, nil
+	}
+
+	contractOutput, err := GetContractOutput(output, req.ContractFile, req.ContractName)
+	if err != nil {
+		response.Error = err.Error()
+		return response, nil
+	}
+
+	compiledBytecode := contractOutput.EVM.DeployedBytecode.Object
+	comparison := CompareBytecode(onChainBytecode, compiledBytecode, req.ConstructorArgs)
+
+	response.MatchType = comparison.MatchType
+	response.BytecodeHash = comparison.OnChainHash
+	response.CompiledHash = comparison.CompiledHash
+	response.CompilerVersion = req.CompilerVersion
+
+	if comparison.MatchType == MatchTypeNone {
+		response.Error = fmt.Sprintf("bytecode does not match (on-chain: %d bytes, compiled: %d bytes)", comparison.OnChainLength, comparison.CompiledLength)
+		log.Warn("bytecode mismatch (standard JSON)",
+			"address", req.Address,
+			"onChainLen", comparison.OnChainLength,
+			"compiledLen", comparison.CompiledLength,
+			"onChainHash", comparison.OnChainHash,
+			"compiledHash", comparison.CompiledHash,
+		)
+		return response, nil
+	}
+
+	response.Success = true
+	response.ABI = contractOutput.ABI
+
+	if err := v.storeStandardJSONVerification(ctx, req, contractOutput); err != nil {
+		log.Warn("failed to store standard JSON verification result", "error", err)
+	}
+
+	return response, nil
+}
+
+func (v *Verifier) storeStandardJSONVerification(ctx context.Context, req *StandardJSONVerifyRequest, output *ContractOutput) error {
+	sourceCode := string(req.StandardInput)
+
+	// Extract optimizer/EVM settings from the standard JSON input
+	var input struct {
+		Settings struct {
+			Optimizer struct {
+				Enabled bool `json:"enabled"`
+				Runs    int  `json:"runs"`
+			} `json:"optimizer"`
+			EVMVersion string `json:"evmVersion"`
+		} `json:"settings"`
+	}
+	json.Unmarshal(req.StandardInput, &input)
+
+	optimizationRuns := input.Settings.Optimizer.Runs
+	if optimizationRuns == 0 {
+		optimizationRuns = 200
+	}
+
+	return v.db.VerifyContract(ctx, req.Address, req.ContractName, req.CompilerVersion,
+		input.Settings.Optimizer.Enabled, sourceCode, output.ABI, input.Settings.EVMVersion,
+		req.LicenseType, req.ConstructorArgs, optimizationRuns)
 }
 
 func (v *Verifier) ListCompilers() []CompilerVersion {

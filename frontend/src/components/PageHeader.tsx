@@ -14,7 +14,7 @@ export function PageHeader({ title, subtitle, children }: PageHeaderProps) {
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
       <div className="flex items-center gap-3 sm:gap-4 min-w-0">
         <button
-          onClick={() => navigate(-1)}
+          onClick={() => navigate('/')}
           className="p-1.5 sm:p-2 rounded-lg bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 transition-colors shrink-0"
           title="Go back"
         >
