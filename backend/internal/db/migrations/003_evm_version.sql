@@ -1,1 +1,0 @@
-ALTER TABLE contracts ADD COLUMN IF NOT EXISTS evm_version TEXT;

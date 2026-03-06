@@ -286,7 +286,7 @@ function BlockRow({ block, isNew }: { block: Block; isNew: boolean }) {
           <span className="text-neutral-400 text-xs hidden sm:inline"><LiveTimeAgo timestamp={block.timestamp} /></span>
         </div>
         <div className="text-xs sm:text-sm text-neutral-500 font-mono">
-          {formatHash(block.hash, 4)}
+          {formatHash(block.hash, 10)}
         </div>
       </div>
       <div className="text-right text-xs sm:text-sm shrink-0">
@@ -369,18 +369,18 @@ function TxRow({ tx, isNew }: { tx: Transaction; isNew: boolean }) {
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <Link to={`/tx/${tx.hash}`} className="font-mono text-primary hover:text-primary-600 transition-colors text-xs sm:text-sm">
-            {formatHash(tx.hash, 6)}
+            {formatHash(tx.hash, 10)}
           </Link>
           {tx.blockTimestamp && (
             <span className="text-neutral-400 text-xs hidden sm:inline"><LiveTimeAgo timestamp={tx.blockTimestamp} /></span>
           )}
         </div>
         <div className="text-xs sm:text-sm text-neutral-500 truncate">
-          <AddressLink address={tx.from} chars={4} className="text-neutral-500 hover:text-neutral-700" />
+          <AddressLink address={tx.from} chars={8} className="text-neutral-500 hover:text-neutral-700" />
           {tx.to && (
             <>
               {' → '}
-              <AddressLink address={tx.to} chars={4} className="text-neutral-500 hover:text-neutral-700" />
+              <AddressLink address={tx.to} chars={8} className="text-neutral-500 hover:text-neutral-700" />
             </>
           )}
         </div>

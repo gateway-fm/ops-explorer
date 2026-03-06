@@ -73,6 +73,9 @@ export interface Contract {
   sourceCode?: string;
   abi?: AbiFragment[];
   createdAt: string;
+  licenseType?: string;
+  constructorArgs?: string;
+  optimizationRuns?: number;
 }
 
 // ABI types for contract interaction
@@ -152,6 +155,23 @@ export interface Log {
   topic3: string | null;
   data: string;
   blockNumber: number;
+}
+
+export interface InternalTransaction {
+  id: number;
+  txHash: string;
+  blockNumber: number;
+  traceAddress: string;
+  from: string;
+  to: string | null;
+  value: string | number;
+  gas?: number;
+  gasUsed?: number;
+  input?: string;
+  output?: string;
+  callType: string;
+  error?: string;
+  timestamp?: number;
 }
 
 export interface TxHistoryPoint {
@@ -322,6 +342,9 @@ export const api = {
   getBlock: (number: number) =>
     fetchAPI<{ block: Block; transactions: Transaction[] }>(`/blocks/${number}`),
 
+  getBlockInternalTxs: (number: number) =>
+    fetchAPI<InternalTransaction[]>(`/blocks/${number}/internal`),
+
   getLatestBlock: () => fetchAPI<Block>('/blocks/latest'),
 
   getTransactions: (limit = 25, before?: number) => {
@@ -415,13 +438,16 @@ export const api = {
   },
 
   // Sourcify integration
-  checkSourcify: (address: string, chainId = '1') =>
-    fetchAPI<{ address: string; chainId: string; isVerified: boolean; status: string }>(
-      `/addresses/${address}/sourcify/check?chainId=${chainId}`
-    ),
+  checkSourcify: (address: string, chainId?: string) => {
+    const params = chainId ? `?chainId=${chainId}` : '';
+    return fetchAPI<{ address: string; chainId: string; isVerified: boolean; status: string }>(
+      `/addresses/${address}/sourcify/check${params}`
+    );
+  },
 
-  fetchFromSourcify: async (address: string, chainId = '1') => {
-    const res = await fetch(`${API_BASE}/addresses/${address}/sourcify?chainId=${chainId}`);
+  fetchFromSourcify: async (address: string, chainId?: string) => {
+    const params = chainId ? `?chainId=${chainId}` : '';
+    const res = await fetch(`${API_BASE}/addresses/${address}/sourcify${params}`);
     if (!res.ok) {
       const text = await res.text();
       throw new Error(text || `API error: ${res.status}`);
@@ -493,14 +519,17 @@ export const api = {
   },
 
   // Contract verification
-  verifySourcify: async (data: {
+  verifyContract: async (data: {
     address: string;
-    chainId: string;
     sourceCode: string;
     contractName: string;
     compilerVersion: string;
+    evmVersion?: string;
     optimizationUsed: boolean;
-    runs: number;
+    optimizationRuns: number;
+    constructorArgs?: string;
+    libraries?: Record<string, string>;
+    licenseType?: string;
   }) => {
     const res = await fetch(`${API_BASE}/verify`, {
       method: 'POST',
@@ -511,6 +540,46 @@ export const api = {
       const text = await res.text();
       throw new Error(text || `API error: ${res.status}`);
     }
-    return res.json() as Promise<{ success: boolean; status?: string; address?: string; error?: string }>;
+    return res.json() as Promise<{
+      success: boolean;
+      matchType?: string;
+      contractName?: string;
+      compilerVersion?: string;
+      abi?: unknown;
+      address?: string;
+      error?: string;
+    }>;
   },
+
+  verifyContractStandardJSON: async (data: {
+    address: string;
+    compilerVersion: string;
+    contractName: string;
+    contractFile?: string;
+    standardInput: unknown;
+    constructorArgs?: string;
+    licenseType?: string;
+  }) => {
+    const res = await fetch(`${API_BASE}/verify/standard-json`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || `API error: ${res.status}`);
+    }
+    return res.json() as Promise<{
+      success: boolean;
+      matchType?: string;
+      contractName?: string;
+      compilerVersion?: string;
+      abi?: unknown;
+      address?: string;
+      error?: string;
+    }>;
+  },
+
+  getCompilerVersions: () =>
+    fetchAPI<{ versions: { version: string; path: string; longVersion?: string }[] }>('/verify/compilers'),
 };

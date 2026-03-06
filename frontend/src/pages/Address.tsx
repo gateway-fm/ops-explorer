@@ -7,7 +7,7 @@ import { formatWei, formatHash, formatAddress, formatTimeAgo } from '../lib/util
 import { AddressLink } from '../components/AddressLink';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { ContractInteraction } from '../components/ContractInteraction';
-import { FileCode2, BookOpen, PenLine, Fingerprint, Unlock, ShieldCheck, Wallet, X } from 'lucide-react';
+import { FileCode2, BookOpen, Loader2, PenLine, Fingerprint, Unlock, ShieldCheck, Wallet, X, ShieldOff } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { useAuth } from '../lib/auth';
 import { useAddressVisibility } from '../hooks/useAddressVisibility';
@@ -56,21 +56,85 @@ export function Address() {
     };
   }, []);
 
+  const [walletPending, setWalletPending] = useState(false);
+  const [walletConnecting, setWalletConnecting] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  // Poll eth_accounts to detect when user approves the pending MetaMask request.
+  // eth_accounts is passive (no popup) and returns accounts once permission is granted.
+  const startPolling = useCallback(() => {
+    if (pollRef.current) return;
+    pollRef.current = setInterval(async () => {
+      try {
+        const accounts = await window.ethereum?.request({ method: 'eth_accounts' });
+        if (accounts && accounts.length > 0) {
+          setWalletAddress(accounts[0]);
+          setWalletPending(false);
+          setWalletConnecting(false);
+          stopPolling();
+        }
+      } catch {
+        // ignore
+      }
+    }, 1000);
+  }, [stopPolling]);
+
+  useEffect(() => {
+    return () => stopPolling();
+  }, [stopPolling]);
+
+  const cancelConnect = useCallback(() => {
+    stopPolling();
+    setWalletPending(false);
+    setWalletConnecting(false);
+  }, [stopPolling]);
+
   const connectWallet = useCallback(async () => {
     if (!window.ethereum) {
       alert('MetaMask is not installed. Please install MetaMask to interact with contracts.');
       return;
     }
+    manuallyDisconnected.current = false;
+    setWalletConnecting(true);
+    setWalletPending(false);
+
     try {
-      manuallyDisconnected.current = false;
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      // First, check if we already have permission (no popup)
+      const existing = await window.ethereum.request({ method: 'eth_accounts' });
+      if (existing && existing.length > 0) {
+        setWalletAddress(existing[0]);
+        setWalletConnecting(false);
+        return;
+      }
+
+      // Request permission — this opens the MetaMask popup
+      const accounts = await Promise.race([
+        window.ethereum.request({ method: 'eth_requestAccounts' }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), 500)
+        ),
+      ]);
       if (accounts && accounts.length > 0) {
         setWalletAddress(accounts[0]);
+        setWalletConnecting(false);
+        return;
       }
-    } catch (err) {
-      console.error('Wallet connection failed:', err);
+    } catch {
+      // Either -32002 (already pending) or timeout (popup opened but not yet approved).
+      // In both cases: show the pending UI and poll until the user approves.
     }
-  }, []);
+
+    setWalletPending(true);
+    setWalletConnecting(false);
+    startPolling();
+  }, [startPolling]);
 
   const disconnectWallet = useCallback(() => {
     manuallyDisconnected.current = true;
@@ -152,6 +216,30 @@ export function Address() {
   }
 
   if (infoLoading) return <div className="text-neutral-400">Loading...</div>;
+
+  // Privacy-restricted address (API returns 403)
+  if (error && error instanceof Error && error.message.includes('403')) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Address" />
+        <div className="card">
+          <div className="flex flex-col items-center justify-center py-16 space-y-4">
+            <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center border border-neutral-200">
+              <ShieldOff className="w-8 h-8 text-neutral-400" />
+            </div>
+            <h2 className="text-xl font-semibold text-neutral-900">Address Restricted</h2>
+            <p className="text-neutral-500 text-center max-w-md text-sm">
+              This address is protected by privacy controls. You do not currently have permission to view its details.
+            </p>
+            <div className="font-mono text-xs text-neutral-400 break-all max-w-md text-center px-4">
+              {address}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (error || !info) return <div className="text-error-600">Address not found</div>;
 
   const hasAbi = contract?.abi && contract.abi.length > 0;
@@ -377,9 +465,27 @@ export function Address() {
                       <InfoRow label="Compiler" value={contract.compilerVersion} />
                     )}
                     {contract.optimizationUsed !== undefined && contract.optimizationUsed !== null && (
-                      <InfoRow label="Optimization" value={contract.optimizationUsed ? 'Enabled' : 'Disabled'} />
+                      <InfoRow
+                        label="Optimization"
+                        value={
+                          contract.optimizationUsed
+                            ? `Enabled${contract.optimizationRuns ? ` (${contract.optimizationRuns} runs)` : ''}`
+                            : 'Disabled'
+                        }
+                      />
                     )}
                     <InfoRow label="EVM Version" value={contract.evmVersion || 'default'} />
+                    {contract.licenseType && (
+                      <InfoRow label="License" value={contract.licenseType} />
+                    )}
+                    {contract.constructorArgs && (
+                      <InfoRow
+                        label="Constructor Args"
+                        value={
+                          <span className="font-mono text-xs break-all">{contract.constructorArgs}</span>
+                        }
+                      />
+                    )}
                   </div>
                 </div>
 
@@ -519,13 +625,35 @@ export function Address() {
                 <p className="text-neutral-500 text-center max-w-sm text-sm">
                   Connect your wallet to write to this contract. Transactions will be sent to the connected network.
                 </p>
-                <button
-                  onClick={connectWallet}
-                  className="btn-primary flex items-center gap-2"
-                >
-                  <Wallet className="w-4 h-4" />
-                  Connect Wallet
-                </button>
+                {walletPending ? (
+                  <div className="max-w-sm space-y-3">
+                    <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
+                      <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
+                      <span>Approve the request in MetaMask. Click the MetaMask icon in your browser toolbar if you can't see it.</span>
+                    </div>
+                    <button
+                      onClick={cancelConnect}
+                      className="text-xs text-neutral-400 hover:text-neutral-600 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={connectWallet}
+                    disabled={walletConnecting}
+                    className="btn-primary flex items-center gap-2"
+                  >
+                    {walletConnecting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Wallet className="w-4 h-4" />
+                        Connect Wallet
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             ) : (
               <div className="space-y-4">

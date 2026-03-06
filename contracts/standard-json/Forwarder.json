@@ -1,0 +1,20 @@
+{
+  "language": "Solidity",
+  "sources": {
+    "Forwarder.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\n/// @notice A simple contract that forwards ETH to a recipient, creating an internal transaction.\ncontract Forwarder {\n    event Forwarded(address indexed from, address indexed to, uint256 amount);\n\n    /// @notice Forward the sent ETH to the given recipient.\n    function forward(address payable _to) external payable {\n        require(msg.value > 0, \"Must send ETH\");\n        (bool success, ) = _to.call{value: msg.value}(\"\");\n        require(success, \"Forward failed\");\n        emit Forwarded(msg.sender, _to, msg.value);\n    }\n\n    receive() external payable {}\n}\n"
+    }
+  },
+  "settings": {
+    "optimizer": {
+      "enabled": true,
+      "runs": 200
+    },
+    "evmVersion": "shanghai",
+    "outputSelection": {
+      "*": {
+        "*": ["abi", "evm.bytecode", "evm.deployedBytecode"]
+      }
+    }
+  }
+}

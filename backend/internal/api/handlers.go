@@ -125,6 +125,27 @@ func (s *Server) handleGetBlock(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleGetBlockInternalTxs(w http.ResponseWriter, r *http.Request) {
+	numberStr := chi.URLParam(r, "number")
+	number, err := strconv.ParseUint(numberStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid block number", http.StatusBadRequest)
+		return
+	}
+
+	internalTxs, err := s.db.GetInternalTransactionsByBlock(r.Context(), number)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if internalTxs == nil {
+		internalTxs = []types.InternalTransaction{}
+	}
+
+	writeJSON(w, internalTxs)
+}
+
 func (s *Server) handleGetTransactions(w http.ResponseWriter, r *http.Request) {
 	pageStr := r.URL.Query().Get("page")
 	if pageStr != "" {
@@ -1090,7 +1111,13 @@ func (s *Server) handleFetchSourcify(w http.ResponseWriter, r *http.Request) {
 
 	chainIDStr := r.URL.Query().Get("chainId")
 	if chainIDStr == "" {
-		chainIDStr = "1" // Default to Ethereum mainnet
+		// Use the explorer's own chain ID from RPC
+		chainID, err := s.rpc.ChainID(r.Context())
+		if err == nil && chainID != nil {
+			chainIDStr = chainID.String()
+		} else {
+			chainIDStr = "1"
+		}
 	}
 
 	url := fmt.Sprintf("%s/files/%s/%s", sourcifyAPIBase, chainIDStr, address)
@@ -1159,7 +1186,7 @@ func (s *Server) handleFetchSourcify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.db.VerifyContract(r.Context(), address, contractName, compilerVersion, false, sourceCode, abi, ""); err != nil {
+	if err := s.db.VerifyContract(r.Context(), address, contractName, compilerVersion, false, sourceCode, abi, "", "", "", 0); err != nil {
 		http.Error(w, "failed to save contract: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1223,7 +1250,7 @@ func (s *Server) handleVerifySourcify(w http.ResponseWriter, r *http.Request) {
 			abi = json.RawMessage("[]")
 		}
 
-		if err := s.db.VerifyContract(r.Context(), req.Address, req.ContractName, req.CompilerVersion, req.OptimizationUsed, req.SourceCode, abi, ""); err != nil {
+		if err := s.db.VerifyContract(r.Context(), req.Address, req.ContractName, req.CompilerVersion, req.OptimizationUsed, req.SourceCode, abi, "", "", "", 0); err != nil {
 			http.Error(w, "failed to store verification: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -1310,7 +1337,7 @@ func (s *Server) handleVerifySourcify(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if len(abi) > 0 {
-				s.db.VerifyContract(r.Context(), req.Address, req.ContractName, compilerVersion, req.OptimizationUsed, req.SourceCode, abi, "")
+				s.db.VerifyContract(r.Context(), req.Address, req.ContractName, compilerVersion, req.OptimizationUsed, req.SourceCode, abi, "", "", "", 0)
 			}
 		}
 	}
@@ -1323,28 +1350,45 @@ func (s *Server) handleVerifySourcify(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleVerifyContract(w http.ResponseWriter, r *http.Request) {
+	if s.verifier == nil {
+		http.Error(w, "local verification not configured (solc not available)", http.StatusServiceUnavailable)
+		return
+	}
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "failed to read request body", http.StatusBadRequest)
 		return
 	}
 
-	if s.verifier != nil {
-		result, err := s.verifier.VerifyFromJSON(r.Context(), body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// Only fall through to Sourcify if the compiler version is not available locally
-		if result.Success || (result.Error != "" && !strings.Contains(result.Error, "compiler version")) {
-			writeJSON(w, result)
-			return
-		}
+	result, err := s.verifier.VerifyFromJSON(r.Context(), body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
-	r.Body = io.NopCloser(bytes.NewReader(body))
-	s.handleVerifySourcify(w, r)
+	writeJSON(w, result)
+}
+
+func (s *Server) handleVerifyStandardJSON(w http.ResponseWriter, r *http.Request) {
+	if s.verifier == nil {
+		http.Error(w, "local verification not configured (solc not available)", http.StatusServiceUnavailable)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	result, err := s.verifier.VerifyStandardJSON(r.Context(), body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, result)
 }
 
 func (s *Server) handleListCompilers(w http.ResponseWriter, r *http.Request) {
@@ -1372,7 +1416,13 @@ func (s *Server) handleCheckSourcify(w http.ResponseWriter, r *http.Request) {
 
 	chainIDStr := r.URL.Query().Get("chainId")
 	if chainIDStr == "" {
-		chainIDStr = "1"
+		// Use the explorer's own chain ID from RPC
+		chainID, err := s.rpc.ChainID(r.Context())
+		if err == nil && chainID != nil {
+			chainIDStr = chainID.String()
+		} else {
+			chainIDStr = "1"
+		}
 	}
 
 	if isLocalChain(chainIDStr) {

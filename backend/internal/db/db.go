@@ -3,8 +3,13 @@ package db
 import (
 	"context"
 	"embed"
+	"fmt"
+	"io/fs"
+
+	"explorer/internal/log"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/tern/v2/migrate"
 )
 
 //go:embed migrations/*.sql
@@ -32,23 +37,36 @@ func (d *DB) Close() {
 func (d *DB) Migrate() error {
 	ctx := context.Background()
 
-	migrationFiles := []string{
-		"migrations/001_schema.sql",
-		"migrations/002_missing_ranges.sql",
-		"migrations/003_evm_version.sql",
-		"migrations/004_op_deposits.sql",
+	conn, err := d.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to acquire connection: %w", err)
+	}
+	defer conn.Release()
+
+	migrator, err := migrate.NewMigrator(ctx, conn.Conn(), "schema_version")
+	if err != nil {
+		return fmt.Errorf("failed to create migrator: %w", err)
 	}
 
-	for _, file := range migrationFiles {
-		schema, err := migrations.ReadFile(file)
-		if err != nil {
-			return err
-		}
+	migrationsFS, err := fs.Sub(migrations, "migrations")
+	if err != nil {
+		return fmt.Errorf("failed to get migrations sub-fs: %w", err)
+	}
 
-		_, err = d.pool.Exec(ctx, string(schema))
-		if err != nil {
-			return err
-		}
+	err = migrator.LoadMigrations(migrationsFS)
+	if err != nil {
+		return fmt.Errorf("failed to load migrations: %w", err)
+	}
+
+	migrator.OnStart = func(seq int32, name string, direction string, sql string) {
+		log.Info(fmt.Sprintf("running migration %d: %s %s", seq, name, direction))
+	}
+
+	count := len(migrator.Migrations)
+	log.Info("migrations loaded", "count", count)
+
+	if err = migrator.Migrate(ctx); err != nil {
+		return fmt.Errorf("failed to run migrations: %w", err)
 	}
 
 	return nil

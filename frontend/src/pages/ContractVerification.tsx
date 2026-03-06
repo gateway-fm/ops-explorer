@@ -2,94 +2,141 @@ import { useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { AlertCircle, AlertTriangle, CheckCircle, Info, Loader2, Search, Upload } from 'lucide-react';
+import { AlertCircle, AlertTriangle, CheckCircle, ChevronDown, ChevronRight, Info, Loader2, Plus, Trash2, Upload } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 
-const SOLC_VERSIONS = [
-  'v0.8.28+commit.7893614a',
-  'v0.8.27+commit.40a35a09',
-  'v0.8.26+commit.8a97fa7a',
-  'v0.8.25+commit.b61c2a91',
-  'v0.8.24+commit.e11b9ed9',
-  'v0.8.23+commit.f704f362',
-  'v0.8.22+commit.4fc1097e',
-  'v0.8.21+commit.d9974bed',
-  'v0.8.20+commit.a1b79de6',
-  'v0.8.19+commit.7dd6d404',
-  'v0.8.18+commit.87f61d96',
-  'v0.8.17+commit.8df45f5f',
-  'v0.8.16+commit.07a7930e',
-  'v0.8.15+commit.e14f2714',
-  'v0.8.14+commit.80d49f37',
-  'v0.8.13+commit.abaa5c0e',
-  'v0.8.12+commit.f00d7308',
-  'v0.8.11+commit.d7f03943',
-  'v0.8.10+commit.fc410830',
-  'v0.8.9+commit.e5eed63a',
-  'v0.8.8+commit.dddeac2f',
-  'v0.8.7+commit.e28d00a7',
-  'v0.8.6+commit.11564f7e',
-  'v0.8.5+commit.a4f2e591',
-  'v0.8.4+commit.c7e474f2',
-  'v0.8.3+commit.8d00100c',
-  'v0.8.2+commit.661d1103',
-  'v0.8.1+commit.df193b15',
-  'v0.8.0+commit.c7dfd78e',
-  'v0.7.6+commit.7338295f',
-  'v0.7.5+commit.eb77ed08',
-  'v0.6.12+commit.27d51765',
-  'v0.6.6+commit.6c089d02',
-  'v0.5.17+commit.d19bba13',
-  'v0.4.26+commit.4563c3fc',
+const LICENSE_TYPES = [
+  'No License',
+  'Unlicense',
+  'MIT',
+  'GNU GPLv2',
+  'GNU GPLv3',
+  'GNU LGPLv2.1',
+  'GNU LGPLv3',
+  'BSD-2-Clause',
+  'BSD-3-Clause',
+  'MPL-2.0',
+  'OSL-3.0',
+  'Apache-2.0',
+  'GNU AGPLv3',
+  'BSL 1.1',
 ];
+
+const EVM_VERSIONS = [
+  'default',
+  'homestead',
+  'tangerineWhistle',
+  'spuriousDragon',
+  'byzantium',
+  'constantinople',
+  'petersburg',
+  'istanbul',
+  'berlin',
+  'london',
+  'paris',
+  'shanghai',
+  'cancun',
+];
+
+type VerificationMethod = 'source' | 'standard-json';
 
 export default function ContractVerification() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const initialAddress = searchParams.get('address') || '';
 
+  // Verification method tab
+  const [method, setMethod] = useState<VerificationMethod>('source');
+
+  // Form state (shared)
   const [address, setAddress] = useState(initialAddress);
-  const [chainId, setChainId] = useState('1001');
-  const [sourceCode, setSourceCode] = useState('');
+  const [license, setLicense] = useState('No License');
   const [contractName, setContractName] = useState('');
-  const [compilerVersion, setCompilerVersion] = useState('v0.8.20+commit.a1b79de6');
+  const [compilerVersion, setCompilerVersion] = useState('');
+  const [constructorArgs, setConstructorArgs] = useState('');
+
+  // Source code form state
+  const [sourceCode, setSourceCode] = useState('');
+  const [evmVersion, setEvmVersion] = useState('default');
   const [optimizationUsed, setOptimizationUsed] = useState(false);
   const [runs, setRuns] = useState(200);
-  const [activeTab, setActiveTab] = useState<'verify' | 'fetch'>('verify');
+  const [libraries, setLibraries] = useState<{ name: string; address: string }[]>([]);
+  const [showLibraries, setShowLibraries] = useState(false);
 
-  // Check if contract is already verified on Sourcify
-  const { data: sourcifyStatus, refetch: refetchStatus } = useQuery({
-    queryKey: ['sourcify-check', address, chainId],
-    queryFn: () => api.checkSourcify(address, chainId),
-    enabled: address.length === 42 && address.startsWith('0x'),
-    retry: false,
+  // Standard JSON form state
+  const [standardJsonInput, setStandardJsonInput] = useState('');
+  const [contractFile, setContractFile] = useState('');
+
+  const isValidAddress = address.length === 42 && address.startsWith('0x');
+
+  // Fetch compiler versions from API
+  const { data: compilerData } = useQuery({
+    queryKey: ['compiler-versions'],
+    queryFn: () => api.getCompilerVersions(),
   });
 
-  // Verify mutation
-  const verifyMutation = useMutation({
-    mutationFn: () =>
-      api.verifySourcify({
-        address,
-        chainId,
-        sourceCode,
-        contractName,
-        compilerVersion,
-        optimizationUsed,
-        runs,
-      }),
-    onSuccess: () => {
-      refetchStatus();
-    },
+  // Auto-check Sourcify status when address is valid
+  const { data: sourcifyStatus } = useQuery({
+    queryKey: ['sourcify-check', address],
+    queryFn: () => api.checkSourcify(address),
+    enabled: isValidAddress,
+    retry: false,
   });
 
   // Fetch from Sourcify mutation
   const fetchMutation = useMutation({
-    mutationFn: () => api.fetchFromSourcify(address, chainId),
+    mutationFn: () => api.fetchFromSourcify(address),
     onSuccess: (data) => {
-      // Navigate to contract page after successful fetch
       navigate(`/address/${data.address}`);
     },
   });
+
+  // Verify mutation
+  const verifyMutation = useMutation({
+    mutationFn: () => {
+      const libMap: Record<string, string> = {};
+      for (const lib of libraries) {
+        if (lib.name && lib.address) {
+          libMap[lib.name] = lib.address;
+        }
+      }
+      return api.verifyContract({
+        address,
+        sourceCode,
+        contractName,
+        compilerVersion,
+        evmVersion: evmVersion !== 'default' ? evmVersion : undefined,
+        optimizationUsed,
+        optimizationRuns: runs,
+        constructorArgs: constructorArgs || undefined,
+        libraries: Object.keys(libMap).length > 0 ? libMap : undefined,
+        licenseType: license !== 'No License' ? license : undefined,
+      });
+    },
+  });
+
+  // Standard JSON verify mutation
+  const verifyStandardJsonMutation = useMutation({
+    mutationFn: () => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(standardJsonInput);
+      } catch {
+        throw new Error('Invalid JSON input');
+      }
+      return api.verifyContractStandardJSON({
+        address,
+        compilerVersion,
+        contractName,
+        contractFile: contractFile || undefined,
+        standardInput: parsed,
+        constructorArgs: constructorArgs || undefined,
+        licenseType: license !== 'No License' ? license : undefined,
+      });
+    },
+  });
+
+  const activeMutation = method === 'source' ? verifyMutation : verifyStandardJsonMutation;
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -102,16 +149,45 @@ export default function ContractVerification() {
     reader.readAsText(file);
   };
 
+  const handleJsonFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setStandardJsonInput(event.target?.result as string);
+    };
+    reader.readAsText(file);
+  };
+
+  const addLibrary = () => {
+    if (libraries.length < 10) {
+      setLibraries([...libraries, { name: '', address: '' }]);
+    }
+  };
+
+  const removeLibrary = (index: number) => {
+    setLibraries(libraries.filter((_, i) => i !== index));
+  };
+
+  const updateLibrary = (index: number, field: 'name' | 'address', value: string) => {
+    const updated = [...libraries];
+    updated[index] = { ...updated[index], [field]: value };
+    setLibraries(updated);
+  };
+
+  const compilerVersions = compilerData?.versions ?? [];
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-neutral-900">Contract Verification</h1>
         <p className="text-neutral-500 mt-1">
-          Verify contract source code or fetch verified contracts from Sourcify
+          Verify and publish your contract source code
         </p>
       </div>
 
-      {/* Address Input */}
+      {/* Step 1: Contract Address + Sourcify Check */}
       <div className="card p-6 space-y-4">
         <div className="space-y-2">
           <label className="text-sm font-medium text-neutral-700">Contract Address</label>
@@ -124,76 +200,154 @@ export default function ContractVerification() {
           />
         </div>
 
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-neutral-700">Chain ID</label>
-          <select
-            value={chainId}
-            onChange={(e) => setChainId(e.target.value)}
-            className="select"
-          >
-            <option value="1001">Local Dev Chain (1001)</option>
-            <option value="1">Ethereum Mainnet (1)</option>
-            <option value="11155111">Sepolia (11155111)</option>
-            <option value="137">Polygon (137)</option>
-            <option value="42161">Arbitrum One (42161)</option>
-            <option value="10">Optimism (10)</option>
-            <option value="8453">Base (8453)</option>
-            <option value="31337">Hardhat/Anvil (31337)</option>
-            <option value="1337">Ganache (1337)</option>
-          </select>
-        </div>
-
-        {/* Sourcify Status */}
-        {sourcifyStatus && (
-          <div
-            className={`p-3 rounded-lg ${
-              sourcifyStatus.isVerified
-                ? 'alert-success'
-                : 'bg-neutral-50 border border-neutral-200'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              {sourcifyStatus.isVerified ? (
-                <>
-                  <CheckCircle className="w-4 h-4 text-success-600" />
-                  <span className="text-sm text-success-700">
-                    Contract is verified on Sourcify ({sourcifyStatus.status})
-                  </span>
-                </>
-              ) : (
-                <>
-                  <AlertCircle className="w-4 h-4 text-neutral-400" />
-                  <span className="text-sm text-neutral-500">Contract not verified on Sourcify</span>
-                </>
-              )}
+        {/* Sourcify Status Banner */}
+        {sourcifyStatus?.isVerified && (
+          <div className="p-3 rounded-lg alert-success">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-success-600" />
+                <span className="text-sm text-success-700">
+                  This contract is already verified on Sourcify ({sourcifyStatus.status})
+                </span>
+              </div>
+              <button
+                onClick={() => fetchMutation.mutate()}
+                disabled={fetchMutation.isPending}
+                className="btn-secondary text-xs"
+              >
+                {fetchMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Importing...
+                  </>
+                ) : (
+                  'Fetch & Import'
+                )}
+              </button>
             </div>
+            {fetchMutation.error && (
+              <div className="mt-2 text-sm text-error-600">
+                {(fetchMutation.error as Error).message}
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      {/* Tabs */}
-      <div className="card overflow-hidden">
-        <div className="tabs">
-          <button
-            onClick={() => setActiveTab('verify')}
-            className={activeTab === 'verify' ? 'tab-active' : 'tab'}
-          >
-            Submit Verification
-          </button>
-          <button
-            onClick={() => setActiveTab('fetch')}
-            className={activeTab === 'fetch' ? 'tab-active' : 'tab'}
-          >
-            Fetch from Sourcify
-          </button>
-        </div>
+      {/* Verification Method Tabs */}
+      <div className="card p-1 flex gap-1">
+        <button
+          onClick={() => setMethod('source')}
+          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+            method === 'source'
+              ? 'bg-primary text-white'
+              : 'text-neutral-600 hover:bg-neutral-100'
+          }`}
+        >
+          Solidity Source Code
+        </button>
+        <button
+          onClick={() => setMethod('standard-json')}
+          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+            method === 'standard-json'
+              ? 'bg-primary text-white'
+              : 'text-neutral-600 hover:bg-neutral-100'
+          }`}
+        >
+          Standard JSON Input
+        </button>
+      </div>
 
-        {/* Verify Tab */}
-        {activeTab === 'verify' && (
-          <div className="p-6 space-y-4">
+      {method === 'source' && (
+        <>
+          {/* Step 2: Verification Settings */}
+          <div className="card p-6 space-y-4">
+            <h2 className="text-sm font-semibold text-neutral-900 uppercase tracking-wide">Verification Settings</h2>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-neutral-700">Contract License</label>
+                <select
+                  value={license}
+                  onChange={(e) => setLicense(e.target.value)}
+                  className="select"
+                >
+                  {LICENSE_TYPES.map((l) => (
+                    <option key={l} value={l}>{l}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-neutral-700">Compiler Version</label>
+                <select
+                  value={compilerVersion}
+                  onChange={(e) => setCompilerVersion(e.target.value)}
+                  className="select"
+                >
+                  <option value="">Select compiler version</option>
+                  {compilerVersions.map((v) => (
+                    <option key={v.version} value={v.version}>{v.longVersion || v.version}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-neutral-700">EVM Version</label>
+                <select
+                  value={evmVersion}
+                  onChange={(e) => setEvmVersion(e.target.value)}
+                  className="select"
+                >
+                  {EVM_VERSIONS.map((v) => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-6">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={optimizationUsed}
+                  onChange={(e) => setOptimizationUsed(e.target.checked)}
+                  className="checkbox"
+                />
+                <span className="text-sm text-neutral-700">Optimization</span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="w-3.5 h-3.5 text-neutral-400 cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-[240px]">
+                    Enables the Solidity optimizer, which reduces gas costs and contract size. Must match the settings used during deployment.
+                  </TooltipContent>
+                </Tooltip>
+              </label>
+
+              {optimizationUsed && (
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-neutral-500">Runs:</label>
+                  <input
+                    type="number"
+                    value={runs}
+                    onChange={(e) => setRuns(parseInt(e.target.value) || 200)}
+                    className="input w-24 py-1.5"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Step 3: Source Code */}
+          <div className="card p-6 space-y-4">
+            <h2 className="text-sm font-semibold text-neutral-900 uppercase tracking-wide">Source Code</h2>
+
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-neutral-700">Source Code</label>
+                <label className="text-sm font-medium text-neutral-700">Solidity Source Code</label>
                 <label className="cursor-pointer text-sm text-primary hover:text-primary-600 flex items-center gap-1 transition-colors">
                   <Upload className="w-4 h-4" />
                   Upload .sol file
@@ -232,145 +386,243 @@ contract MyContract {
               </div>
 
               <div className="space-y-2">
+                <label className="text-sm font-medium text-neutral-700">
+                  Constructor Arguments
+                  <span className="text-neutral-400 font-normal ml-1">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={constructorArgs}
+                  onChange={(e) => setConstructorArgs(e.target.value)}
+                  placeholder="ABI-encoded hex (e.g., 0x00000000...)"
+                  className="input font-mono"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Step 4: Libraries (collapsible) */}
+          <div className="card overflow-hidden">
+            <button
+              onClick={() => setShowLibraries(!showLibraries)}
+              className="w-full px-6 py-4 flex items-center justify-between text-left hover:bg-neutral-50 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                {showLibraries ? (
+                  <ChevronDown className="w-4 h-4 text-neutral-400" />
+                ) : (
+                  <ChevronRight className="w-4 h-4 text-neutral-400" />
+                )}
+                <h2 className="text-sm font-semibold text-neutral-900 uppercase tracking-wide">
+                  Contract Libraries
+                </h2>
+                <span className="text-xs text-neutral-400 font-normal normal-case">(optional)</span>
+              </div>
+              {libraries.length > 0 && (
+                <span className="text-xs text-neutral-500">{libraries.length} added</span>
+              )}
+            </button>
+
+            {showLibraries && (
+              <div className="px-6 pb-6 space-y-3">
+                {libraries.map((lib, index) => (
+                  <div key={index} className="flex items-start gap-3">
+                    <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <input
+                        type="text"
+                        value={lib.name}
+                        onChange={(e) => updateLibrary(index, 'name', e.target.value)}
+                        placeholder="Library name (e.g., SafeMath)"
+                        className="input"
+                      />
+                      <input
+                        type="text"
+                        value={lib.address}
+                        onChange={(e) => updateLibrary(index, 'address', e.target.value)}
+                        placeholder="Library address (0x...)"
+                        className="input font-mono"
+                      />
+                    </div>
+                    <button
+                      onClick={() => removeLibrary(index)}
+                      className="p-2 text-neutral-400 hover:text-error-500 transition-colors mt-0.5"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+                {libraries.length < 10 && (
+                  <button
+                    onClick={addLibrary}
+                    className="flex items-center gap-1.5 text-sm text-primary hover:text-primary-600 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Library
+                  </button>
+                )}
+                {libraries.length === 0 && (
+                  <p className="text-sm text-neutral-400">
+                    If your contract uses external libraries, add their deployed addresses here.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {method === 'standard-json' && (
+        <>
+          {/* Standard JSON Settings */}
+          <div className="card p-6 space-y-4">
+            <h2 className="text-sm font-semibold text-neutral-900 uppercase tracking-wide">Compiler Settings</h2>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
                 <label className="text-sm font-medium text-neutral-700">Compiler Version</label>
                 <select
                   value={compilerVersion}
                   onChange={(e) => setCompilerVersion(e.target.value)}
                   className="select"
                 >
-                  {SOLC_VERSIONS.map((v) => (
-                    <option key={v} value={v}>{v}</option>
+                  <option value="">Select compiler version</option>
+                  {compilerVersions.map((v) => (
+                    <option key={v.version} value={v.version}>{v.longVersion || v.version}</option>
                   ))}
                 </select>
               </div>
-            </div>
 
-            <div className="flex items-center gap-6">
-              <label className="flex items-center gap-2 cursor-pointer">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-neutral-700">Contract Name</label>
                 <input
-                  type="checkbox"
-                  checked={optimizationUsed}
-                  onChange={(e) => setOptimizationUsed(e.target.checked)}
-                  className="checkbox"
+                  type="text"
+                  value={contractName}
+                  onChange={(e) => setContractName(e.target.value)}
+                  placeholder="MyContract"
+                  className="input"
                 />
-                <span className="text-sm text-neutral-700">Optimization</span>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className="w-3.5 h-3.5 text-neutral-400 cursor-help" />
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-[240px]">
-                    Enables the Solidity optimizer, which reduces gas costs and contract size. Must match the settings used during deployment.
-                  </TooltipContent>
-                </Tooltip>
-              </label>
-
-              {optimizationUsed && (
-                <div className="flex items-center gap-2">
-                  <label className="text-sm text-neutral-500">Runs:</label>
-                  <input
-                    type="number"
-                    value={runs}
-                    onChange={(e) => setRuns(parseInt(e.target.value) || 200)}
-                    className="input w-24 py-1.5"
-                  />
-                </div>
-              )}
+              </div>
             </div>
 
-            {verifyMutation.error && (
-              <div className="alert alert-error">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 mt-0.5" />
-                  <span className="text-sm">{(verifyMutation.error as Error).message}</span>
-                </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-neutral-700">
+                  Contract File Path
+                  <span className="text-neutral-400 font-normal ml-1">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={contractFile}
+                  onChange={(e) => setContractFile(e.target.value)}
+                  placeholder="contracts/MyContract.sol"
+                  className="input font-mono"
+                />
               </div>
-            )}
 
-            {verifyMutation.isSuccess && verifyMutation.data?.success && (
-              <div className="alert alert-success">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4" />
-                  <span className="text-sm">
-                    Contract verified successfully! Status: {verifyMutation.data?.status}
-                  </span>
-                </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-neutral-700">
+                  Constructor Arguments
+                  <span className="text-neutral-400 font-normal ml-1">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={constructorArgs}
+                  onChange={(e) => setConstructorArgs(e.target.value)}
+                  placeholder="ABI-encoded hex (e.g., 0x00000000...)"
+                  className="input font-mono"
+                />
               </div>
-            )}
+            </div>
+          </div>
 
-            {verifyMutation.isSuccess && !verifyMutation.data?.success && (
-              <div className="alert alert-error">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4" />
-                  <span className="text-sm">
-                    Verification failed: {verifyMutation.data?.error || 'Unknown error'}
-                  </span>
-                </div>
+          {/* Standard JSON Input */}
+          <div className="card p-6 space-y-4">
+            <h2 className="text-sm font-semibold text-neutral-900 uppercase tracking-wide">Standard JSON Input</h2>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-neutral-700">Standard JSON Input</label>
+                <label className="cursor-pointer text-sm text-primary hover:text-primary-600 flex items-center gap-1 transition-colors">
+                  <Upload className="w-4 h-4" />
+                  Upload .json file
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={handleJsonFileUpload}
+                    className="hidden"
+                  />
+                </label>
               </div>
-            )}
+              <textarea
+                value={standardJsonInput}
+                onChange={(e) => setStandardJsonInput(e.target.value)}
+                placeholder='{"language": "Solidity", "sources": { ... }, "settings": { ... }}'
+                rows={14}
+                className="input font-mono resize-y"
+              />
+              <p className="text-xs text-neutral-400">
+                Paste the standard JSON input or upload a .json file. This is the same format used by solc --standard-json, and can be exported from Hardhat, Foundry, or Truffle.
+              </p>
+            </div>
+          </div>
+        </>
+      )}
 
+      {/* Submit */}
+      <div className="card p-6 space-y-4">
+        {activeMutation.error && (
+          <div className="alert alert-error">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+              <span>{(activeMutation.error as Error).message}</span>
+            </div>
+          </div>
+        )}
+
+        {activeMutation.isSuccess && activeMutation.data?.success && (
+          <div className="alert alert-success">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4" />
+              <span className="text-sm">Contract verified successfully!</span>
+            </div>
             <button
-              onClick={() => verifyMutation.mutate()}
-              disabled={!address || !sourceCode || !contractName || verifyMutation.isPending}
-              className="btn-primary"
+              onClick={() => navigate(`/address/${address}`)}
+              className="btn-secondary text-xs mt-2"
             >
-              {verifyMutation.isPending ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Verifying...
-                </>
-              ) : (
-                'Submit Verification'
-              )}
+              View Contract
             </button>
           </div>
         )}
 
-        {/* Fetch Tab */}
-        {activeTab === 'fetch' && (
-          <div className="p-6 space-y-4">
-            <p className="text-sm text-neutral-500">
-              If this contract is already verified on Sourcify, you can fetch the ABI and source code automatically.
-            </p>
-
-            {fetchMutation.error && (
-              <div className="alert alert-error">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 mt-0.5" />
-                  <span className="text-sm">{(fetchMutation.error as Error).message}</span>
-                </div>
-              </div>
-            )}
-
-            {fetchMutation.isSuccess && (
-              <div className="alert alert-success">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4" />
-                  <span className="text-sm">
-                    Contract fetched: {fetchMutation.data?.contractName} ({fetchMutation.data?.abiLength} ABI entries)
-                  </span>
-                </div>
-              </div>
-            )}
-
-            <button
-              onClick={() => fetchMutation.mutate()}
-              disabled={!address || fetchMutation.isPending}
-              className="btn-primary"
-            >
-              {fetchMutation.isPending ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Fetching...
-                </>
-              ) : (
-                <>
-                  <Search className="w-4 h-4" />
-                  Fetch from Sourcify
-                </>
-              )}
-            </button>
+        {activeMutation.isSuccess && !activeMutation.data?.success && (
+          <div className="alert alert-error">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+              <span>
+                Verification failed: {activeMutation.data?.error || 'Unknown error'}
+              </span>
+            </div>
           </div>
         )}
+
+        <button
+          onClick={() => activeMutation.mutate()}
+          disabled={
+            !address || !contractName || !compilerVersion || activeMutation.isPending ||
+            (method === 'source' && !sourceCode) ||
+            (method === 'standard-json' && !standardJsonInput)
+          }
+          className="btn-primary w-full"
+        >
+          {activeMutation.isPending ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Verifying...
+            </>
+          ) : (
+            'Verify & Publish'
+          )}
+        </button>
       </div>
     </div>
   );

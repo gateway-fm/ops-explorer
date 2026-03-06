@@ -160,6 +160,7 @@ func (s *Server) setupAPIRoutes(r chi.Router) {
 		r.Get("/", s.handleGetBlocks)
 		r.Get("/latest", s.handleGetLatestBlock)
 		r.Get("/{number}", s.handleGetBlock)
+		r.Get("/{number}/internal", s.handleGetBlockInternalTxs)
 	})
 
 	r.Route("/transactions", func(r chi.Router) {
@@ -184,8 +185,11 @@ func (s *Server) setupAPIRoutes(r chi.Router) {
 		r.Get("/sourcify/check", s.handleCheckSourcify)
 	})
 
-	r.Post("/verify", s.handleVerifyContract)
-	r.Get("/verify/compilers", s.handleListCompilers)
+	r.Route("/verify", func(r chi.Router) {
+		r.Post("/", s.handleVerifyContract)
+		r.Post("/standard-json", s.handleVerifyStandardJSON)
+		r.Get("/compilers", s.handleListCompilers)
+	})
 
 	r.Route("/tokens", func(r chi.Router) {
 		r.Get("/", s.handleGetTokens)

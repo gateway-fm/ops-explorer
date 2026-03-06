@@ -1,0 +1,19 @@
+{
+  "language": "Solidity",
+  "sources": {
+    "EventCounter.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.13;\n\ncontract EventCounter {\n    uint256 public number;\n\n    event NumberSet(address indexed sender, uint256 oldNumber, uint256 newNumber);\n    event NumberIncremented(address indexed sender, uint256 oldNumber, uint256 newNumber);\n\n    constructor(uint256 _initialNumber) {\n        number = _initialNumber;\n        emit NumberSet(msg.sender, 0, _initialNumber);\n    }\n\n    function setNumber(uint256 newNumber) public {\n        uint256 oldNumber = number;\n        number = newNumber;\n        emit NumberSet(msg.sender, oldNumber, newNumber);\n    }\n\n    function increment() public {\n        uint256 oldNumber = number;\n        number++;\n        emit NumberIncremented(msg.sender, oldNumber, number);\n    }\n}\n"
+    }
+  },
+  "settings": {
+    "optimizer": {
+      "enabled": true,
+      "runs": 200
+    },
+    "outputSelection": {
+      "*": {
+        "*": ["abi", "evm.bytecode", "evm.deployedBytecode"]
+      }
+    }
+  }
+}

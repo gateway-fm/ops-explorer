@@ -7,6 +7,7 @@ import type { TokenTransfer, Log, TxCategory } from '../lib/api';
 import { formatWei, formatGas, formatTimestamp } from '../lib/utils';
 import { AddressLink, TokenAddressLink } from '../components/AddressLink';
 import { PageHeader } from '../components/PageHeader';
+import { CopyButton } from '../components/CopyButton';
 import { decodeEvent, getMethodId, fetchEventSignature, decodeEventWithSignature, KNOWN_EVENTS } from '../lib/eventDecoder';
 import type { DecodedEvent } from '../lib/eventDecoder';
 
@@ -97,7 +98,12 @@ export function TransactionDetail() {
           <div className="divide-y divide-neutral-100">
             <InfoRow
               label="Transaction Hash"
-              value={<span className="font-mono text-sm break-all text-neutral-900">{tx.hash}</span>}
+              value={
+                <span className="flex items-center gap-1">
+                  <span className="font-mono text-sm break-all text-neutral-900">{tx.hash}</span>
+                  <CopyButton text={tx.hash} />
+                </span>
+              }
             />
             <InfoRow
               label="Status"
@@ -134,18 +140,27 @@ export function TransactionDetail() {
             )}
             <InfoRow
               label="From"
-              value={<AddressLink address={tx.from} full className="text-sm" />}
+              value={
+                <span className="flex items-center gap-1">
+                  <AddressLink address={tx.from} full className="text-sm" />
+                  <CopyButton text={tx.from} />
+                </span>
+              }
             />
             <InfoRow
               label="To"
               value={
                 tx.to ? (
-                  <AddressLink address={tx.to} full className="text-sm" />
+                  <span className="flex items-center gap-1">
+                    <AddressLink address={tx.to} full className="text-sm" />
+                    <CopyButton text={tx.to} />
+                  </span>
                 ) : tx.contractAddress ? (
-                  <span className="text-sm">
+                  <span className="flex items-center gap-1 text-sm">
                     <span className="text-neutral-500">[Contract </span>
                     <AddressLink address={tx.contractAddress} full />
                     <span className="text-neutral-500"> Created]</span>
+                    <CopyButton text={tx.contractAddress} />
                   </span>
                 ) : (
                   <span className="text-neutral-500">Contract Creation</span>

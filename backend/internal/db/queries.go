@@ -826,10 +826,12 @@ func (d *DB) GetContract(ctx context.Context, address string) (*types.Contract, 
 	var c types.Contract
 	err := d.pool.QueryRow(ctx, `
 		SELECT address, bytecode, bytecode_hash, creator, creation_tx, block_number, is_verified,
-			contract_name, compiler_version, optimization_used, evm_version, source_code, abi, created_at
+			contract_name, compiler_version, optimization_used, evm_version, source_code, abi, created_at,
+			license_type, constructor_args, optimization_runs
 		FROM contracts WHERE LOWER(address) = LOWER($1)`, address).Scan(
 		&c.Address, &c.Bytecode, &c.BytecodeHash, &c.Creator, &c.CreationTx, &c.BlockNumber, &c.IsVerified,
-		&c.ContractName, &c.CompilerVersion, &c.OptimizationUsed, &c.EVMVersion, &c.SourceCode, &c.ABI, &c.CreatedAt)
+		&c.ContractName, &c.CompilerVersion, &c.OptimizationUsed, &c.EVMVersion, &c.SourceCode, &c.ABI, &c.CreatedAt,
+		&c.LicenseType, &c.ConstructorArgs, &c.OptimizationRuns)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -842,7 +844,7 @@ func (d *DB) IsContract(ctx context.Context, address string) (bool, error) {
 	return exists, err
 }
 
-func (d *DB) VerifyContract(ctx context.Context, address string, name string, compilerVersion string, optimizationUsed bool, sourceCode string, abi json.RawMessage, evmVersion string) error {
+func (d *DB) VerifyContract(ctx context.Context, address string, name string, compilerVersion string, optimizationUsed bool, sourceCode string, abi json.RawMessage, evmVersion string, licenseType string, constructorArgs string, optimizationRuns int) error {
 	_, err := d.pool.Exec(ctx, `
 		UPDATE contracts SET
 			is_verified = true,
@@ -851,9 +853,12 @@ func (d *DB) VerifyContract(ctx context.Context, address string, name string, co
 			optimization_used = $4,
 			source_code = $5,
 			abi = $6,
-			evm_version = $7
+			evm_version = $7,
+			license_type = NULLIF($8, ''),
+			constructor_args = NULLIF($9, ''),
+			optimization_runs = NULLIF($10, 0)
 		WHERE LOWER(address) = LOWER($1)`,
-		address, name, compilerVersion, optimizationUsed, sourceCode, abi, evmVersion)
+		address, name, compilerVersion, optimizationUsed, sourceCode, abi, evmVersion, licenseType, constructorArgs, optimizationRuns)
 	return err
 }
 
@@ -1035,6 +1040,19 @@ func (d *DB) GetInternalTransactionsByTx(ctx context.Context, txHash string) ([]
 			gas, gas_used, input, output, call_type, error, timestamp
 		FROM internal_transactions WHERE tx_hash = $1
 		ORDER BY trace_address`, txHash)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanInternalTransactions(rows)
+}
+
+func (d *DB) GetInternalTransactionsByBlock(ctx context.Context, blockNumber uint64) ([]types.InternalTransaction, error) {
+	rows, err := d.pool.Query(ctx, `
+		SELECT id, tx_hash, block_number, trace_address, from_address, to_address, value::text,
+			gas, gas_used, input, output, call_type, error, timestamp
+		FROM internal_transactions WHERE block_number = $1
+		ORDER BY id`, blockNumber)
 	if err != nil {
 		return nil, err
 	}
