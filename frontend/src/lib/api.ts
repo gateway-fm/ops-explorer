@@ -486,25 +486,6 @@ export const api = {
 
   // Auth endpoints
   auth: {
-    login: async (returnUrl?: string) => {
-      const res = await fetch(`${API_BASE}/auth/login`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ return_url: returnUrl || '/' }),
-      });
-      if (!res.ok) throw new Error(`API error: ${res.status}`);
-      return res.json() as Promise<{
-        oauth_session_id: string;
-        auth_session_id: string;
-        auth_request: unknown;
-        state: string;
-      }>;
-    },
-
-    sessionStatus: (sessionId: string) =>
-      fetchAPI<{ completed: boolean; redirect_url?: string }>(`/auth/session/${sessionId}/status`),
-
     status: () =>
       fetchAPI<{ authenticated: boolean; did?: string; expires_at?: number }>('/auth/status'),
 

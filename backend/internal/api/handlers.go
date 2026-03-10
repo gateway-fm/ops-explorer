@@ -1120,6 +1120,12 @@ func (s *Server) handleFetchSourcify(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Validate chainIDStr to prevent SSRF
+	if _, err := strconv.ParseUint(chainIDStr, 10, 64); err != nil {
+		http.Error(w, "invalid chainId", http.StatusBadRequest)
+		return
+	}
+
 	url := fmt.Sprintf("%s/files/%s/%s", sourcifyAPIBase, chainIDStr, address)
 	resp, err := http.Get(url)
 	if err != nil {
@@ -1444,6 +1450,12 @@ func (s *Server) handleCheckSourcify(w http.ResponseWriter, r *http.Request) {
 			"isVerified": isVerified,
 			"status":     status,
 		})
+		return
+	}
+
+	// Validate chainIDStr to prevent SSRF
+	if _, err := strconv.ParseUint(chainIDStr, 10, 64); err != nil {
+		http.Error(w, "invalid chainId", http.StatusBadRequest)
 		return
 	}
 

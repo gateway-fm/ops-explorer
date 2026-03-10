@@ -267,7 +267,7 @@ func (r *RealtimeIndexer) processBlock(ctx context.Context, number uint64) error
 		return r.processBlockRaw(ctx, number)
 	}
 
-	block, err := r.rpc.BlockByNumber(ctx, big.NewInt(int64(number)))
+	block, err := r.rpc.BlockByNumber(ctx, new(big.Int).SetUint64(number))
 	if err != nil {
 		return err
 	}

@@ -4,11 +4,10 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"explorer/internal/auth"
-
-	"github.com/go-chi/chi/v5"
 )
 
 const (
@@ -17,35 +16,22 @@ const (
 	CookieMaxAge    = 30 * 60 // 30 minutes
 )
 
-type InitiateLoginRequest struct {
-	ReturnURL string `json:"return_url,omitempty"`
-}
-
-type InitiateLoginResponse struct {
-	OAuthSessionID string      `json:"oauth_session_id"`
-	AuthSessionID  string      `json:"auth_session_id"`
-	AuthRequest    interface{} `json:"auth_request"`
-	State          string      `json:"state"`
-}
-
 func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	if s.ssoClient == nil || !s.ssoClient.IsEnabled() {
 		writeError(w, http.StatusServiceUnavailable, "SSO is not configured")
 		return
 	}
 
-	var req InitiateLoginRequest
-	if r.Body != nil && r.ContentLength > 0 {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "Invalid request body")
-			return
-		}
-	}
-
-	returnURL := req.ReturnURL
+	returnURL := r.URL.Query().Get("return_url")
 	if returnURL == "" {
 		returnURL = "/"
 	}
+
+	// Prevent open redirect: return_url must be a relative path
+	if !strings.HasPrefix(returnURL, "/") || strings.HasPrefix(returnURL, "//") {
+		returnURL = "/"
+	}
+
 	state, err := s.ssoClient.GenerateState(returnURL)
 	if err != nil {
 		log.Printf("Failed to generate state: %v", err)
@@ -53,19 +39,8 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	authResp, err := s.ssoClient.InitiateAuthorization(r.Context(), state)
-	if err != nil {
-		log.Printf("Failed to initiate authorization: %v", err)
-		writeError(w, http.StatusBadGateway, "Failed to connect to authentication service")
-		return
-	}
-
-	writeJSON(w, InitiateLoginResponse{
-		OAuthSessionID: authResp.OAuthSessionID,
-		AuthSessionID:  authResp.AuthSessionID,
-		AuthRequest:    authResp.AuthRequest,
-		State:          state,
-	})
+	authURL := s.ssoClient.GetAuthorizationURL(state)
+	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
 func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
@@ -93,6 +68,11 @@ func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Prevent open redirect: return_url must be a relative path
+	if !strings.HasPrefix(returnURL, "/") || strings.HasPrefix(returnURL, "//") {
+		returnURL = "/"
+	}
+
 	tokenResp, err := s.ssoClient.ExchangeCode(r.Context(), code)
 	if err != nil {
 		log.Printf("Failed to exchange code: %v", err)
@@ -107,7 +87,7 @@ func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   tokenResp.ExpiresIn,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   r.TLS != nil,
+		Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
 	})
 
 	http.Redirect(w, r, returnURL, http.StatusFound)
@@ -165,28 +145,6 @@ func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"logged_out": true})
 }
 
-func (s *Server) handleAuthSessionStatus(w http.ResponseWriter, r *http.Request) {
-	if s.ssoClient == nil || !s.ssoClient.IsEnabled() {
-		writeError(w, http.StatusServiceUnavailable, "SSO is not configured")
-		return
-	}
-
-	sessionID := chi.URLParam(r, "id")
-	if sessionID == "" {
-		writeError(w, http.StatusBadRequest, "Missing session ID")
-		return
-	}
-
-	status, err := s.ssoClient.CheckSessionStatus(r.Context(), sessionID)
-	if err != nil {
-		log.Printf("Failed to check session status: %v", err)
-		writeJSON(w, map[string]bool{"completed": false})
-		return
-	}
-
-	writeJSON(w, status)
-}
-
 func (s *Server) GetAuthDID(r *http.Request) string {
 	cookie, err := r.Cookie(AuthCookieName)
 	if err != nil || cookie.Value == "" {
@@ -230,7 +188,7 @@ func (s *Server) refreshAuthMiddleware(next http.Handler) http.Handler {
 						MaxAge:   CookieMaxAge,
 						HttpOnly: true,
 						SameSite: http.SameSiteLaxMode,
-						Secure:   r.TLS != nil,
+						Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
 					})
 				}
 			}

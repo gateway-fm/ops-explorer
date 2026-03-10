@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown, Boxes, ArrowLeftRight, Users, ShieldCheck, Coins, ArrowRightLeft, Fuel, LogIn, Shield, LogOut } from 'lucide-react';
 import { useAuth } from '../lib/auth';
-import { PrivadoLogin } from './PrivadoLogin';
+import { redirectToLogin } from '../lib/login';
 import { usePrivacyEnabled } from '../hooks/usePrivacyEnabled';
 import { MetaMaskFox } from './MetaMask';
 import { addNetworkToMetaMask } from '../lib/metamask';
@@ -74,8 +74,7 @@ function Dropdown({ label, items }: DropdownProps) {
 
 function AuthButton() {
   const privacyEnabled = usePrivacyEnabled();
-  const { isAuthenticated, ssoAuth, privadoLogout } = useAuth();
-  const [showLogin, setShowLogin] = useState(false);
+  const { isAuthenticated, auth, logout } = useAuth();
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -101,7 +100,7 @@ function AuthButton() {
         >
           <Shield className="w-4 h-4 text-success-500" />
           <span className="font-mono text-xs max-w-[100px] truncate">
-            {ssoAuth.did ? `${ssoAuth.did.slice(0, 16)}...` : 'Signed in'}
+            {auth.did ? `${auth.did.slice(0, 16)}...` : 'Signed in'}
           </span>
           <ChevronDown className={`w-4 h-4 transition-transform ${showMenu ? 'rotate-180' : ''}`} />
         </button>
@@ -117,7 +116,7 @@ function AuthButton() {
               <span className="text-sm text-neutral-700">Privacy</span>
             </Link>
             <button
-              onClick={() => { privadoLogout(); setShowMenu(false); }}
+              onClick={() => { logout(); setShowMenu(false); }}
               className="w-full flex items-center gap-3 px-4 py-3 hover:bg-primary-50 transition-colors"
             >
               <LogOut className="w-4 h-4 text-neutral-500" />
@@ -130,16 +129,13 @@ function AuthButton() {
   }
 
   return (
-    <>
-      <button
-        onClick={() => setShowLogin(true)}
-        className="flex items-center gap-1.5 px-3 py-2 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors text-sm font-medium"
-      >
-        <LogIn className="w-4 h-4" />
-        Sign in
-      </button>
-      {showLogin && <PrivadoLogin onClose={() => setShowLogin(false)} />}
-    </>
+    <button
+      onClick={() => redirectToLogin()}
+      className="flex items-center gap-1.5 px-3 py-2 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors text-sm font-medium"
+    >
+      <LogIn className="w-4 h-4" />
+      Sign in
+    </button>
   );
 }
 

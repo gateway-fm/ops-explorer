@@ -1,0 +1,1510 @@
+{
+	"Golang errors": {},
+	"Issues": [
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint64 -\u003e int64",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/rpc/rpc.go",
+			"code": "463: func toHex(n uint64) string {\n464: \treturn \"0x\" + big.NewInt(int64(n)).Text(16)\n465: }\n",
+			"line": "464",
+			"column": "32",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint64 -\u003e int64",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/rpc/rpc.go",
+			"code": "160: func (c *Client) GetBlockTransactions(ctx context.Context, number uint64) ([]*explorerTypes.Transaction, error) {\n161: \tblock, err := c.eth.BlockByNumber(ctx, big.NewInt(int64(number)))\n162: \tif err != nil {\n",
+			"line": "161",
+			"column": "57",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint64 -\u003e int64",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/rpc/rpc.go",
+			"code": "142: func (c *Client) GetBlockByNumber(ctx context.Context, number uint64) (*explorerTypes.Block, error) {\n143: \tblock, err := c.eth.BlockByNumber(ctx, big.NewInt(int64(number)))\n144: \tif err != nil {\n",
+			"line": "143",
+			"column": "57",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint64 -\u003e int64",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/realtime.go",
+			"code": "376: \t\t\tvar chainBlock *ethtypes.Block\n377: \t\t\tchainBlock, err = r.rpc.BlockByNumber(ctx, big.NewInt(int64(checkBlock)))\n378: \t\t\tif err == nil {\n",
+			"line": "377",
+			"column": "63",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint64 -\u003e int64",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/realtime.go",
+			"code": "269: \n270: \tblock, err := r.rpc.BlockByNumber(ctx, big.NewInt(int64(number)))\n271: \tif err != nil {\n",
+			"line": "270",
+			"column": "57",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint64 -\u003e int64",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/indexer.go",
+			"code": "509: \n510: \tblock, err := i.rpc.BlockByNumber(ctx, big.NewInt(int64(number)))\n511: \tif err != nil {\n",
+			"line": "510",
+			"column": "57",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint64 -\u003e int64",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/indexer.go",
+			"code": "463: \t\t\tvar chainBlock *ethtypes.Block\n464: \t\t\tchainBlock, err = i.rpc.BlockByNumber(ctx, big.NewInt(int64(checkBlock)))\n465: \t\t\tif err == nil {\n",
+			"line": "464",
+			"column": "63",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint64 -\u003e int64",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/catchup.go",
+			"code": "331: \n332: \tblock, err := c.rpc.BlockByNumber(c.ctx, big.NewInt(int64(number)))\n333: \tif err != nil {\n",
+			"line": "332",
+			"column": "59",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint64 -\u003e int64",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/catchup.go",
+			"code": "110: \t} else {\n111: \t\tc.totalMissing = int64(toBlock - fromBlock)\n112: \t}\n",
+			"line": "111",
+			"column": "25",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint64 -\u003e int64",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/api/handlers.go",
+			"code": "1027: \t\t\"latestChainBlock\":  latestOnChain,\n1028: \t\t\"blocksRemaining\":   int64(latestOnChain) - int64(status.LastIndexedBlock),\n1029: \t\t\"isSynced\":          status.LastIndexedBlock \u003e= latestOnChain,\n",
+			"line": "1028",
+			"column": "29",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint64 -\u003e int64",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/api/handlers.go",
+			"code": "1027: \t\t\"latestChainBlock\":  latestOnChain,\n1028: \t\t\"blocksRemaining\":   int64(latestOnChain) - int64(status.LastIndexedBlock),\n1029: \t\t\"isSynced\":          status.LastIndexedBlock \u003e= latestOnChain,\n",
+			"line": "1028",
+			"column": "52",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint64 -\u003e int",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/rpc/rpc.go",
+			"code": "207: \t\t\tInputData:   inputData,\n208: \t\t\tStatus:      int(receipt.Status),\n209: \t\t\tCreatedAt:   time.Now(),\n",
+			"line": "208",
+			"column": "20",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint64 -\u003e int",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/rpc/rpc.go",
+			"code": "120: \t\tgasUsed = receipt.GasUsed\n121: \t\tstatus = int(receipt.Status)\n122: \t} else {\n",
+			"line": "121",
+			"column": "15",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint64 -\u003e int",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/indexer.go",
+			"code": "1360: \t\tgasUsed = receipt.GasUsed\n1361: \t\tstatus = int(receipt.Status)\n1362: \t\tif receipt.Status == 0 {\n",
+			"line": "1361",
+			"column": "15",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint64 -\u003e int",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/indexer.go",
+			"code": "1044: \t\t\tgasUsed = receipt.GasUsed\n1045: \t\t\tstatus = int(receipt.Status)\n1046: \t\t\tif receipt.Status == 0 {\n",
+			"line": "1045",
+			"column": "16",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint64 -\u003e int",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/indexer.go",
+			"code": "696: \t\t\tgasUsed = receipt.GasUsed\n697: \t\t\tstatus = int(receipt.Status)\n698: \t\t\tif receipt.Status == 0 {\n",
+			"line": "697",
+			"column": "16",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint64 -\u003e int",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/indexer.go",
+			"code": "667: \t\tgasLimit := uint64(rawTx.Gas)\n668: \t\ttxType := int(rawTx.Type)\n669: \n",
+			"line": "668",
+			"column": "16",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint -\u003e int",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/rpc/rpc.go",
+			"code": "118: \t\t}\n119: \t\ttxIndex = int(receipt.TransactionIndex)\n120: \t\tgasUsed = receipt.GasUsed\n",
+			"line": "119",
+			"column": "16",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint -\u003e int",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/indexer.go",
+			"code": "1506: \t\t\t\tTxHash:       tx.Hash().Hex(),\n1507: \t\t\t\tLogIndex:     int(logEntry.Index),\n1508: \t\t\t\tTokenAddress: logEntry.Address.Hex(),\n",
+			"line": "1507",
+			"column": "22",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint -\u003e int",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/indexer.go",
+			"code": "1458: \t\t\tTxHash:      tx.Hash().Hex(),\n1459: \t\t\tLogIndex:    int(logEntry.Index),\n1460: \t\t\tAddress:     logEntry.Address.Hex(),\n",
+			"line": "1459",
+			"column": "20",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint -\u003e int",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/indexer.go",
+			"code": "1164: \t\t\t\t\tTxHash:       tx.Hash().Hex(),\n1165: \t\t\t\t\tLogIndex:     int(logEntry.Index),\n1166: \t\t\t\t\tTokenAddress: logEntry.Address.Hex(),\n",
+			"line": "1165",
+			"column": "23",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint -\u003e int",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/indexer.go",
+			"code": "1124: \t\t\t\tTxHash:      tx.Hash().Hex(),\n1125: \t\t\t\tLogIndex:    int(logEntry.Index),\n1126: \t\t\t\tAddress:     logEntry.Address.Hex(),\n",
+			"line": "1125",
+			"column": "21",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint -\u003e int",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/indexer.go",
+			"code": "815: \t\t\t\t\tTxHash:       rawTx.Hash.Hex(),\n816: \t\t\t\t\tLogIndex:     int(logEntry.Index),\n817: \t\t\t\t\tTokenAddress: logEntry.Address.Hex(),\n",
+			"line": "816",
+			"column": "23",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint -\u003e int",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/indexer.go",
+			"code": "775: \t\t\t\tTxHash:      rawTx.Hash.Hex(),\n776: \t\t\t\tLogIndex:    int(logEntry.Index),\n777: \t\t\t\tAddress:     logEntry.Address.Hex(),\n",
+			"line": "776",
+			"column": "21",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion int64 -\u003e uint64",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/catchup.go",
+			"code": "242: \t} else {\n243: \t\ttotal = uint64(c.totalMissing)\n244: \t}\n",
+			"line": "243",
+			"column": "17",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion int64 -\u003e uint64",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/catchup.go",
+			"code": "240: \t\tremaining, _ := c.collector.GetTotalMissingBlocks(c.ctx)\n241: \t\ttotal = uint64(processed) + uint64(remaining)\n242: \t} else {\n",
+			"line": "241",
+			"column": "37",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion int64 -\u003e uint64",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/catchup.go",
+			"code": "240: \t\tremaining, _ := c.collector.GetTotalMissingBlocks(c.ctx)\n241: \t\ttotal = uint64(processed) + uint64(remaining)\n242: \t} else {\n",
+			"line": "241",
+			"column": "17",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion int -\u003e uint64",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/opdeposits/fetcher.go",
+			"code": "105: \n106: \tbatchSize := uint64(f.config.BatchSize)\n107: \tfor batchStart := fromBlock; batchStart \u003c= safeHead; batchStart += batchSize {\n",
+			"line": "106",
+			"column": "21",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion int -\u003e uint64",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/realtime.go",
+			"code": "223: \n224: \t\t\tsafeBlock := latestOnChain - uint64(r.config.ConfirmationBlocks)\n225: \t\t\tlastProcessed := r.GetLastProcessedBlock()\n",
+			"line": "224",
+			"column": "39",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion int -\u003e uint64",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/realtime.go",
+			"code": "159: \t\t\tlatestBlock := header.Number.Uint64()\n160: \t\t\tsafeBlock := latestBlock - uint64(r.config.ConfirmationBlocks)\n161: \n",
+			"line": "160",
+			"column": "37",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "HIGH",
+			"cwe": null,
+			"rule_id": "G704",
+			"details": "SSRF via taint analysis",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/api/handlers.go",
+			"code": "1450: \turl := fmt.Sprintf(\"%s/check-by-addresses?addresses=%s\u0026chainIds=%s\", sourcifyAPIBase, address, chainIDStr)\n1451: \tresp, err := http.Get(url)\n1452: \tif err != nil {\n",
+			"line": "1451",
+			"column": "23",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "HIGH",
+			"cwe": null,
+			"rule_id": "G704",
+			"details": "SSRF via taint analysis",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/api/handlers.go",
+			"code": "1123: \turl := fmt.Sprintf(\"%s/files/%s/%s\", sourcifyAPIBase, chainIDStr, address)\n1124: \tresp, err := http.Get(url)\n1125: \tif err != nil {\n",
+			"line": "1124",
+			"column": "23",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "400",
+				"url": "https://cwe.mitre.org/data/definitions/400.html"
+			},
+			"rule_id": "G118",
+			"details": "Goroutine uses context.Background/TODO while request-scoped context is available",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/catchup.go",
+			"code": "123: \tc.wg.Add(1)\n124: \tgo c.blockProducerFromRanges()\n125: \n",
+			"line": "124",
+			"column": "2",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "400",
+				"url": "https://cwe.mitre.org/data/definitions/400.html"
+			},
+			"rule_id": "G118",
+			"details": "Goroutine uses context.Background/TODO while request-scoped context is available",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/api/server.go",
+			"code": "222: \n223: \tgo func() {\n224: \t\t\u003c-ctx.Done()\n",
+			"line": "223",
+			"column": "2",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "MEDIUM",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "78",
+				"url": "https://cwe.mitre.org/data/definitions/78.html"
+			},
+			"rule_id": "G204",
+			"details": "Subprocess launched with a potential tainted input or cmd arguments",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/verifier/compiler.go",
+			"code": "133: \n134: \tcmd := exec.CommandContext(ctx, c.path, \"--standard-json\")\n135: \tcmd.Stdin = bytes.NewReader(inputJSON)\n",
+			"line": "134",
+			"column": "9",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "MEDIUM",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "78",
+				"url": "https://cwe.mitre.org/data/definitions/78.html"
+			},
+			"rule_id": "G204",
+			"details": "Subprocess launched with a potential tainted input or cmd arguments",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/verifier/compiler.go",
+			"code": "35: \n36: \tcmd := exec.CommandContext(ctx, c.path, \"--standard-json\")\n37: \tcmd.Stdin = bytes.NewReader(inputJSON)\n",
+			"line": "36",
+			"column": "9",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "MEDIUM",
+			"confidence": "LOW",
+			"cwe": {
+				"id": "400",
+				"url": "https://cwe.mitre.org/data/definitions/400.html"
+			},
+			"rule_id": "G112",
+			"details": "Potential Slowloris Attack because ReadHeaderTimeout is not configured in the http.Server",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/api/server.go",
+			"code": "217: \n218: \tsrv := \u0026http.Server{\n219: \t\tAddr:    fmt.Sprintf(\":%d\", s.port),\n220: \t\tHandler: s.router,\n221: \t}\n222: \n",
+			"line": "218-221",
+			"column": "10",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "MEDIUM",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "88",
+				"url": "https://cwe.mitre.org/data/definitions/88.html"
+			},
+			"rule_id": "G107",
+			"details": "Potential HTTP request made with variable url",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/verifier/solc_manager.go",
+			"code": "181: \n182: \tresp, err := http.Get(url)\n183: \tif err != nil {\n",
+			"line": "182",
+			"column": "15",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "MEDIUM",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "88",
+				"url": "https://cwe.mitre.org/data/definitions/88.html"
+			},
+			"rule_id": "G107",
+			"details": "Potential HTTP request made with variable url",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/api/handlers.go",
+			"code": "1450: \turl := fmt.Sprintf(\"%s/check-by-addresses?addresses=%s\u0026chainIds=%s\", sourcifyAPIBase, address, chainIDStr)\n1451: \tresp, err := http.Get(url)\n1452: \tif err != nil {\n",
+			"line": "1451",
+			"column": "15",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "MEDIUM",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "88",
+				"url": "https://cwe.mitre.org/data/definitions/88.html"
+			},
+			"rule_id": "G107",
+			"details": "Potential HTTP request made with variable url",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/api/handlers.go",
+			"code": "1312: \tfetchURL := fmt.Sprintf(\"%s/files/%s/%s\", sourcifyAPIBase, req.ChainID, common.HexToAddress(req.Address).Hex())\n1313: \tfetchResp, err := http.Get(fetchURL)\n1314: \tif err == nil \u0026\u0026 fetchResp.StatusCode == 200 {\n",
+			"line": "1313",
+			"column": "20",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "MEDIUM",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "88",
+				"url": "https://cwe.mitre.org/data/definitions/88.html"
+			},
+			"rule_id": "G107",
+			"details": "Potential HTTP request made with variable url",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/api/handlers.go",
+			"code": "1123: \turl := fmt.Sprintf(\"%s/files/%s/%s\", sourcifyAPIBase, chainIDStr, address)\n1124: \tresp, err := http.Get(url)\n1125: \tif err != nil {\n",
+			"line": "1124",
+			"column": "15",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "MEDIUM",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "276",
+				"url": "https://cwe.mitre.org/data/definitions/276.html"
+			},
+			"rule_id": "G301",
+			"details": "Expect directory permissions to be 0750 or less",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/verifier/solc_manager.go",
+			"code": "197: \t// Ensure base path exists\n198: \tif err := os.MkdirAll(sm.basePath, 0755); err != nil {\n199: \t\treturn \"\", fmt.Errorf(\"failed to create compiler directory: %w\", err)\n",
+			"line": "198",
+			"column": "12",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "MEDIUM",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "276",
+				"url": "https://cwe.mitre.org/data/definitions/276.html"
+			},
+			"rule_id": "G306",
+			"details": "Expect WriteFile permissions to be 0600 or less",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/verifier/solc_manager.go",
+			"code": "202: \tdestPath := filepath.Join(sm.basePath, fmt.Sprintf(\"solc-%s\", build.Version))\n203: \tif err := os.WriteFile(destPath, data, 0755); err != nil {\n204: \t\treturn \"\", fmt.Errorf(\"failed to write compiler binary: %w\", err)\n",
+			"line": "203",
+			"column": "12",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/websocket/client.go",
+			"code": "98: \t\tcase \u003c-ticker.C:\n99: \t\t\tc.conn.SetWriteDeadline(time.Now().Add(c.config.WriteWait))\n100: \t\t\tif err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {\n",
+			"line": "99",
+			"column": "4",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/websocket/client.go",
+			"code": "90: \t\t\t\tw.Write([]byte{'\\n'})\n91: \t\t\t\tw.Write(\u003c-c.send)\n92: \t\t\t}\n",
+			"line": "91",
+			"column": "5",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/websocket/client.go",
+			"code": "89: \t\t\tfor i := 0; i \u003c n; i++ {\n90: \t\t\t\tw.Write([]byte{'\\n'})\n91: \t\t\t\tw.Write(\u003c-c.send)\n",
+			"line": "90",
+			"column": "5",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/websocket/client.go",
+			"code": "84: \t\t\t}\n85: \t\t\tw.Write(message)\n86: \n",
+			"line": "85",
+			"column": "4",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/websocket/client.go",
+			"code": "76: \t\t\tif !ok {\n77: \t\t\t\t\t\tc.conn.WriteMessage(websocket.CloseMessage, []byte{})\n78: \t\t\t\treturn\n",
+			"line": "77",
+			"column": "7",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/websocket/client.go",
+			"code": "74: \t\tcase message, ok := \u003c-c.send:\n75: \t\t\tc.conn.SetWriteDeadline(time.Now().Add(c.config.WriteWait))\n76: \t\t\tif !ok {\n",
+			"line": "75",
+			"column": "4",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/websocket/client.go",
+			"code": "68: \t\tticker.Stop()\n69: \t\tc.conn.Close()\n70: \t}()\n",
+			"line": "69",
+			"column": "3",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/websocket/client.go",
+			"code": "46: \tc.conn.SetPongHandler(func(string) error {\n47: \t\tc.conn.SetReadDeadline(time.Now().Add(c.config.PongWait))\n48: \t\treturn nil\n",
+			"line": "47",
+			"column": "3",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/websocket/client.go",
+			"code": "44: \tc.conn.SetReadLimit(c.config.MaxMessageSize)\n45: \tc.conn.SetReadDeadline(time.Now().Add(c.config.PongWait))\n46: \tc.conn.SetPongHandler(func(string) error {\n",
+			"line": "45",
+			"column": "2",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/verifier/verifier.go",
+			"code": "258: \t}\n259: \tjson.Unmarshal(req.StandardInput, \u0026input)\n260: \n",
+			"line": "259",
+			"column": "2",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/verifier/solc_manager.go",
+			"code": "311: \t\tif i \u003c len(parts2) {\n312: \t\t\tfmt.Sscanf(parts2[i], \"%d\", \u0026n2)\n313: \t\t}\n",
+			"line": "312",
+			"column": "4",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/verifier/solc_manager.go",
+			"code": "308: \t\tif i \u003c len(parts1) {\n309: \t\t\tfmt.Sscanf(parts1[i], \"%d\", \u0026n1)\n310: \t\t}\n",
+			"line": "309",
+			"column": "4",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/rpc/trace.go",
+			"code": "233: \n234: \tg.Wait()\n235: \treturn results, nil\n",
+			"line": "234",
+			"column": "2",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/rpc/rpc.go",
+			"code": "431: \n432: \tg.Wait()\n433: \treturn results\n",
+			"line": "432",
+			"column": "2",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/rpc/rpc.go",
+			"code": "355: \n356: \tg.Wait() // Errors are captured in results\n357: \treturn results, nil\n",
+			"line": "356",
+			"column": "2",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/price/price.go",
+			"code": "149: \t\t\tcase \u003c-ticker.C:\n150: \t\t\t\ts.fetchAndCache(ctx)\n151: \t\t\t}\n",
+			"line": "150",
+			"column": "5",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/price/price.go",
+			"code": "139: \tgo func() {\n140: \t\ts.fetchAndCache(ctx)\n141: \n",
+			"line": "140",
+			"column": "3",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/price/price.go",
+			"code": "131: \tif s.eventBus != nil {\n132: \t\ts.eventBus.PublishPriceUpdate(s.cache)\n133: \t}\n",
+			"line": "132",
+			"column": "3",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/realtime.go",
+			"code": "339: \tif r.eventBus != nil {\n340: \t\tr.eventBus.PublishNewBlock(b.Block)\n341: \t}\n",
+			"line": "340",
+			"column": "3",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/realtime.go",
+			"code": "256: \t\t\t\tif blockNum%10 == 0 {\n257: \t\t\t\t\tr.db.UpdateSyncStatus(ctx, blockNum, true)\n258: \t\t\t\t}\n",
+			"line": "257",
+			"column": "6",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/realtime.go",
+			"code": "192: \t\t\t\tif blockNum%10 == 0 {\n193: \t\t\t\t\tr.db.UpdateSyncStatus(ctx, blockNum, true)\n194: \t\t\t\t}\n",
+			"line": "193",
+			"column": "6",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/missing_range_collector.go",
+			"code": "331: \tc.chainHead = chainHead\n332: \tc.db.UpdateIndexerProgress(c.ctx, c.minFetchedBlock, c.maxFetchedBlock, c.backfillComplete)\n333: \tc.mu.Unlock()\n",
+			"line": "332",
+			"column": "2",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/missing_range_collector.go",
+			"code": "284: \tc.minFetchedBlock = fromBlock\n285: \tc.db.UpdateIndexerProgress(c.ctx, c.minFetchedBlock, c.maxFetchedBlock, c.backfillComplete)\n286: \tc.mu.Unlock()\n",
+			"line": "285",
+			"column": "2",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/missing_range_collector.go",
+			"code": "210: \t\t\t\tc.backfillComplete = true\n211: \t\t\t\tc.db.UpdateIndexerProgress(c.ctx, c.minFetchedBlock, c.maxFetchedBlock, true)\n212: \t\t\t\tc.mu.Unlock()\n",
+			"line": "211",
+			"column": "5",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/missing_range_collector.go",
+			"code": "120: \n121: \t\tc.db.UpdateIndexerProgress(ctx, c.minFetchedBlock, c.maxFetchedBlock, false)\n122: \t}\n",
+			"line": "121",
+			"column": "3",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/indexer.go",
+			"code": "1534: \t\tif to != nil {\n1535: \t\t\ti.db.UpdateAddressStatsCounters(ctx, *to, 0, transferCount)\n1536: \t\t}\n",
+			"line": "1535",
+			"column": "4",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/indexer.go",
+			"code": "1532: \tif transferCount \u003e 0 {\n1533: \t\ti.db.UpdateAddressStatsCounters(ctx, from.Hex(), 0, transferCount)\n1534: \t\tif to != nil {\n",
+			"line": "1533",
+			"column": "3",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/indexer.go",
+			"code": "1267: \t\tfor _, tx := range blockData.Transactions {\n1268: \t\t\ti.eventBus.PublishNewTransaction(tx)\n1269: \t\t}\n",
+			"line": "1268",
+			"column": "4",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/indexer.go",
+			"code": "1264: \tif i.eventBus != nil {\n1265: \t\ti.eventBus.PublishNewBlock(blockData.Block)\n1266: \n",
+			"line": "1265",
+			"column": "3",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/indexer.go",
+			"code": "917: \t\tfor _, tx := range blockData.Transactions {\n918: \t\t\ti.eventBus.PublishNewTransaction(tx)\n919: \t\t}\n",
+			"line": "918",
+			"column": "4",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/indexer.go",
+			"code": "915: \tif i.eventBus != nil {\n916: \t\ti.eventBus.PublishNewBlock(blockData.Block)\n917: \t\tfor _, tx := range blockData.Transactions {\n",
+			"line": "916",
+			"column": "3",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/indexer.go",
+			"code": "441: \t\t\t\tif blockNum%10 == 0 {\n442: \t\t\t\t\ti.db.UpdateSyncStatus(ctx, lastIndexed, true)\n443: \t\t\t\t}\n",
+			"line": "442",
+			"column": "6",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/indexer.go",
+			"code": "398: \t\t\t}\n399: \t\t\ti.db.UpdateSyncStatus(ctx, lastIndexed, false)\n400: \t\t\treturn ctx.Err()\n",
+			"line": "399",
+			"column": "4",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/indexer.go",
+			"code": "230: \n231: \ti.db.UpdateSyncStatus(ctx, lastIndexed, true)\n232: \tcatchupThreshold := uint64(100)\n",
+			"line": "231",
+			"column": "2",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/catchup.go",
+			"code": "295: \t\t\t} else {\n296: \t\t\t\tc.db.DeleteMissingRangeByBlock(c.ctx, blockNum)\n297: \t\t\t}\n",
+			"line": "296",
+			"column": "5",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/catchup.go",
+			"code": "293: \t\t\tif c.collector != nil {\n294: \t\t\t\tc.collector.MarkBlockProcessed(c.ctx, blockNum)\n295: \t\t\t} else {\n",
+			"line": "294",
+			"column": "5",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/indexer/catchup.go",
+			"code": "280: \t\t\t\tif c.collector != nil {\n281: \t\t\t\t\tc.collector.MarkBlockProcessed(c.ctx, blockNum)\n282: \t\t\t\t}\n",
+			"line": "281",
+			"column": "6",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/db/queries.go",
+			"code": "1064: \tvar total int64\n1065: \td.pool.QueryRow(ctx, `\n1066: \t\tSELECT COUNT(*) FROM internal_transactions\n1067: \t\tWHERE LOWER(from_address) = LOWER($1) OR LOWER(to_address) = LOWER($1)`, address).Scan(\u0026total)\n1068: \n",
+			"line": "1065-1067",
+			"column": "2",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/db/queries.go",
+			"code": "959: \tvar total int64\n960: \td.pool.QueryRow(ctx, \"SELECT COUNT(*) FROM logs WHERE topic0 = $1\", topic0).Scan(\u0026total)\n961: \n",
+			"line": "960",
+			"column": "2",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/db/queries.go",
+			"code": "942: \tvar total int64\n943: \td.pool.QueryRow(ctx, \"SELECT COUNT(*) FROM logs WHERE LOWER(address) = LOWER($1)\", address).Scan(\u0026total)\n944: \n",
+			"line": "943",
+			"column": "2",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/db/queries.go",
+			"code": "893: \tvar total int64\n894: \td.pool.QueryRow(ctx, \"SELECT COUNT(*) FROM contracts WHERE is_verified = true\").Scan(\u0026total)\n895: \n",
+			"line": "894",
+			"column": "2",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/db/queries.go",
+			"code": "577: \tvar total int64\n578: \td.pool.QueryRow(ctx, `\n579: \t\tSELECT COUNT(DISTINCT address) FROM balances\n580: \t\tWHERE LOWER(token_address) = LOWER($1) AND balance \u003e 0`, tokenAddress).Scan(\u0026total)\n581: \n",
+			"line": "578-580",
+			"column": "2",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/db/queries.go",
+			"code": "542: \tvar total int64\n543: \td.pool.QueryRow(ctx, \"SELECT COUNT(*) FROM token_transfers\").Scan(\u0026total)\n544: \n",
+			"line": "543",
+			"column": "2",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/db/queries.go",
+			"code": "524: \tvar total int64\n525: \td.pool.QueryRow(ctx, \"SELECT COUNT(*) FROM token_transfers WHERE LOWER(token_address) = LOWER($1)\", tokenAddress).Scan(\u0026total)\n526: \n",
+			"line": "525",
+			"column": "2",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/db/queries.go",
+			"code": "423: \t} else {\n424: \t\td.pool.QueryRow(ctx, query).Scan(\u0026total)\n425: \t}\n",
+			"line": "424",
+			"column": "3",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/db/queries.go",
+			"code": "421: \t\tquery += \" WHERE token_type = $1\"\n422: \t\td.pool.QueryRow(ctx, query, tokenType).Scan(\u0026total)\n423: \t} else {\n",
+			"line": "422",
+			"column": "3",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/api/server.go",
+			"code": "226: \t\tdefer cancel()\n227: \t\tsrv.Shutdown(shutdownCtx)\n228: \t}()\n",
+			"line": "227",
+			"column": "3",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/api/metrics.go",
+			"code": "165: \t\t}\n166: \t\tw.Write(rec.body)\n167: \t})\n",
+			"line": "166",
+			"column": "3",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/api/handlers.go",
+			"code": "1339: \t\t\tif len(abi) \u003e 0 {\n1340: \t\t\t\ts.db.VerifyContract(r.Context(), req.Address, req.ContractName, compilerVersion, req.OptimizationUsed, req.SourceCode, abi, \"\", \"\", \"\", 0)\n1341: \t\t\t}\n",
+			"line": "1340",
+			"column": "5",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/api/handlers.go",
+			"code": "601: \tw.Header().Set(\"Content-Type\", \"application/json\")\n602: \tjson.NewEncoder(w).Encode(data)\n603: }\n",
+			"line": "602",
+			"column": "2",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/Users/blade/work/software/block-explorer/backend/internal/api/auth_handlers.go",
+			"code": "172: \tw.WriteHeader(status)\n173: \tjson.NewEncoder(w).Encode(map[string]string{\"error\": message})\n174: }\n",
+			"line": "173",
+			"column": "2",
+			"nosec": false,
+			"suppressions": null
+		}
+	],
+	"Stats": {
+		"files": 42,
+		"lines": 12787,
+		"nosec": 0,
+		"found": 94
+	},
+	"GosecVersion": "dev"
+}

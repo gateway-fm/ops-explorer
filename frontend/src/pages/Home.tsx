@@ -9,12 +9,11 @@ import { LiveTimeAgo } from '../components/LiveTimeAgo';
 import { AddressLink } from '../components/AddressLink';
 import { TransactionHistoryChart } from '../components/TransactionHistoryChart';
 import { SearchBar } from '../components/SearchBar';
-import { PrivadoLogin } from '../components/PrivadoLogin';
+import { redirectToLogin } from '../lib/login';
 import { useAuth } from '../lib/auth';
 
 export function Home() {
-  const { isAuthenticated, ssoAuth, privadoLogout } = useAuth();
-  const [showLogin, setShowLogin] = useState(false);
+  const { isAuthenticated, auth, logout } = useAuth();
   const [showAccountMenu, setShowAccountMenu] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
 
@@ -129,14 +128,14 @@ export function Home() {
                   >
                     <Shield className="w-4 h-4 text-green-300" />
                     <span className="font-mono text-xs truncate max-w-[160px]">
-                      {ssoAuth.did ? `${ssoAuth.did.slice(0, 20)}...` : 'Authenticated'}
+                      {auth.did ? `${auth.did.slice(0, 20)}...` : 'Authenticated'}
                     </span>
                   </button>
 
                   {showAccountMenu && (
                     <div className="absolute top-full right-0 mt-2 w-48 card overflow-hidden z-50 shadow-elevated">
                       <button
-                        onClick={() => { privadoLogout(); setShowAccountMenu(false); }}
+                        onClick={() => { logout(); setShowAccountMenu(false); }}
                         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-primary-50 transition-colors"
                       >
                         <LogOut className="w-4 h-4 text-neutral-500" />
@@ -147,7 +146,7 @@ export function Home() {
                 </div>
               ) : (
                 <button
-                  onClick={() => setShowLogin(true)}
+                  onClick={() => redirectToLogin()}
                   className="inline-flex items-center gap-2 px-6 h-[50px] rounded-xl bg-white text-primary font-medium text-sm hover:bg-neutral-100 transition-colors shadow-card whitespace-nowrap border border-neutral-200"
                 >
                   <Shield className="w-4 h-4" />
@@ -159,8 +158,6 @@ export function Home() {
           </div>
         </div>
       </div>
-
-      {stats?.privacyEnabled && showLogin && <PrivadoLogin onClose={() => setShowLogin(false)} />}
 
       {/* Stats + Chart */}
       <div className="grid md:grid-cols-2 gap-4 sm:gap-6">

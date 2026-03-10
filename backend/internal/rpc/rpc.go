@@ -140,7 +140,7 @@ func (c *Client) GetTransactionByHash(ctx context.Context, hash common.Hash) (*e
 }
 
 func (c *Client) GetBlockByNumber(ctx context.Context, number uint64) (*explorerTypes.Block, error) {
-	block, err := c.eth.BlockByNumber(ctx, big.NewInt(int64(number)))
+	block, err := c.eth.BlockByNumber(ctx, new(big.Int).SetUint64(number))
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +158,7 @@ func (c *Client) GetBlockByNumber(ctx context.Context, number uint64) (*explorer
 }
 
 func (c *Client) GetBlockTransactions(ctx context.Context, number uint64) ([]*explorerTypes.Transaction, error) {
-	block, err := c.eth.BlockByNumber(ctx, big.NewInt(int64(number)))
+	block, err := c.eth.BlockByNumber(ctx, new(big.Int).SetUint64(number))
 	if err != nil {
 		return nil, err
 	}
@@ -461,5 +461,5 @@ func (c *Client) GetTotalDifficulty(ctx context.Context, blockNumber uint64) str
 }
 
 func toHex(n uint64) string {
-	return "0x" + big.NewInt(int64(n)).Text(16)
+	return "0x" + new(big.Int).SetUint64(n).Text(16)
 }

@@ -8,8 +8,8 @@ import { useAuth } from '../lib/auth';
  * SSO-only authentication via Privado.
  */
 export function useAddressVisibility(address: string | null | undefined) {
-  const { ssoAuth } = useAuth();
-  const isAuthenticated = ssoAuth.authenticated;
+  const { auth } = useAuth();
+  const isAuthenticated = auth.authenticated;
 
   const { data: visibility = null, isLoading: loading, error } = useQuery({
     queryKey: ['addressVisibility', address],
@@ -27,8 +27,8 @@ export function useAddressVisibility(address: string | null | undefined) {
  * Uses TanStack React Query for caching and consistency.
  */
 export function useBatchAddressVisibility(addresses: string[]) {
-  const { ssoAuth } = useAuth();
-  const isAuthenticated = ssoAuth.authenticated;
+  const { auth } = useAuth();
+  const isAuthenticated = auth.authenticated;
 
   const addressKey = addresses.join(',');
 
@@ -50,8 +50,8 @@ export function useBatchAddressVisibility(addresses: string[]) {
  * Uses TanStack React Query for caching and consistency.
  */
 export function useViewableAddresses() {
-  const { ssoAuth } = useAuth();
-  const isAuthenticated = ssoAuth.authenticated;
+  const { auth } = useAuth();
+  const isAuthenticated = auth.authenticated;
 
   const { data: rawData, isLoading: loading, error, refetch } = useQuery({
     queryKey: ['viewableAddresses'],

@@ -309,11 +309,11 @@ func (i *Indexer) startWithMissingRangeCollector(ctx context.Context, latestOnCh
 		"workers", i.config.CatchupWorkers)
 
 	collectorCfg := &MissingRangeCollectorConfig{
-		BatchSize:            100000,                  // Scan 100k blocks at a time
-		BackwardScanInterval: 10 * time.Millisecond,  // Fast initial backward scan
-		ForwardScanInterval:  1 * time.Minute,        // Check for new blocks every minute
-		FirstBlock:           i.startBlock,           // Start from configured block (usually 0)
-		LastBlock:            latestOnChain,          // Scan up to current chain head
+		BatchSize:            100000,                // Scan 100k blocks at a time
+		BackwardScanInterval: 10 * time.Millisecond, // Fast initial backward scan
+		ForwardScanInterval:  1 * time.Minute,       // Check for new blocks every minute
+		FirstBlock:           i.startBlock,          // Start from configured block (usually 0)
+		LastBlock:            latestOnChain,         // Scan up to current chain head
 	}
 
 	i.missingRangeCollector = NewMissingRangeCollector(i.db, i.rpc, collectorCfg)
@@ -461,7 +461,7 @@ func (i *Indexer) detectReorg(ctx context.Context, blockNumber uint64) (uint64, 
 			chainHash, err = i.rpc.RawBlockHash(ctx, checkBlock)
 		} else {
 			var chainBlock *ethtypes.Block
-			chainBlock, err = i.rpc.BlockByNumber(ctx, big.NewInt(int64(checkBlock)))
+			chainBlock, err = i.rpc.BlockByNumber(ctx, new(big.Int).SetUint64(checkBlock))
 			if err == nil {
 				chainHash = chainBlock.Hash().Hex()
 			}
@@ -507,7 +507,7 @@ func (i *Indexer) processBlock(ctx context.Context, number uint64) error {
 		return i.processBlockRaw(ctx, number)
 	}
 
-	block, err := i.rpc.BlockByNumber(ctx, big.NewInt(int64(number)))
+	block, err := i.rpc.BlockByNumber(ctx, new(big.Int).SetUint64(number))
 	if err != nil {
 		return err
 	}

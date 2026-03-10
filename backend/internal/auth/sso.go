@@ -15,6 +15,7 @@ import (
 	"time"
 )
 
+
 type SSOClient struct {
 	privacyProxyURL string
 	clientID        string
@@ -31,21 +32,10 @@ type stateEntry struct {
 	expiresAt time.Time
 }
 
-type OAuthAuthorizeResponse struct {
-	OAuthSessionID string      `json:"oauth_session_id"`
-	AuthSessionID  string      `json:"auth_session_id"`
-	AuthRequest    interface{} `json:"auth_request"`
-}
-
 type OAuthTokenResponse struct {
 	AccessToken string `json:"access_token"`
 	TokenType   string `json:"token_type"`
 	ExpiresIn   int    `json:"expires_in"`
-}
-
-type OAuthSessionStatusResponse struct {
-	Completed   bool   `json:"completed"`
-	RedirectURL string `json:"redirect_url,omitempty"`
 }
 
 type OAuthErrorResponse struct {
@@ -62,6 +52,7 @@ type AuthStatus struct {
 const (
 	StateExpiration      = 10 * time.Minute
 	StateCleanupInterval = 5 * time.Minute
+	MaxStateEntries      = 1000
 )
 
 func NewSSOClient(privacyProxyURL, clientID, redirectURI string) *SSOClient {
@@ -92,6 +83,10 @@ func (c *SSOClient) GenerateState(returnURL string) (string, error) {
 	state := base64.URLEncoding.EncodeToString(b)
 
 	c.stateMu.Lock()
+	if len(c.stateStore) >= MaxStateEntries {
+		c.stateMu.Unlock()
+		return "", fmt.Errorf("state store at capacity (%d entries)", MaxStateEntries)
+	}
 	c.stateStore[state] = stateEntry{
 		returnURL: returnURL,
 		expiresAt: time.Now().Add(StateExpiration),
@@ -125,77 +120,10 @@ func (c *SSOClient) GetAuthorizationURL(state string) string {
 	params.Set("client_id", c.clientID)
 	params.Set("redirect_uri", c.redirectURI)
 	params.Set("response_type", "code")
+	params.Set("response_mode", "redirect")
 	params.Set("state", state)
 
 	return fmt.Sprintf("%s/oauth/authorize?%s", c.privacyProxyURL, params.Encode())
-}
-
-// InitiateAuthorization calls the authorization endpoint.
-// Used for browser-based flows where we need the auth request for QR code display.
-func (c *SSOClient) InitiateAuthorization(ctx context.Context, state string) (*OAuthAuthorizeResponse, error) {
-	authURL := c.GetAuthorizationURL(state)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, authURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		var oauthErr OAuthErrorResponse
-		if err := json.Unmarshal(body, &oauthErr); err == nil && oauthErr.Error != "" {
-			return nil, fmt.Errorf("OAuth error: %s - %s", oauthErr.Error, oauthErr.ErrorDescription)
-		}
-		return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
-	}
-
-	var result OAuthAuthorizeResponse
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &result, nil
-}
-
-func (c *SSOClient) CheckSessionStatus(ctx context.Context, sessionID string) (*OAuthSessionStatusResponse, error) {
-	statusURL := fmt.Sprintf("%s/oauth/session/%s/status", c.privacyProxyURL, sessionID)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, statusURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("session not found or expired")
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
-	}
-
-	var result OAuthSessionStatusResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &result, nil
 }
 
 func (c *SSOClient) ExchangeCode(ctx context.Context, code string) (*OAuthTokenResponse, error) {

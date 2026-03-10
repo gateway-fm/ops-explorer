@@ -128,11 +128,10 @@ func (s *Server) setupRoutes() {
 
 	if s.ssoClient != nil && s.ssoClient.IsEnabled() {
 		s.router.Route("/api/auth", func(r chi.Router) {
-			r.Post("/login", s.handleAuthLogin)
+			r.Get("/login", s.handleAuthLogin)
 			r.Get("/callback", s.handleAuthCallback)
 			r.Get("/status", s.handleAuthStatus)
 			r.Post("/logout", s.handleAuthLogout)
-			r.Get("/session/{id}/status", s.handleAuthSessionStatus)
 		})
 	}
 
