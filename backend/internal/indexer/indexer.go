@@ -50,8 +50,8 @@ var transferTopic = common.HexToHash("0xddf252ad1be2c89b69c2b068fc378daa952ba7f1
 var zeroAddress = common.HexToAddress("0x0000000000000000000000000000000000000000")
 
 type Indexer struct {
-	db           *db.DB
-	rpc          *rpc.Client
+	db           Database
+	rpc          RPCClient
 	pollInterval time.Duration
 	startBlock   uint64
 
@@ -115,7 +115,7 @@ type indexRequest struct {
 	done        chan error
 }
 
-func New(database *db.DB, rpcClient *rpc.Client, pollInterval time.Duration, startBlock uint64) *Indexer {
+func New(database Database, rpcClient RPCClient, pollInterval time.Duration, startBlock uint64) *Indexer {
 	return NewWithConfig(database, rpcClient, pollInterval, startBlock, &Config{
 		RPCWorkers:           50,
 		RPCRateLimit:         500,
@@ -133,7 +133,7 @@ func New(database *db.DB, rpcClient *rpc.Client, pollInterval time.Duration, sta
 	})
 }
 
-func NewWithConfig(database *db.DB, rpcClient *rpc.Client, pollInterval time.Duration, startBlock uint64, cfg *Config) *Indexer {
+func NewWithConfig(database Database, rpcClient RPCClient, pollInterval time.Duration, startBlock uint64, cfg *Config) *Indexer {
 	idx := &Indexer{
 		db:            database,
 		rpc:           rpcClient,
@@ -471,10 +471,18 @@ func (i *Indexer) detectReorg(ctx context.Context, blockNumber uint64) (uint64, 
 		}
 
 		if storedBlock.Hash != chainHash {
+			storedHash := storedBlock.Hash
+			chainHashLog := chainHash
+			if len(storedHash) > 16 {
+				storedHash = storedHash[:16]
+			}
+			if len(chainHashLog) > 16 {
+				chainHashLog = chainHashLog[:16]
+			}
 			log.Warn("reorg detected",
 				"block", checkBlock,
-				"stored_hash", storedBlock.Hash[:16],
-				"chain_hash", chainHash[:16])
+				"stored_hash", storedHash,
+				"chain_hash", chainHashLog)
 			return depth + 1, nil
 		}
 	}

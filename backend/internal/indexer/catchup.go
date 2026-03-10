@@ -11,7 +11,6 @@ import (
 	"explorer/internal/db"
 	"explorer/internal/events"
 	"explorer/internal/log"
-	"explorer/internal/rpc"
 	"explorer/internal/types"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -25,8 +24,8 @@ type CatchupConfig struct {
 }
 
 type CatchupIndexer struct {
-	db       *db.DB
-	rpc      *rpc.Client
+	db       Database
+	rpc      RPCClient
 	config   *CatchupConfig
 	idxCfg   *Config // Main indexer config for RPC settings
 	eventBus *events.Bus
@@ -62,8 +61,8 @@ type CatchupIndexer struct {
 }
 
 func NewCatchupIndexer(
-	database *db.DB,
-	rpcClient *rpc.Client,
+	database Database,
+	rpcClient RPCClient,
 	cfg *CatchupConfig,
 	idxCfg *Config,
 	tokenCache *TokenCache,

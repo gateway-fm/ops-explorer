@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"explorer/internal/auth"
-	"explorer/internal/db"
 	"explorer/internal/events"
 	"explorer/internal/gas"
 	"explorer/internal/indexer"
@@ -23,7 +22,7 @@ import (
 )
 
 type Server struct {
-	db            *db.DB
+	db            APIDatabase
 	rpc           *rpc.Client
 	indexer       *indexer.Indexer
 	price         *price.Service
@@ -45,7 +44,7 @@ type ServerConfig struct {
 	MetricsEnabled      bool
 }
 
-func New(database *db.DB, rpcClient *rpc.Client, idx *indexer.Indexer, priceService *price.Service, eventBus *events.Bus, port int, cfg *ServerConfig, privacyClient *privacy.Client, ssoClient *auth.SSOClient) *Server {
+func New(database APIDatabase, rpcClient *rpc.Client, idx *indexer.Indexer, priceService *price.Service, eventBus *events.Bus, port int, cfg *ServerConfig, privacyClient *privacy.Client, ssoClient *auth.SSOClient) *Server {
 	s := &Server{
 		db:            database,
 		rpc:           rpcClient,

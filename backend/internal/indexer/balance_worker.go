@@ -7,9 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"explorer/internal/db"
 	"explorer/internal/log"
-	"explorer/internal/rpc"
 	"explorer/internal/types"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -22,8 +20,8 @@ type BalanceWork struct {
 }
 
 type BalanceWorkerPool struct {
-	db         *db.DB
-	rpc        *rpc.Client
+	db         Database
+	rpc        RPCClient
 	workChan   chan BalanceWork
 	numWorkers int
 	rateLimit  int
@@ -32,7 +30,7 @@ type BalanceWorkerPool struct {
 	cancel     context.CancelFunc
 }
 
-func NewBalanceWorkerPool(database *db.DB, rpcClient *rpc.Client, numWorkers, rateLimit int) *BalanceWorkerPool {
+func NewBalanceWorkerPool(database Database, rpcClient RPCClient, numWorkers, rateLimit int) *BalanceWorkerPool {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &BalanceWorkerPool{
 		db:         database,

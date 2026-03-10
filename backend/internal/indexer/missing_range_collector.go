@@ -7,7 +7,6 @@ import (
 
 	"explorer/internal/db"
 	"explorer/internal/log"
-	"explorer/internal/rpc"
 )
 
 type MissingRangeCollectorConfig struct {
@@ -36,8 +35,8 @@ func DefaultMissingRangeCollectorConfig() *MissingRangeCollectorConfig {
 // MissingRangeCollector discovers and tracks missing block ranges using
 // bidirectional scanning with persistent state (following Blockscout's pattern).
 type MissingRangeCollector struct {
-	db     *db.DB
-	rpc    *rpc.Client
+	db     Database
+	rpc    RPCClient
 	config *MissingRangeCollectorConfig
 
 	// Scanning boundaries
@@ -58,7 +57,7 @@ type MissingRangeCollector struct {
 	wg     sync.WaitGroup
 }
 
-func NewMissingRangeCollector(database *db.DB, rpcClient *rpc.Client, cfg *MissingRangeCollectorConfig) *MissingRangeCollector {
+func NewMissingRangeCollector(database Database, rpcClient RPCClient, cfg *MissingRangeCollectorConfig) *MissingRangeCollector {
 	if cfg == nil {
 		cfg = DefaultMissingRangeCollectorConfig()
 	}

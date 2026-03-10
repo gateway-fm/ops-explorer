@@ -4,8 +4,6 @@ import (
 	"context"
 	"strings"
 	"sync"
-
-	"explorer/internal/db"
 )
 
 type TokenCache struct {
@@ -40,7 +38,7 @@ func (c *TokenCache) AddBatch(addresses []string) {
 	}
 }
 
-func (c *TokenCache) LoadFromDB(ctx context.Context, database *db.DB) error {
+func (c *TokenCache) LoadFromDB(ctx context.Context, database Database) error {
 	addresses, err := database.GetAllTokenAddresses(ctx)
 	if err != nil {
 		return err
