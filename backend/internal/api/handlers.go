@@ -1107,9 +1107,9 @@ func (s *Server) handleFetchSourcify(w http.ResponseWriter, r *http.Request) {
 	chainIDStr := r.URL.Query().Get("chainId")
 	if chainIDStr == "" {
 		// Use the explorer's own chain ID from RPC
-		chainID, err := s.rpc.ChainID(r.Context())
-		if err == nil && chainID != nil {
-			chainIDStr = chainID.String()
+		chainID, err := s.provider.GetChainID(r.Context())
+		if err == nil && chainID > 0 {
+			chainIDStr = strconv.FormatUint(chainID, 10)
 		} else {
 			chainIDStr = "1"
 		}
@@ -1418,9 +1418,9 @@ func (s *Server) handleCheckSourcify(w http.ResponseWriter, r *http.Request) {
 	chainIDStr := r.URL.Query().Get("chainId")
 	if chainIDStr == "" {
 		// Use the explorer's own chain ID from RPC
-		chainID, err := s.rpc.ChainID(r.Context())
-		if err == nil && chainID != nil {
-			chainIDStr = chainID.String()
+		chainID, err := s.provider.GetChainID(r.Context())
+		if err == nil && chainID > 0 {
+			chainIDStr = strconv.FormatUint(chainID, 10)
 		} else {
 			chainIDStr = "1"
 		}
