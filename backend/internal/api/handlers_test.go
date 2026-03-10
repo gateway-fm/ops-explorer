@@ -40,6 +40,14 @@ func (m *MockAPIDatabase) GetBlock(ctx context.Context, number uint64) (*types.B
 	return args.Get(0).(*types.Block), args.Error(1)
 }
 
+func (m *MockAPIDatabase) GetBlockByHash(ctx context.Context, hash string) (*types.Block, error) {
+	args := m.Called(ctx, hash)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*types.Block), args.Error(1)
+}
+
 func (m *MockAPIDatabase) GetTransactions(ctx context.Context, limit int, beforeBlock *uint64) ([]types.Transaction, error) {
 	args := m.Called(ctx, limit, beforeBlock)
 	return args.Get(0).([]types.Transaction), args.Error(1)
@@ -249,7 +257,8 @@ func (m *MockAPIDatabase) GetGasPercentiles(ctx context.Context, numBlocks int, 
 
 func TestHandleGetStats(t *testing.T) {
 	mockDB := new(MockAPIDatabase)
-	srv := New(mockDB, nil, nil, nil, nil, 8080, nil, nil, nil)
+	provider := NewDirectDBProvider(mockDB, nil, nil)
+	srv := New(mockDB, nil, nil, nil, nil, 8080, nil, nil, nil, provider)
 
 	stats := &types.ChainStats{
 		TotalBlocks:       100,
@@ -272,7 +281,8 @@ func TestHandleGetStats(t *testing.T) {
 
 func TestHandleGetBlock(t *testing.T) {
 	mockDB := new(MockAPIDatabase)
-	srv := New(mockDB, nil, nil, nil, nil, 8080, nil, nil, nil)
+	provider := NewDirectDBProvider(mockDB, nil, nil)
+	srv := New(mockDB, nil, nil, nil, nil, 8080, nil, nil, nil, provider)
 
 	block := &types.Block{
 		Number: 123,

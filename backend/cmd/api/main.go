@@ -59,7 +59,14 @@ func main() {
 		log.Info("privacy integration enabled", "proxy_url", cfg.PrivacyProxyURL)
 	}
 
-	server := api.New(database, rpcClient, nil, priceService, eventBus, cfg.APIPort, serverCfg, privacyClient, ssoClient)
+	var dataProvider api.DataProvider
+	if cfg.PrivacyProxyURL != "" {
+		dataProvider = api.NewProxyDataProvider(cfg.PrivacyProxyURL)
+	} else {
+		dataProvider = api.NewDirectDBProvider(database, rpcClient, nil)
+	}
+
+	server := api.New(database, rpcClient, nil, priceService, eventBus, cfg.APIPort, serverCfg, privacyClient, ssoClient, dataProvider)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	priceService.StartBackgroundRefresh(ctx)

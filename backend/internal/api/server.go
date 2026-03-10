@@ -25,6 +25,7 @@ type Server struct {
 	db            APIDatabase
 	rpc           *rpc.Client
 	indexer       *indexer.Indexer
+	provider      DataProvider
 	price         *price.Service
 	eventBus      *events.Bus
 	verifier      *verifier.Verifier
@@ -44,11 +45,12 @@ type ServerConfig struct {
 	MetricsEnabled      bool
 }
 
-func New(database APIDatabase, rpcClient *rpc.Client, idx *indexer.Indexer, priceService *price.Service, eventBus *events.Bus, port int, cfg *ServerConfig, privacyClient *privacy.Client, ssoClient *auth.SSOClient) *Server {
+func New(database APIDatabase, rpcClient *rpc.Client, idx *indexer.Indexer, priceService *price.Service, eventBus *events.Bus, port int, cfg *ServerConfig, privacyClient *privacy.Client, ssoClient *auth.SSOClient, provider DataProvider) *Server {
 	s := &Server{
 		db:            database,
 		rpc:           rpcClient,
 		indexer:       idx,
+		provider:      provider,
 		price:         priceService,
 		eventBus:      eventBus,
 		privacyClient: privacyClient,
@@ -99,6 +101,7 @@ func (s *Server) setupRoutes() {
 
 	if s.ssoClient != nil && s.ssoClient.IsEnabled() {
 		s.router.Use(s.refreshAuthMiddleware)
+		s.router.Use(s.authContextMiddleware)
 	}
 
 	s.router.Get("/health", s.handleHealthCheck)
@@ -207,6 +210,18 @@ func (s *Server) setupAPIRoutes(r chi.Router) {
 func (s *Server) setupAPIV2Routes(r chi.Router) {
 	// V2 handlers detect v2 from the route context and adjust pagination accordingly
 	s.setupAPIRoutes(r)
+}
+
+func (s *Server) authContextMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := s.GetAuthToken(r)
+		if token != "" {
+			ctx := context.WithValue(r.Context(), rpc.ContextKeyAuthToken, token)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) Start(ctx context.Context) error {

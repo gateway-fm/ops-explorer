@@ -12,6 +12,7 @@ type APIDatabase interface {
 	GetChainStats(ctx context.Context) (*types.ChainStats, error)
 	GetBlocks(ctx context.Context, limit int, beforeBlock *uint64) ([]types.Block, error)
 	GetBlock(ctx context.Context, number uint64) (*types.Block, error)
+	GetBlockByHash(ctx context.Context, hash string) (*types.Block, error)
 	GetTransactions(ctx context.Context, limit int, beforeBlock *uint64) ([]types.Transaction, error)
 	GetTransactionsPaginated(ctx context.Context, page, pageSize int) ([]types.Transaction, int64, error)
 	GetTransactionsByBlock(ctx context.Context, blockNumber uint64) ([]types.Transaction, error)
