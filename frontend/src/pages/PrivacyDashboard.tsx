@@ -79,10 +79,12 @@ function CopyButton({ text }: { text: string }) {
 }
 
 function truncateAddress(address: string): string {
+  if (!address) return '';
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
 function truncateDID(did: string): string {
+  if (!did) return '';
   if (did.length <= 24) return did;
   return `${did.slice(0, 12)}...${did.slice(-8)}`;
 }
@@ -118,7 +120,7 @@ function isExpiringSoon(expiresAt?: string): boolean {
 }
 
 export function PrivacyDashboard() {
-  const { auth, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const { data, loading: dataLoading, error } = useViewableAddresses();
   const [activeTab, setActiveTab] = useState<TabType>('own');
 
@@ -126,10 +128,10 @@ export function PrivacyDashboard() {
   const ownCount = data?.ownAddresses?.length ?? 0;
   const disclosedCount = data?.disclosedAddresses?.length ?? 0;
   const totalGrants = disclosedCount;
-  const expiringSoon = data?.disclosedAddresses?.filter(d => isExpiringSoon(d.expires_at)).length ?? 0;
+  const expiringSoon = (data?.disclosedAddresses?.filter(d => isExpiringSoon(d.expires_at)) || []).length;
 
   // Show authentication prompt if not authenticated via Privado
-  if (!auth.authenticated && !authLoading) {
+  if (!isAuthenticated && !authLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-16 space-y-4">
         <div className="w-16 h-16 rounded-full bg-primary-50 flex items-center justify-center border border-primary-200">

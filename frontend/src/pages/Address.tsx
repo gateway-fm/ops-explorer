@@ -717,7 +717,7 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
 
 function TxTableRow({ tx, currentAddress }: { tx: Transaction; currentAddress: string }) {
   const isOutgoing = tx.from.toLowerCase() === currentAddress.toLowerCase();
-  const txFee = (BigInt(tx.gasUsed) * BigInt(tx.gasPrice));
+  const txFee = (BigInt(tx.gasUsed || 0) * BigInt(tx.gasPrice || 0));
 
   return (
     <tr>

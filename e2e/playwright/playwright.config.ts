@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const EXPLORER_URL = process.env.EXPLORER_URL || 'http://localhost:5173';
+const EXPLORER_URL = process.env.EXPLORER_URL || 'http://localhost:3001';
 const PROXY_URL = process.env.PROXY_URL || 'http://localhost:8080';
 
 export default defineConfig({
