@@ -22,8 +22,10 @@ const defaultLimit = 25
 func (s *Server) handleGetStats(w http.ResponseWriter, r *http.Request) {
 	stats, err := s.provider.GetChainStats(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		// Return minimal stats rather than failing — privacyEnabled must still be
+		// set correctly so the frontend shows the login button even when the
+		// explorer data store is unavailable.
+		stats = &types.ChainStats{}
 	}
 	stats.PrivacyEnabled = s.privacyClient != nil && s.privacyClient.IsEnabled()
 	writeJSON(w, stats)
