@@ -1,7 +1,7 @@
 import { Page, BrowserContext } from '@playwright/test';
 import { getAuthTokens } from './auth';
 
-const EXPLORER_API = process.env.EXPLORER_URL || 'http://localhost:5173';
+const EXPLORER_API = process.env.EXPLORER_URL || 'http://localhost:3001';
 
 /**
  * Check if user is authenticated in block-explorer by calling /api/auth/status.
@@ -34,6 +34,7 @@ export async function loginViaCookie(context: BrowserContext, userDID?: string):
     path: '/',
     httpOnly: true,
     sameSite: 'Lax',
+    expires: Math.floor(Date.now() / 1000) + 1800, // 30 minutes from now
   }]);
 }
 
