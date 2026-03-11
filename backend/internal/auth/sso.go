@@ -17,10 +17,11 @@ import (
 
 
 type SSOClient struct {
-	privacyProxyURL string
-	clientID        string
-	redirectURI     string
-	httpClient      *http.Client
+	privacyProxyURL       string // backend-to-backend (Docker internal)
+	privacyProxyPublicURL string // browser-facing (for OAuth redirects)
+	clientID              string
+	redirectURI           string
+	httpClient            *http.Client
 
 	// CSRF protection
 	stateMu    sync.RWMutex
@@ -55,11 +56,15 @@ const (
 	MaxStateEntries      = 1000
 )
 
-func NewSSOClient(privacyProxyURL, clientID, redirectURI string) *SSOClient {
+func NewSSOClient(privacyProxyURL, privacyProxyPublicURL, clientID, redirectURI string) *SSOClient {
+	if privacyProxyPublicURL == "" {
+		privacyProxyPublicURL = privacyProxyURL
+	}
 	c := &SSOClient{
-		privacyProxyURL: strings.TrimSuffix(privacyProxyURL, "/"),
-		clientID:        clientID,
-		redirectURI:     redirectURI,
+		privacyProxyURL:       strings.TrimSuffix(privacyProxyURL, "/"),
+		privacyProxyPublicURL: strings.TrimSuffix(privacyProxyPublicURL, "/"),
+		clientID:              clientID,
+		redirectURI:           redirectURI,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -123,7 +128,7 @@ func (c *SSOClient) GetAuthorizationURL(state string) string {
 	params.Set("response_mode", "redirect")
 	params.Set("state", state)
 
-	return fmt.Sprintf("%s/oauth/authorize?%s", c.privacyProxyURL, params.Encode())
+	return fmt.Sprintf("%s/oauth/authorize?%s", c.privacyProxyPublicURL, params.Encode())
 }
 
 func (c *SSOClient) ExchangeCode(ctx context.Context, code string) (*OAuthTokenResponse, error) {

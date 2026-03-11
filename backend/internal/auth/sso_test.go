@@ -46,9 +46,10 @@ func TestValidateState_Invalid(t *testing.T) {
 
 func TestGetAuthorizationURL(t *testing.T) {
 	c := &SSOClient{
-		privacyProxyURL: "https://proxy.example.com",
-		clientID:        "test-client",
-		redirectURI:     "https://explorer.example.com/api/auth/callback",
+		privacyProxyURL:       "https://proxy.example.com",
+		privacyProxyPublicURL: "https://proxy.example.com",
+		clientID:              "test-client",
+		redirectURI:           "https://explorer.example.com/api/auth/callback",
 	}
 
 	authURL := c.GetAuthorizationURL("test-state")

@@ -55,7 +55,7 @@ func main() {
 	var ssoClient *auth.SSOClient
 	if cfg.PrivacyEnabled && cfg.PrivacyProxyURL != "" {
 		privacyClient = privacy.NewClient(cfg.PrivacyProxyURL)
-		ssoClient = auth.NewSSOClient(cfg.PrivacyProxyURL, cfg.SSOClientID, cfg.SSORedirectURI)
+		ssoClient = auth.NewSSOClient(cfg.PrivacyProxyURL, cfg.PrivacyProxyPublicURL, cfg.SSOClientID, cfg.SSORedirectURI)
 		log.Info("privacy integration enabled", "proxy_url", cfg.PrivacyProxyURL)
 	}
 

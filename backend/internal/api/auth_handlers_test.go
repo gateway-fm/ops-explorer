@@ -9,7 +9,7 @@ import (
 )
 
 func TestHandleAuthLogin_RedirectsToSSO(t *testing.T) {
-	ssoClient := auth.NewSSOClient("https://proxy.example.com", "test-client", "https://explorer.example.com/api/auth/callback")
+	ssoClient := auth.NewSSOClient("https://proxy.example.com", "", "test-client", "https://explorer.example.com/api/auth/callback")
 
 	s := &Server{
 		ssoClient: ssoClient,
@@ -52,7 +52,7 @@ func TestHandleAuthLogin_NoSSO(t *testing.T) {
 }
 
 func TestHandleAuthLogin_DefaultReturnURL(t *testing.T) {
-	ssoClient := auth.NewSSOClient("https://proxy.example.com", "test-client", "https://explorer.example.com/api/auth/callback")
+	ssoClient := auth.NewSSOClient("https://proxy.example.com", "", "test-client", "https://explorer.example.com/api/auth/callback")
 
 	s := &Server{
 		ssoClient: ssoClient,
