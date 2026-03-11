@@ -56,7 +56,7 @@ services:
       - privacy-proxy
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/explorer?sslmode=disable
-      RPC_URL: ${RPC_URL:-http://privacy-proxy-anvil-1:8545}
+      RPC_URL: ${RPC_URL:-http://privacy-proxy-proxy-backend-1:8080}
       POLL_INTERVAL: "2s"
       START_BLOCK: ${START_BLOCK:-0}
       # Tuning - reduce these if your RPC gets overwhelmed (EOF errors)
