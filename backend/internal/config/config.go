@@ -40,10 +40,15 @@ type Config struct {
 	CatchupQueueSize int  `mapstructure:"catchup_queue_size"`
 
 	// PrivacyEnabled AND PrivacyProxyURL must both be set to enable privacy features
-	PrivacyEnabled  bool   `mapstructure:"privacy_enabled"`
-	PrivacyProxyURL string `mapstructure:"privacy_proxy_url"`
-	SSOClientID     string `mapstructure:"sso_client_id"`
-	SSORedirectURI  string `mapstructure:"sso_redirect_uri"`
+	PrivacyEnabled        bool   `mapstructure:"privacy_enabled"`
+	PrivacyProxyURL       string `mapstructure:"privacy_proxy_url"`
+	// PrivacyProxyPublicURL is the browser-facing URL for OAuth redirects.
+	// Defaults to PrivacyProxyURL if not set. Set this when the proxy is on a
+	// Docker-internal hostname (e.g. privacy-proxy-proxy-backend-1) but the
+	// browser needs to reach it via localhost or a public hostname.
+	PrivacyProxyPublicURL string `mapstructure:"privacy_proxy_public_url"`
+	SSOClientID           string `mapstructure:"sso_client_id"`
+	SSORedirectURI        string `mapstructure:"sso_redirect_uri"`
 
 	EnableOPDeposits      bool          `mapstructure:"enable_op_deposits"`
 	L1RPCURL              string        `mapstructure:"l1_rpc_url"`
@@ -86,6 +91,7 @@ func setDefaults(v *viper.Viper) {
 
 	v.SetDefault("privacy_enabled", false)
 	v.SetDefault("privacy_proxy_url", "")
+	v.SetDefault("privacy_proxy_public_url", "")
 	v.SetDefault("sso_client_id", "explorer")
 	v.SetDefault("sso_redirect_uri", "http://localhost:8080/api/auth/callback")
 
@@ -144,6 +150,10 @@ func Load() (*Config, error) {
 
 	cfg.PrivacyEnabled = v.GetBool("privacy_enabled")
 	cfg.PrivacyProxyURL = v.GetString("privacy_proxy_url")
+	cfg.PrivacyProxyPublicURL = v.GetString("privacy_proxy_public_url")
+	if cfg.PrivacyProxyPublicURL == "" {
+		cfg.PrivacyProxyPublicURL = cfg.PrivacyProxyURL
+	}
 	cfg.SSOClientID = v.GetString("sso_client_id")
 	cfg.SSORedirectURI = v.GetString("sso_redirect_uri")
 

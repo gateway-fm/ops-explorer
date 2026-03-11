@@ -30,6 +30,7 @@ services:
       SOLC_PATH: /opt/solc
       PRIVACY_ENABLED: ${PRIVACY_ENABLED:-false}
       PRIVACY_PROXY_URL: ${PRIVACY_PROXY_URL:-http://privacy-proxy-proxy-backend-1:8080}
+      PRIVACY_PROXY_PUBLIC_URL: ${PRIVACY_PROXY_PUBLIC_URL:-http://localhost:8080}
       SSO_CLIENT_ID: ${SSO_CLIENT_ID:-explorer}
       SSO_REDIRECT_URI: ${SSO_REDIRECT_URI:-http://localhost:3001/api/auth/callback}
     networks:
