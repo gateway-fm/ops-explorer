@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, Boxes, ArrowLeftRight, Users, ShieldCheck, Coins, ArrowRightLeft, Fuel, LogIn, Shield, LogOut } from 'lucide-react';
+import { ChevronDown, Boxes, ArrowLeftRight, Users, ShieldCheck, Coins, ArrowRightLeft, Fuel, LogIn, Shield, LogOut, Eye, EyeOff, Copy, Check } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { redirectToLogin } from '../lib/login';
 import { usePrivacyEnabled } from '../hooks/usePrivacyEnabled';
@@ -76,7 +76,16 @@ function AuthButton() {
   const privacyEnabled = usePrivacyEnabled();
   const { isAuthenticated, auth, logout } = useAuth();
   const [showMenu, setShowMenu] = useState(false);
+  const [showDid, setShowDid] = useState(false);
+  const [copied, setCopied] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  function copyDid() {
+    if (!auth.did) return;
+    navigator.clipboard.writeText(auth.did);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -106,7 +115,31 @@ function AuthButton() {
         </button>
 
         {showMenu && (
-          <div className="absolute top-full right-0 mt-2 w-48 card overflow-hidden z-50 shadow-elevated">
+          <div className="absolute top-full right-0 mt-2 w-56 card overflow-hidden z-50 shadow-elevated">
+            {auth.did && (
+              <div className="px-4 py-3 border-b border-neutral-100">
+                <div className="text-xs text-neutral-400 mb-1">Your DID</div>
+                <div className="flex items-center gap-1">
+                  <span className="font-mono text-xs text-neutral-700 flex-1 break-all">
+                    {showDid ? auth.did : `${auth.did.slice(0, 20)}...`}
+                  </span>
+                  <button
+                    onClick={() => setShowDid(!showDid)}
+                    className="shrink-0 p-1 text-neutral-400 hover:text-neutral-700 transition-colors"
+                    title={showDid ? 'Hide DID' : 'Show full DID'}
+                  >
+                    {showDid ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                  <button
+                    onClick={copyDid}
+                    className="shrink-0 p-1 text-neutral-400 hover:text-neutral-700 transition-colors"
+                    title="Copy DID"
+                  >
+                    {copied ? <Check className="w-3.5 h-3.5 text-success-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+            )}
             <Link
               to="/privacy"
               onClick={() => setShowMenu(false)}

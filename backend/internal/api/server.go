@@ -92,7 +92,7 @@ func (s *Server) setupRoutes() {
 
 	corsOpts := cors.Options{
 		AllowOriginFunc:  func(origin string) bool { return true },
-		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedMethods:   []string{"GET", "POST", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Content-Type", "Cookie"},
 		AllowCredentials: true,
 	}
@@ -144,6 +144,13 @@ func (s *Server) setupRoutes() {
 			r.Post("/check-addresses", s.handleBatchCheckAddresses)
 			r.Get("/grant/{grantId}/{addressId}", s.handleGetGrantedAddress)
 			r.Get("/grant/{grantId}/{addressId}/transactions", s.handleGetGrantedAddressTransactions)
+		})
+
+		s.router.Route("/api/eth", func(r chi.Router) {
+			r.Get("/addresses", s.handleGetLinkedAddresses)
+			r.Post("/link/challenge", s.handleCreateLinkChallenge)
+			r.Post("/link/verify", s.handleVerifyLink)
+			r.Delete("/addresses/{address}", s.handleUnlinkAddress)
 		})
 	}
 }

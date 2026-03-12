@@ -13,6 +13,7 @@ import {
 import { useAuth } from '../lib/auth';
 import { useViewableAddresses } from '../hooks/useAddressVisibility';
 import { PageHeader } from '../components/PageHeader';
+import { LinkedAddresses } from '../components/LinkedAddresses';
 import { redirectToLogin } from '../lib/login';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 
@@ -206,6 +207,9 @@ export function PrivacyDashboard() {
           color={expiringSoon > 0 ? 'warning' : 'neutral'}
         />
       </div>
+
+      {/* Linked ETH Addresses */}
+      <LinkedAddresses />
 
       {/* Tabs */}
       <div className="card">

@@ -254,6 +254,14 @@ export interface OffsetPaginatedResponse<T> {
   totalPages: number;
 }
 
+// ETH address linking types
+export interface LinkedAddress {
+  address: string;
+  verified_at: string;
+  link_type: 'user' | 'system';
+  ens_name?: string;
+}
+
 // Privacy types
 export type VisibilityLevel = 'full' | 'pseudonymous' | 'redacted' | 'hidden';
 export type VisibilityReason = 'own_address' | 'disclosure_grant' | 'public_address' | 'no_access';
@@ -482,6 +490,35 @@ export const api = {
     const params = new URLSearchParams({ limit: String(limit) });
     if (before) params.set('before', String(before));
     return fetchAPI<PseudonymizedTransactionsResponse>(`/privacy/grant/${grantId}/${addressId}/transactions?${params}`);
+  },
+
+  // ETH address linking endpoints (proxied through backend to privacy-proxy)
+  eth: {
+    getLinkedAddresses: () =>
+      fetchAPI<{ addresses: LinkedAddress[] }>('/eth/addresses'),
+
+    createLinkChallenge: () =>
+      fetchAPI<{ nonce: string; message: string }>('/eth/link/challenge', {
+        method: 'POST',
+      }),
+
+    verifyLink: (nonce: string, address: string, signature: string) =>
+      fetchAPI<{ message: string; address: string }>('/eth/link/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nonce, address, signature }),
+      }),
+
+    unlinkAddress: async (address: string) => {
+      const res = await fetch(`${API_BASE}/eth/addresses/${encodeURIComponent(address.toLowerCase())}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        throw new Error(`API error: ${res.status}`);
+      }
+      return res.json() as Promise<{ success: boolean }>;
+    },
   },
 
   // Auth endpoints

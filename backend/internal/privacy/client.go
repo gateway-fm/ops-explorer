@@ -256,6 +256,166 @@ func (c *Client) IsEnabled() bool {
 	return c != nil && c.baseURL != ""
 }
 
+// ETH address linking types
+
+type LinkedAddress struct {
+	Address    string  `json:"address"`
+	VerifiedAt string  `json:"verified_at"`
+	LinkType   string  `json:"link_type"`
+	ENSName    *string `json:"ens_name,omitempty"`
+}
+
+type LinkedAddressesResponse struct {
+	Addresses []LinkedAddress `json:"addresses"`
+}
+
+type LinkChallengeResponse struct {
+	Nonce   string `json:"nonce"`
+	Message string `json:"message"`
+}
+
+type VerifyLinkRequest struct {
+	Nonce     string `json:"nonce"`
+	Address   string `json:"address"`
+	Signature string `json:"signature"`
+}
+
+type VerifyLinkResponse struct {
+	Message string `json:"message"`
+	Address string `json:"address"`
+}
+
+// GetLinkedAddresses fetches the user's linked ETH addresses from the privacy proxy.
+// Requires a valid JWT token for authentication.
+func (c *Client) GetLinkedAddresses(ctx context.Context, token string) (*LinkedAddressesResponse, error) {
+	u, err := url.Parse(c.baseURL + "/eth/addresses")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse URL: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result LinkedAddressesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// CreateLinkChallenge creates a challenge nonce/message for linking an ETH address.
+func (c *Client) CreateLinkChallenge(ctx context.Context, token string) (*LinkChallengeResponse, error) {
+	u, err := url.Parse(c.baseURL + "/eth/link/challenge")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse URL: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result LinkChallengeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// VerifyLink verifies the signature for an ETH address link.
+func (c *Client) VerifyLink(ctx context.Context, token string, verifyReq VerifyLinkRequest) (*VerifyLinkResponse, error) {
+	u, err := url.Parse(c.baseURL + "/eth/link/verify")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse URL: %w", err)
+	}
+
+	body, err := json.Marshal(verifyReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result VerifyLinkResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// UnlinkAddress removes a linked ETH address.
+func (c *Client) UnlinkAddress(ctx context.Context, token string, address string) error {
+	normalizedAddress := strings.ToLower(address)
+	u, err := url.Parse(c.baseURL + "/eth/addresses/" + normalizedAddress)
+	if err != nil {
+		return fmt.Errorf("failed to parse URL: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, u.String(), nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
+}
+
 type ResolveAddressResponse struct {
 	RealAddress     string `json:"real_address"`
 	DisclosureLevel string `json:"disclosure_level"`
