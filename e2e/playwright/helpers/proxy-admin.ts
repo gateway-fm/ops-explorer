@@ -402,30 +402,50 @@ export async function revokeDisclosureGrant(
 }
 
 /**
- * Link a wallet address to a user.
- * Uses POST /api/v1/admin/users/:userId/linked-addresses if available.
+ * Link a wallet address to a user via the challenge/verify flow.
+ *
+ * Requires MOCK_SIGNATURES=true on the proxy (set in docker-compose.e2e.yml).
+ * The fake signature is accepted because MockSignatures mode skips verification.
+ *
+ * @param accessToken - The user's JWT access token (from ensureUser / getAuthTokens)
+ * @param address     - The Ethereum address to link (must be a known Anvil account)
  */
-export async function linkWalletAddress(userId: string, address: string): Promise<void> {
-  // TODO: Verify this endpoint exists. The admin API currently only exposes
-  // GET /api/v1/admin/users/:userId/linked-addresses. If a POST endpoint
-  // is added later, wire it up here. For now, wallet linking happens implicitly
-  // when a user sends a transaction from an address.
-  const response = await fetch(`${PROXY_URL}/api/v1/admin/users/${userId}/linked-addresses`, {
+export async function linkUserWallet(accessToken: string, address: string): Promise<void> {
+  // Step 1: Get a challenge nonce for this user
+  const challengeResp = await fetch(`${PROXY_URL}/eth/link/challenge`, {
     method: 'POST',
-    headers: adminHeaders(),
-    body: JSON.stringify({ address }),
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
   });
-  // Silently accept 404/405 since endpoint may not exist yet
-  if (response.ok) return;
-  if (response.status === 404 || response.status === 405) {
-    console.warn(
-      `linkWalletAddress: POST linked-addresses not available (${response.status}). ` +
-        'Wallet linking may need to happen via transaction.',
-    );
-    return;
+  await assertOk(challengeResp, `eth link challenge for ${address}`);
+  const { nonce } = (await challengeResp.json()) as { nonce: string; message: string };
+
+  // Step 2: Submit verification with a dummy signature.
+  // MockSignatures=true (docker-compose.e2e.yml) skips cryptographic verification.
+  const verifyResp = await fetch(`${PROXY_URL}/eth/link/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({
+      nonce,
+      address,
+      signature: '0x' + 'aa'.repeat(65),
+    }),
+  });
+  await assertOk(verifyResp, `eth link verify for ${address}`);
+}
+
+/**
+ * Unlink (revoke) a wallet address from a user.
+ * Silently ignores 404 (already unlinked or never linked).
+ */
+export async function unlinkUserWallet(accessToken: string, address: string): Promise<void> {
+  const resp = await fetch(`${PROXY_URL}/eth/addresses/${address}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!resp.ok && resp.status !== 404) {
+    const body = await resp.text();
+    throw new Error(`unlinkUserWallet(${address}) failed: ${resp.status} - ${body}`);
   }
-  const body = await response.text();
-  throw new Error(`linkWalletAddress(${userId}, ${address}) failed: ${response.status} - ${body}`);
 }
 
 // === Fixture Class ===
@@ -457,6 +477,11 @@ interface TrackedDisclosureGrant {
   id: string;
 }
 
+interface TrackedLinkedWallet {
+  accessToken: string;
+  address: string;
+}
+
 /**
  * ProxyAdminFixture provides test-isolated resource creation with automatic cleanup.
  * All resource names are prefixed with a short UUID to prevent collisions between
@@ -471,6 +496,7 @@ export class ProxyAdminFixture {
   private contracts: TrackedContract[] = [];
   private disclosureRequests: TrackedDisclosureRequest[] = [];
   private disclosureGrants: TrackedDisclosureGrant[] = [];
+  private linkedWallets: TrackedLinkedWallet[] = [];
 
   constructor() {
     this.testId = randomUUID().slice(0, 8);
@@ -557,6 +583,15 @@ export class ProxyAdminFixture {
       }
     }
 
+    // Unlink wallets
+    for (const w of [...this.linkedWallets].reverse()) {
+      try {
+        await unlinkUserWallet(w.accessToken, w.address);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+
     // Clear all tracking arrays
     this.disclosureGrants = [];
     this.disclosureRequests = [];
@@ -564,6 +599,7 @@ export class ProxyAdminFixture {
     this.memberships = [];
     this.groups = [];
     this.orgs = [];
+    this.linkedWallets = [];
   }
 
   // === Tracked resource creation ===
@@ -609,6 +645,15 @@ export class ProxyAdminFixture {
     groupId: string,
   ): Promise<ContractGrant> {
     return createContractGrant(orgId, contractAddress, groupId);
+  }
+
+  /**
+   * Link an Ethereum address to a user via mock signature flow.
+   * Requires MOCK_SIGNATURES=true on the proxy (set in docker-compose.e2e.yml).
+   */
+  async linkUserWallet(accessToken: string, address: string): Promise<void> {
+    await linkUserWallet(accessToken, address);
+    this.linkedWallets.push({ accessToken, address });
   }
 
   async createDisclosureRequest(
