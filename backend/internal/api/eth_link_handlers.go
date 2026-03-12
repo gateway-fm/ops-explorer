@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"explorer/internal/privacy"
@@ -18,7 +19,8 @@ func (s *Server) handleGetLinkedAddresses(w http.ResponseWriter, r *http.Request
 
 	result, err := s.privacyClient.GetLinkedAddresses(r.Context(), token)
 	if err != nil {
-		http.Error(w, "failed to get linked addresses: "+err.Error(), http.StatusBadGateway)
+		slog.Warn("failed to get linked addresses from proxy", "error", err)
+		writeError(w, http.StatusBadGateway, "failed to get linked addresses")
 		return
 	}
 
@@ -34,7 +36,8 @@ func (s *Server) handleCreateLinkChallenge(w http.ResponseWriter, r *http.Reques
 
 	result, err := s.privacyClient.CreateLinkChallenge(r.Context(), token)
 	if err != nil {
-		http.Error(w, "failed to create link challenge: "+err.Error(), http.StatusBadGateway)
+		slog.Warn("failed to create link challenge from proxy", "error", err)
+		writeError(w, http.StatusBadGateway, "failed to create link challenge")
 		return
 	}
 
@@ -61,7 +64,8 @@ func (s *Server) handleVerifyLink(w http.ResponseWriter, r *http.Request) {
 
 	result, err := s.privacyClient.VerifyLink(r.Context(), token, req)
 	if err != nil {
-		http.Error(w, "failed to verify link: "+err.Error(), http.StatusBadGateway)
+		slog.Warn("failed to verify link with proxy", "error", err)
+		writeError(w, http.StatusBadGateway, "failed to verify link")
 		return
 	}
 
@@ -82,7 +86,8 @@ func (s *Server) handleUnlinkAddress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.privacyClient.UnlinkAddress(r.Context(), token, address); err != nil {
-		http.Error(w, "failed to unlink address: "+err.Error(), http.StatusBadGateway)
+		slog.Warn("failed to unlink address via proxy", "error", err)
+		writeError(w, http.StatusBadGateway, "failed to unlink address")
 		return
 	}
 

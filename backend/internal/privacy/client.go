@@ -391,12 +391,13 @@ func (c *Client) VerifyLink(ctx context.Context, token string, verifyReq VerifyL
 // UnlinkAddress removes a linked ETH address.
 func (c *Client) UnlinkAddress(ctx context.Context, token string, address string) error {
 	normalizedAddress := strings.ToLower(address)
-	u, err := url.Parse(c.baseURL + "/eth/addresses/" + normalizedAddress)
+	base, err := url.Parse(c.baseURL)
 	if err != nil {
-		return fmt.Errorf("failed to parse URL: %w", err)
+		return fmt.Errorf("failed to parse base URL: %w", err)
 	}
+	base.Path = base.Path + "/eth/addresses/" + url.PathEscape(normalizedAddress)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, u.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, base.String(), nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
