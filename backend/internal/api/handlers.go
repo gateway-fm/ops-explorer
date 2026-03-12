@@ -27,7 +27,7 @@ func (s *Server) handleGetStats(w http.ResponseWriter, r *http.Request) {
 		// explorer data store is unavailable.
 		stats = &types.ChainStats{}
 	}
-	stats.PrivacyEnabled = s.privacyClient != nil && s.privacyClient.IsEnabled()
+	stats.PrivacyEnabled = s.privacyClient != nil
 	writeJSON(w, stats)
 }
 
