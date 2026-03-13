@@ -153,7 +153,7 @@ export function TransactionDetail() {
                 tx.to ? (
                   <span className="flex items-center gap-1">
                     <AddressLink address={tx.to} full className="text-sm" />
-                    <CopyButton text={tx.to} />
+                    {tx.to !== '[PRIVATE]' && <CopyButton text={tx.to} />}
                   </span>
                 ) : tx.contractAddress ? (
                   <span className="flex items-center gap-1 text-sm">
@@ -183,7 +183,14 @@ export function TransactionDetail() {
               </div>
             )}
 
-            <InfoRow label="Value" value={`${formatWei(tx.value)} ETH`} />
+            <InfoRow
+              label="Value"
+              value={
+                tx.value === '' || tx.value == null
+                  ? <span className="text-neutral-400 italic">hidden</span>
+                  : `${formatWei(tx.value)} ETH`
+              }
+            />
             <InfoRow
               label="Transaction Fee"
               value={`${formatWei((BigInt(tx.gasUsed) * BigInt(tx.gasPrice)).toString())} ETH`}
@@ -225,7 +232,11 @@ export function TransactionDetail() {
               />
               <InfoRow
                 label="Nonce"
-                value={<span className="font-mono text-sm">{tx.nonce ?? '-'}</span>}
+                value={
+                  tx.nonce == null
+                    ? <span className="text-neutral-400 italic">hidden</span>
+                    : <span className="font-mono text-sm">{tx.nonce}</span>
+                }
               />
               <InfoRow
                 label="Position in Block"

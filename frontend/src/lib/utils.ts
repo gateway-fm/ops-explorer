@@ -3,6 +3,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 export function formatAddress(address: string, chars = 6): string {
+  if (!address.startsWith('0x')) return address; // don't truncate [PRIVATE] or other placeholders
   return `${address.slice(0, chars + 2)}...${address.slice(-chars)}`;
 }
 
