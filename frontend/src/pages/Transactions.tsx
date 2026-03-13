@@ -29,7 +29,7 @@ export function Transactions() {
       if (tx.to && tx.to !== '[PRIVATE]') set.add(tx.to.toLowerCase());
     }
     return Array.from(set);
-  }, [data?.data]);
+  }, [data]);
 
   const { visibilities } = useBatchAddressVisibility(uniqueAddresses);
 
