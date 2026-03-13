@@ -56,7 +56,7 @@ func (d *DB) SaveMissingRanges(ctx context.Context, ranges []BlockRange) error {
 		batch.Queue(`
 			INSERT INTO missing_block_ranges (from_number, to_number)
 			VALUES ($1, $2)
-			ON CONFLICT DO NOTHING`,
+			ON CONFLICT (from_number, to_number) DO NOTHING`,
 			r.FromNumber, r.ToNumber)
 	}
 
@@ -216,6 +216,19 @@ func (d *DB) GetBlockCount(ctx context.Context) (int64, error) {
 	var count int64
 	err := d.pool.QueryRow(ctx, `SELECT COUNT(*) FROM blocks`).Scan(&count)
 	return count, err
+}
+
+// RequeueMissingBlock re-inserts a single block as a missing range so it will
+// be retried by the catchup worker. Used when processBlock fails — without this,
+// the block is permanently lost because the parent range was already deleted from
+// missing_block_ranges when an earlier sibling block was successfully processed.
+func (d *DB) RequeueMissingBlock(ctx context.Context, blockNum uint64) error {
+	_, err := d.pool.Exec(ctx, `
+		INSERT INTO missing_block_ranges (from_number, to_number)
+		VALUES ($1, $1)
+		ON CONFLICT (from_number, to_number) DO NOTHING`,
+		blockNum)
+	return err
 }
 
 func (d *DB) ClearMissingRanges(ctx context.Context) error {

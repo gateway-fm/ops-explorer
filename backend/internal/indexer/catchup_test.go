@@ -177,6 +177,9 @@ func TestCatchupIndexer_WorkerRetriesOnError(t *testing.T) {
 	// processBlock fails (RPC error)
 	mockRPC.On("BlockByNumber", mock.Anything, big.NewInt(int64(blockNum))).Return(nil, fmt.Errorf("connection refused")).Once()
 
+	// Block must be requeued after failure so it's not permanently lost
+	mockDB.On("RequeueMissingBlock", mock.Anything, blockNum).Return(nil).Once()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	catchup.ctx = ctx
 	catchup.cancel = cancel
@@ -195,6 +198,11 @@ func TestCatchupIndexer_WorkerRetriesOnError(t *testing.T) {
 
 	// DeleteMissingRangeByBlock should NOT have been called
 	mockDB.AssertNotCalled(t, "DeleteMissingRangeByBlock", mock.Anything, mock.Anything)
+
+	// RequeueMissingBlock MUST be called so the block is not permanently lost.
+	// Without this, the block is gone: the parent range was already deleted
+	// when a sibling block succeeded earlier.
+	mockDB.AssertCalled(t, "RequeueMissingBlock", mock.Anything, blockNum)
 }
 
 func TestCatchupIndexer_BlockProducer_QueuesAllBlocksInRange(t *testing.T) {

@@ -24,6 +24,7 @@ type Database interface {
 	UpdateSyncStatus(ctx context.Context, lastIndexed uint64, isSyncing bool) error
 	HasBlock(ctx context.Context, number uint64) (bool, error)
 	DeleteMissingRangeByBlock(ctx context.Context, blockNum uint64) error
+	RequeueMissingBlock(ctx context.Context, blockNum uint64) error
 	GetMissingRangesBatch(ctx context.Context, batchSize int) ([]db.BlockRange, error)
 	RebuildAddressStats(ctx context.Context) error
 

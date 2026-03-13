@@ -214,7 +214,8 @@ CREATE TABLE IF NOT EXISTS missing_block_ranges (
     from_number BIGINT NOT NULL,
     to_number BIGINT NOT NULL,
     created_at TIMESTAMP DEFAULT NOW(),
-    CONSTRAINT valid_range CHECK (from_number <= to_number)
+    CONSTRAINT valid_range CHECK (from_number <= to_number),
+    CONSTRAINT unique_range UNIQUE (from_number, to_number)
 );
 CREATE INDEX IF NOT EXISTS idx_missing_ranges_from ON missing_block_ranges(from_number);
 CREATE INDEX IF NOT EXISTS idx_missing_ranges_to ON missing_block_ranges(to_number);
