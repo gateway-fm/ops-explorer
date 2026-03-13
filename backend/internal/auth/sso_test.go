@@ -260,3 +260,35 @@ func TestRefreshTokens_NetworkError(t *testing.T) {
 		t.Fatal("expected network error, not ErrRefreshRevoked")
 	}
 }
+
+func TestRevokeToken_Success(t *testing.T) {
+	var gotToken string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/revoke" {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+		var body map[string]string
+		json.NewDecoder(r.Body).Decode(&body)
+		gotToken = body["refresh_token"]
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := &SSOClient{privacyProxyURL: srv.URL, httpClient: srv.Client()}
+	if err := c.RevokeToken(context.Background(), "my-token"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotToken != "my-token" {
+		t.Fatalf("expected %q to be revoked, got %q", "my-token", gotToken)
+	}
+}
+
+func TestRevokeToken_NetworkError(t *testing.T) {
+	closed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	closed.Close()
+
+	c := &SSOClient{privacyProxyURL: closed.URL, httpClient: closed.Client()}
+	if err := c.RevokeToken(context.Background(), "tok"); err == nil {
+		t.Fatal("expected error on network failure")
+	}
+}

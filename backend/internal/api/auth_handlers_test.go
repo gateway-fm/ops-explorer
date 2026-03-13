@@ -441,3 +441,110 @@ func TestRefreshAuthMiddleware_NoSSO(t *testing.T) {
 		t.Fatal("expected no auth cookie to be set")
 	}
 }
+
+func TestRefreshAuthMiddleware_NetworkError_DoesNotClearCookies(t *testing.T) {
+	// Network error (not revocation) must NOT clear cookies — the existing
+	// near-expiry access token should still carry the request through.
+	jwt := makeTestJWT("did:example:user", time.Now().Add(3*time.Minute))
+
+	// Point at a closed server to force a network error.
+	closedSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	closedSrv.Close()
+
+	ssoClient := auth.NewSSOClient(closedSrv.URL, closedSrv.URL, "client-id", "http://redirect")
+	s := &Server{ssoClient: ssoClient}
+
+	called := false
+	handler := s.refreshAuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: AuthCookieName, Value: jwt})
+	req.AddCookie(&http.Cookie{Name: RefreshCookieName, Value: "some-refresh"})
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if !called {
+		t.Fatal("expected next handler to be called")
+	}
+
+	resp := w.Result()
+	// Cookies must NOT be cleared on a transient network error.
+	authCookie := findCookie(resp, AuthCookieName)
+	if authCookie != nil && authCookie.MaxAge == -1 {
+		t.Fatal("auth cookie must not be cleared on network error")
+	}
+	refreshCookie := findCookie(resp, RefreshCookieName)
+	if refreshCookie != nil && refreshCookie.MaxAge == -1 {
+		t.Fatal("refresh cookie must not be cleared on network error")
+	}
+}
+
+func TestHandleAuthLogout_RevokesServerSide(t *testing.T) {
+	revokeCalled := false
+	var revokedToken string
+
+	mockSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/revoke" {
+			revokeCalled = true
+			var body map[string]string
+			json.NewDecoder(r.Body).Decode(&body)
+			revokedToken = body["refresh_token"]
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer mockSrv.Close()
+
+	ssoClient := auth.NewSSOClient(mockSrv.URL, mockSrv.URL, "client-id", "http://redirect")
+	s := &Server{ssoClient: ssoClient}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	req.AddCookie(&http.Cookie{Name: RefreshCookieName, Value: "my-refresh-token"})
+	w := httptest.NewRecorder()
+
+	s.handleAuthLogout(w, req)
+
+	if !revokeCalled {
+		t.Fatal("expected /api/v1/revoke to be called on logout")
+	}
+	if revokedToken != "my-refresh-token" {
+		t.Fatalf("expected refresh token to be revoked, got %q", revokedToken)
+	}
+
+	resp := w.Result()
+	authCookie := findCookie(resp, AuthCookieName)
+	refreshCookie := findCookie(resp, RefreshCookieName)
+	if authCookie == nil || authCookie.MaxAge != -1 {
+		t.Fatal("expected auth cookie to be cleared")
+	}
+	if refreshCookie == nil || refreshCookie.MaxAge != -1 {
+		t.Fatal("expected refresh cookie to be cleared")
+	}
+}
+
+func TestHandleAuthStatus_ExpiredToken_ClearsBothCookies(t *testing.T) {
+	jwt := makeTestJWT("did:example:user", time.Now().Add(-1*time.Minute))
+
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
+	req.AddCookie(&http.Cookie{Name: AuthCookieName, Value: jwt})
+	req.AddCookie(&http.Cookie{Name: RefreshCookieName, Value: "some-refresh"})
+	w := httptest.NewRecorder()
+
+	s.handleAuthStatus(w, req)
+
+	resp := w.Result()
+	authCookie := findCookie(resp, AuthCookieName)
+	refreshCookie := findCookie(resp, RefreshCookieName)
+
+	if authCookie == nil || authCookie.MaxAge != -1 {
+		t.Fatal("expected auth cookie to be cleared on expired token")
+	}
+	if refreshCookie == nil || refreshCookie.MaxAge != -1 {
+		t.Fatal("expected refresh cookie to be cleared on expired token")
+	}
+}

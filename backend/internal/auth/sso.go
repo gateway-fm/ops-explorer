@@ -237,6 +237,35 @@ func (c *SSOClient) RefreshTokens(ctx context.Context, refreshToken string) (*Re
 // clear all auth state and redirect to login.
 var ErrRefreshRevoked = fmt.Errorf("refresh token revoked or invalid")
 
+// RevokeToken tells privacy-proxy to revoke a refresh token server-side.
+// Should be called on explicit logout so the token cannot be reused even if
+// captured from network traffic or logs before the cookie is cleared.
+// Errors are non-fatal: local cookies are cleared regardless.
+func (c *SSOClient) RevokeToken(ctx context.Context, refreshToken string) error {
+	revokeURL := fmt.Sprintf("%s/api/v1/revoke", c.privacyProxyURL)
+
+	body, err := json.Marshal(map[string]string{"refresh_token": refreshToken})
+	if err != nil {
+		return fmt.Errorf("failed to marshal revoke request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, revokeURL, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create revoke request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to call revoke endpoint: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// RFC 7009: revocation endpoint returns 200 even for unknown tokens.
+	// Any non-200 is a server error but we don't fail the logout over it.
+	return nil
+}
+
 func (c *SSOClient) cleanupStates() {
 	ticker := time.NewTicker(StateCleanupInterval)
 	defer ticker.Stop()

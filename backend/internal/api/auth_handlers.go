@@ -1,8 +1,8 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -135,23 +135,13 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 
 	claims, err := auth.ExtractClaims(cookie.Value)
 	if err != nil {
-		http.SetCookie(w, &http.Cookie{
-			Name:   AuthCookieName,
-			Value:  "",
-			Path:   "/",
-			MaxAge: -1,
-		})
+		clearAuthCookies(w)
 		writeJSON(w, status)
 		return
 	}
 
 	if claims.IsExpired() {
-		http.SetCookie(w, &http.Cookie{
-			Name:   AuthCookieName,
-			Value:  "",
-			Path:   "/",
-			MaxAge: -1,
-		})
+		clearAuthCookies(w)
 		writeJSON(w, status)
 		return
 	}
@@ -164,19 +154,18 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name:   AuthCookieName,
-		Value:  "",
-		Path:   "/",
-		MaxAge: -1,
-	})
-	http.SetCookie(w, &http.Cookie{
-		Name:   RefreshCookieName,
-		Value:  "",
-		Path:   "/",
-		MaxAge: -1,
-	})
+	// Revoke server-side so the token cannot be reused even if captured from
+	// the network before the cookie was cleared.
+	if s.ssoClient != nil && s.ssoClient.IsEnabled() {
+		if refreshCookie, err := r.Cookie(RefreshCookieName); err == nil && refreshCookie.Value != "" {
+			if err := s.ssoClient.RevokeToken(r.Context(), refreshCookie.Value); err != nil {
+				log.Printf("failed to revoke refresh token on logout: %v", err)
+				// Continue — local logout proceeds regardless.
+			}
+		}
+	}
 
+	clearAuthCookies(w)
 	writeJSON(w, map[string]bool{"logged_out": true})
 }
 
@@ -262,11 +251,17 @@ func (s *Server) refreshAuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		newTokens, err := s.ssoClient.RefreshTokens(context.Background(), refreshCookie.Value)
+		newTokens, err := s.ssoClient.RefreshTokens(r.Context(), refreshCookie.Value)
 		if err != nil {
-			// Revoked, banned, or network error — clear cookies to force re-login.
-			log.Printf("token refresh failed, clearing session: %v", err)
-			clearAuthCookies(w)
+			if errors.Is(err, auth.ErrRefreshRevoked) {
+				// Explicitly rejected: banned user, revoked token, or expired.
+				// Clear cookies immediately — the session is dead.
+				log.Printf("refresh token rejected by server, clearing session")
+				clearAuthCookies(w)
+			}
+			// For transient errors (network, 5xx) do NOT clear cookies.
+			// The existing access token (still valid for a few more minutes)
+			// carries the request through. The next request retries the refresh.
 			next.ServeHTTP(w, r)
 			return
 		}
