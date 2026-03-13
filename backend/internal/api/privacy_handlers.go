@@ -104,6 +104,13 @@ func (s *Server) handleBatchCheckAddresses(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	for _, addr := range req.Addresses {
+		if !common.IsHexAddress(addr) {
+			http.Error(w, "invalid address format", http.StatusBadRequest)
+			return
+		}
+	}
+
 	if !s.privacyClient.IsEnabled() {
 		results := make(map[string]*privacy.AddressVisibility)
 		for _, addr := range req.Addresses {
@@ -120,7 +127,7 @@ func (s *Server) handleBatchCheckAddresses(w http.ResponseWriter, r *http.Reques
 
 	results, err := s.privacyClient.CheckAddressesWithIdentity(r.Context(), viewer, req.Addresses)
 	if err != nil {
-		http.Error(w, "failed to check addresses: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "failed to check address visibility", http.StatusInternalServerError)
 		return
 	}
 
@@ -170,12 +177,12 @@ func (s *Server) filterAddressesForVisibility(r *http.Request, addresses []strin
 
 	visibilities, err := s.privacyClient.CheckAddressesWithIdentity(r.Context(), viewer, addresses)
 	if err != nil {
-		// Fail open on error
+		// Fail closed on error — treat all addresses as private
 		for _, addr := range addresses {
 			result[addr] = AddressDisplayInfo{
 				Address:     addr,
-				DisplayName: addr,
-				IsPrivate:   false,
+				DisplayName: "[PRIVATE]",
+				IsPrivate:   true,
 			}
 		}
 		return result

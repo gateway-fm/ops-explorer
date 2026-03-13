@@ -81,7 +81,7 @@ export function isAddressVisible(
   visibilities: Record<string, AddressVisibility>,
 ): boolean {
   const vis = visibilities[address.toLowerCase()];
-  return vis ? vis.visible : true; // Fail open
+  return vis ? vis.visible : false; // Fail closed — unknown = not visible
 }
 
 /**
