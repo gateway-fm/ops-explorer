@@ -285,7 +285,13 @@ func (c *CatchupIndexer) worker(id int) {
 
 			if err := c.processBlock(blockNum); err != nil {
 				log.Error("catchup: failed to process block", "worker", id, "block", blockNum, "error", err)
-				// Don't mark as processed on error - will be retried
+				// Re-insert into missing_block_ranges so the block is retried on next
+				// poll. Without this, the block is permanently lost: the parent range
+				// is already deleted from missing_block_ranges when the first sibling
+				// block succeeds, so a failed block would never be retried.
+				if requeueErr := c.db.RequeueMissingBlock(c.ctx, blockNum); requeueErr != nil {
+					log.Error("catchup: failed to requeue block after error", "block", blockNum, "error", requeueErr)
+				}
 				continue
 			}
 

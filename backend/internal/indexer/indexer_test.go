@@ -72,6 +72,11 @@ func (m *MockDatabase) DeleteMissingRangeByBlock(ctx context.Context, blockNum u
 	return args.Error(0)
 }
 
+func (m *MockDatabase) RequeueMissingBlock(ctx context.Context, blockNum uint64) error {
+	args := m.Called(ctx, blockNum)
+	return args.Error(0)
+}
+
 func (m *MockDatabase) GetMissingRangesBatch(ctx context.Context, batchSize int) ([]db.BlockRange, error) {
 	args := m.Called(ctx, batchSize)
 	return args.Get(0).([]db.BlockRange), args.Error(1)
