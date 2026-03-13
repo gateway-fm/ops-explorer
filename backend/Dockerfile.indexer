@@ -1,7 +1,7 @@
 FROM golang:1.24-alpine AS builder
 
-# Setting DOCKERFILE_DATE forces a build cache refresh for the package upgrades
-ENV DOCKERFILE_DATE=2026-03-13
+# Upgrade system packages
+RUN apk update --no-cache && apk upgrade --no-cache
 
 WORKDIR /app
 
