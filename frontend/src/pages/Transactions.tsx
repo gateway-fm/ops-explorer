@@ -1,10 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '../lib/api';
-import type { Transaction, TxCategory } from '../lib/api';
-import { formatHash, formatAddress, formatWei } from '../lib/utils';
+import type { Transaction, TxCategory, AddressVisibility } from '../lib/api';
+import { formatHash, formatWei } from '../lib/utils';
 import { PageHeader } from '../components/PageHeader';
+import { AddressLink } from '../components/AddressLink';
+import { AddressLabel } from '../components/AddressLabel';
+import { useBatchAddressVisibility } from '../hooks/useAddressVisibility';
 
 export function Transactions() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -16,6 +20,18 @@ export function Transactions() {
     queryFn: () => api.getTransactionsPaginated(page, pageSize),
     refetchInterval: page === 1 ? 5000 : false, // Only auto-refresh on first page
   });
+
+  const uniqueAddresses = useMemo(() => {
+    if (!data?.data) return [];
+    const set = new Set<string>();
+    for (const tx of data.data) {
+      if (tx.from && tx.from !== '[PRIVATE]') set.add(tx.from.toLowerCase());
+      if (tx.to && tx.to !== '[PRIVATE]') set.add(tx.to.toLowerCase());
+    }
+    return Array.from(set);
+  }, [data]);
+
+  const { visibilities } = useBatchAddressVisibility(uniqueAddresses);
 
   const goToPage = (newPage: number) => {
     setSearchParams({ page: String(newPage) });
@@ -49,7 +65,7 @@ export function Transactions() {
             </thead>
             <tbody>
               {data?.data?.map((tx) => (
-                <TxTableRow key={tx.hash} tx={tx} />
+                <TxTableRow key={tx.hash} tx={tx} visibilities={visibilities} />
               ))}
             </tbody>
           </table>
@@ -161,7 +177,10 @@ function TxTypeCell({ categories, tokenTransferCount }: { categories?: TxCategor
   );
 }
 
-function TxTableRow({ tx }: { tx: Transaction }) {
+function TxTableRow({ tx, visibilities }: { tx: Transaction; visibilities: Record<string, AddressVisibility> }) {
+  const fromVis = visibilities[tx.from?.toLowerCase()];
+  const toVis = tx.to ? visibilities[tx.to.toLowerCase()] : undefined;
+
   return (
     <tr>
       <td>
@@ -177,21 +196,27 @@ function TxTableRow({ tx }: { tx: Transaction }) {
           {tx.blockNumber}
         </Link>
       </td>
-      <td className="font-mono text-sm">
-        <Link to={`/address/${tx.from}`} className="text-neutral-600 hover:text-neutral-900 transition-colors">
-          {formatAddress(tx.from, 6)}
-        </Link>
+      <td className="text-sm">
+        <span className="inline-flex items-center gap-1">
+          <AddressLink address={tx.from} chars={6} />
+          <AddressLabel reason={fromVis?.reason} />
+        </span>
       </td>
-      <td className="font-mono text-sm">
+      <td className="text-sm">
         {tx.to ? (
-          <Link to={`/address/${tx.to}`} className="text-neutral-600 hover:text-neutral-900 transition-colors">
-            {formatAddress(tx.to, 6)}
-          </Link>
+          <span className="inline-flex items-center gap-1">
+            <AddressLink address={tx.to} chars={6} />
+            <AddressLabel reason={toVis?.reason} />
+          </span>
         ) : (
           <span className="text-neutral-400">Contract</span>
         )}
       </td>
-      <td className="text-sm text-neutral-700">{formatWei(tx.value)} ETH</td>
+      <td className="text-sm text-neutral-700">
+        {tx.value === '' || tx.value == null
+          ? <span className="text-neutral-400 italic">hidden</span>
+          : `${formatWei(tx.value)} ETH`}
+      </td>
       <td>
         <span className={`badge ${tx.status === 1 ? 'badge-success' : 'badge-error'}`}>
           {tx.status === 1 ? 'Success' : 'Failed'}

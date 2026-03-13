@@ -264,7 +264,7 @@ export interface LinkedAddress {
 
 // Privacy types
 export type VisibilityLevel = 'full' | 'pseudonymous' | 'redacted' | 'hidden';
-export type VisibilityReason = 'own_address' | 'disclosure_grant' | 'public_address' | 'no_access';
+export type VisibilityReason = 'own_address' | 'disclosure_grant' | 'rbac_group_member' | 'public_address' | 'no_access';
 
 export interface AddressVisibility {
   address: string;

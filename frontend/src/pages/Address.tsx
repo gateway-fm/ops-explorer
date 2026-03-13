@@ -1,16 +1,18 @@
 import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../lib/api';
-import type { Transaction } from '../lib/api';
+import type { Transaction, AddressVisibility } from '../lib/api';
 import { formatWei, formatHash, formatAddress, formatTimeAgo } from '../lib/utils';
 import { AddressLink } from '../components/AddressLink';
+import { AddressLabel } from '../components/AddressLabel';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { ContractInteraction } from '../components/ContractInteraction';
 import { FileCode2, BookOpen, Loader2, PenLine, Fingerprint, Unlock, ShieldCheck, Wallet, X, ShieldOff } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { useAuth } from '../lib/auth';
-import { useAddressVisibility } from '../hooks/useAddressVisibility';
+import { useAddressVisibility, useBatchAddressVisibility } from '../hooks/useAddressVisibility';
 import { redirectToLogin } from '../lib/login';
 import { usePrivacyEnabled } from '../hooks/usePrivacyEnabled';
 
@@ -164,6 +166,18 @@ export function Address() {
     queryFn: () => api.getAddressTransactions(address!, 25, before ? parseInt(before) : undefined),
     enabled: !!address && activeTab === 'transactions',
   });
+
+  const txAddresses = useMemo(() => {
+    if (!txs?.data) return [];
+    const set = new Set<string>();
+    for (const tx of txs.data) {
+      if (tx.from && tx.from !== '[PRIVATE]') set.add(tx.from.toLowerCase());
+      if (tx.to && tx.to !== '[PRIVATE]') set.add(tx.to.toLowerCase());
+    }
+    return Array.from(set);
+  }, [txs]);
+
+  const { visibilities: txVisibilities } = useBatchAddressVisibility(txAddresses);
 
   const { data: contract, isLoading: contractLoading } = useQuery({
     queryKey: ['contract', address],
@@ -393,7 +407,7 @@ export function Address() {
                 </thead>
                 <tbody>
                   {txs?.data?.map((tx) => (
-                    <TxTableRow key={tx.hash} tx={tx} currentAddress={info.address} />
+                    <TxTableRow key={tx.hash} tx={tx} currentAddress={info.address} visibilities={txVisibilities} />
                   ))}
                 </tbody>
               </table>
@@ -715,9 +729,11 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function TxTableRow({ tx, currentAddress }: { tx: Transaction; currentAddress: string }) {
+function TxTableRow({ tx, currentAddress, visibilities }: { tx: Transaction; currentAddress: string; visibilities: Record<string, AddressVisibility> }) {
   const isOutgoing = tx.from.toLowerCase() === currentAddress.toLowerCase();
   const txFee = (BigInt(tx.gasUsed || 0) * BigInt(tx.gasPrice || 0));
+  const fromVis = visibilities[tx.from?.toLowerCase()];
+  const toVis = tx.to ? visibilities[tx.to.toLowerCase()] : undefined;
 
   return (
     <tr>
@@ -742,18 +758,21 @@ function TxTableRow({ tx, currentAddress }: { tx: Transaction; currentAddress: s
 
       {/* From */}
       <td>
-        {tx.from.toLowerCase() === currentAddress.toLowerCase() ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="font-mono text-neutral-400 cursor-default">{formatAddress(tx.from, 8)}</span>
-            </TooltipTrigger>
-            <TooltipContent>
-              <span className="font-mono">{tx.from}</span>
-            </TooltipContent>
-          </Tooltip>
-        ) : (
-          <AddressLink address={tx.from} chars={8} />
-        )}
+        <span className="inline-flex items-center gap-1">
+          {tx.from.toLowerCase() === currentAddress.toLowerCase() ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="font-mono text-neutral-400 cursor-default">{formatAddress(tx.from, 8)}</span>
+              </TooltipTrigger>
+              <TooltipContent>
+                <span className="font-mono">{tx.from}</span>
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <AddressLink address={tx.from} chars={8} />
+          )}
+          <AddressLabel reason={fromVis?.reason} />
+        </span>
       </td>
 
       {/* Direction indicator */}
@@ -770,18 +789,21 @@ function TxTableRow({ tx, currentAddress }: { tx: Transaction; currentAddress: s
       {/* To */}
       <td>
         {tx.to ? (
-          tx.to.toLowerCase() === currentAddress.toLowerCase() ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="font-mono text-neutral-400 cursor-default">{formatAddress(tx.to, 8)}</span>
-              </TooltipTrigger>
-              <TooltipContent>
-                <span className="font-mono">{tx.to}</span>
-              </TooltipContent>
-            </Tooltip>
-          ) : (
-            <AddressLink address={tx.to} chars={8} />
-          )
+          <span className="inline-flex items-center gap-1">
+            {tx.to.toLowerCase() === currentAddress.toLowerCase() ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="font-mono text-neutral-400 cursor-default">{formatAddress(tx.to, 8)}</span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <span className="font-mono">{tx.to}</span>
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+              <AddressLink address={tx.to} chars={8} />
+            )}
+            <AddressLabel reason={toVis?.reason} />
+          </span>
         ) : (
           <span className="text-primary italic">Contract Creation</span>
         )}
@@ -789,7 +811,9 @@ function TxTableRow({ tx, currentAddress }: { tx: Transaction; currentAddress: s
 
       {/* Value */}
       <td className="text-right font-mono text-neutral-700">
-        {formatWei(tx.value)} ETH
+        {tx.value === '' || tx.value == null
+          ? <span className="text-neutral-400 italic">hidden</span>
+          : `${formatWei(tx.value)} ETH`}
       </td>
 
       {/* Txn Fee */}

@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { Lock } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { formatAddress } from '../lib/utils';
 import { useContractName } from '../hooks/useContractName';
@@ -17,9 +18,20 @@ interface AddressLinkProps {
 export function AddressLink({ address, chars = 6, full = false, className = '', label, showLabel = true, visibility }: AddressLinkProps) {
   // Auto-fetch contract name if showLabel is true and no label is provided
   // Hook must be called unconditionally before any early returns
-  const shouldFetch = showLabel && !label && !(visibility && !visibility.visible) && !(visibility?.level === 'pseudonymous' && visibility.pseudonym);
+  const isPrivatePlaceholder = address === '[PRIVATE]' || address.startsWith('[PRIVATE');
+  const shouldFetch = showLabel && !label && !isPrivatePlaceholder && !(visibility && !visibility.visible) && !(visibility?.level === 'pseudonymous' && visibility.pseudonym);
   const fetchedName = useContractName(shouldFetch ? address : null);
   const displayLabel = label || fetchedName;
+
+  // Handle [PRIVATE] placeholder from backend redaction
+  if (isPrivatePlaceholder) {
+    return (
+      <span className={`inline-flex items-center gap-1 text-neutral-400 italic ${className}`}>
+        <Lock className="w-3 h-3" />
+        <span>Private</span>
+      </span>
+    );
+  }
 
   // If visibility is provided and address is not fully visible, render privacy-aware display
   if (visibility && !visibility.visible) {
@@ -95,9 +107,20 @@ interface TokenAddressLinkProps {
 
 export function TokenAddressLink({ address, chars = 4, className = '', label, showLabel = true, visibility }: TokenAddressLinkProps) {
   // Hook must be called unconditionally before any early returns
-  const shouldFetch = showLabel && !label && !(visibility && !visibility.visible) && !(visibility?.level === 'pseudonymous' && visibility.pseudonym);
+  const isPrivatePlaceholder = address === '[PRIVATE]' || address.startsWith('[PRIVATE');
+  const shouldFetch = showLabel && !label && !isPrivatePlaceholder && !(visibility && !visibility.visible) && !(visibility?.level === 'pseudonymous' && visibility.pseudonym);
   const fetchedName = useContractName(shouldFetch ? address : null);
   const displayLabel = label || fetchedName;
+
+  // Handle [PRIVATE] placeholder from backend redaction
+  if (isPrivatePlaceholder) {
+    return (
+      <span className={`inline-flex items-center gap-1 text-neutral-400 italic ${className}`}>
+        <Lock className="w-3 h-3" />
+        <span>Private</span>
+      </span>
+    );
+  }
 
   // If visibility is provided and address is not fully visible, render privacy-aware display
   if (visibility && !visibility.visible) {
