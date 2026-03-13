@@ -153,7 +153,7 @@ export function TransactionDetail() {
                 tx.to ? (
                   <span className="flex items-center gap-1">
                     <AddressLink address={tx.to} full className="text-sm" />
-                    <CopyButton text={tx.to} />
+                    {tx.to !== '[PRIVATE]' && <CopyButton text={tx.to} />}
                   </span>
                 ) : tx.contractAddress ? (
                   <span className="flex items-center gap-1 text-sm">
