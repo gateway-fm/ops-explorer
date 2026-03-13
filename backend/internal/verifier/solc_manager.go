@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	solcListURL        = "https://binaries.soliditylang.org/linux-amd64/list.json"
+	solcListURL          = "https://binaries.soliditylang.org/linux-amd64/list.json"
 	solcGitHubReleaseURL = "https://github.com/ethereum/solidity/releases/download/v%s/solc-static-linux"
-	refreshInterval    = 1 * time.Hour
+	refreshInterval      = 1 * time.Hour
 )
 
 // remoteBuild represents a single build entry from the remote list.json
@@ -195,12 +195,12 @@ func (sm *SolcManager) downloadCompiler(build *remoteBuild) (string, error) {
 	}
 
 	// Ensure base path exists
-	if err := os.MkdirAll(sm.basePath, 0755); err != nil {
+	if err := os.MkdirAll(sm.basePath, 0750); err != nil {
 		return "", fmt.Errorf("failed to create compiler directory: %w", err)
 	}
 
 	destPath := filepath.Join(sm.basePath, fmt.Sprintf("solc-%s", build.Version))
-	if err := os.WriteFile(destPath, data, 0755); err != nil {
+	if err := os.WriteFile(destPath, data, 0700); err != nil {
 		return "", fmt.Errorf("failed to write compiler binary: %w", err)
 	}
 

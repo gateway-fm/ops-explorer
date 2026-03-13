@@ -11,7 +11,7 @@ import { FileCode2, BookOpen, Loader2, PenLine, Fingerprint, Unlock, ShieldCheck
 import { PageHeader } from '../components/PageHeader';
 import { useAuth } from '../lib/auth';
 import { useAddressVisibility } from '../hooks/useAddressVisibility';
-import { PrivadoLogin } from '../components/PrivadoLogin';
+import { redirectToLogin } from '../lib/login';
 import { usePrivacyEnabled } from '../hooks/usePrivacyEnabled';
 
 type TabType = 'transactions' | 'code' | 'read' | 'write';
@@ -28,7 +28,6 @@ export function Address() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabType>('transactions');
   const [codeSubTab, setCodeSubTab] = useState<CodeSubTab | null>(null);
-  const [showPrivadoModal, setShowPrivadoModal] = useState(false);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const manuallyDisconnected = useRef(false);
 
@@ -186,32 +185,24 @@ export function Address() {
   // Show authentication prompt if not logged in (only when privacy is enabled)
   if (privacyEnabled && !isAuthenticated) {
     return (
-      <>
-        <div className="flex flex-col items-center justify-center py-16 space-y-4">
-          <div className="w-16 h-16 rounded-full bg-primary-50 flex items-center justify-center border border-primary-200">
-            <Fingerprint className="w-8 h-8 text-primary" />
-          </div>
-          <h2 className="text-xl font-semibold text-neutral-900">Authentication Required</h2>
-          <p className="text-neutral-500 text-center max-w-md">
-            Sign in with Privado ID to view address details and transaction history.
-          </p>
-          <div className="mt-4">
-            <button
-              onClick={() => setShowPrivadoModal(true)}
-              className="btn-primary flex items-center gap-2"
-            >
-              <Fingerprint className="w-4 h-4" />
-              Sign in with Privado
-            </button>
-          </div>
+      <div className="flex flex-col items-center justify-center py-16 space-y-4">
+        <div className="w-16 h-16 rounded-full bg-primary-50 flex items-center justify-center border border-primary-200">
+          <Fingerprint className="w-8 h-8 text-primary" />
         </div>
-        {showPrivadoModal && (
-          <PrivadoLogin
-            onClose={() => setShowPrivadoModal(false)}
-            returnUrl={`/address/${address}`}
-          />
-        )}
-      </>
+        <h2 className="text-xl font-semibold text-neutral-900">Authentication Required</h2>
+        <p className="text-neutral-500 text-center max-w-md">
+          Sign in with Privado ID to view address details and transaction history.
+        </p>
+        <div className="mt-4">
+          <button
+            onClick={() => redirectToLogin(`/address/${address}`)}
+            className="btn-primary flex items-center gap-2"
+          >
+            <Fingerprint className="w-4 h-4" />
+            Sign in with Privado
+          </button>
+        </div>
+      </div>
     );
   }
 
@@ -726,7 +717,7 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
 
 function TxTableRow({ tx, currentAddress }: { tx: Transaction; currentAddress: string }) {
   const isOutgoing = tx.from.toLowerCase() === currentAddress.toLowerCase();
-  const txFee = (BigInt(tx.gasUsed) * BigInt(tx.gasPrice));
+  const txFee = (BigInt(tx.gasUsed || 0) * BigInt(tx.gasPrice || 0));
 
   return (
     <tr>

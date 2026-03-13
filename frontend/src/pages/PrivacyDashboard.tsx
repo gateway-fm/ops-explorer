@@ -13,7 +13,8 @@ import {
 import { useAuth } from '../lib/auth';
 import { useViewableAddresses } from '../hooks/useAddressVisibility';
 import { PageHeader } from '../components/PageHeader';
-import { PrivadoLogin } from '../components/PrivadoLogin';
+import { LinkedAddresses } from '../components/LinkedAddresses';
+import { redirectToLogin } from '../lib/login';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 
 type TabType = 'own' | 'disclosed';
@@ -79,10 +80,12 @@ function CopyButton({ text }: { text: string }) {
 }
 
 function truncateAddress(address: string): string {
+  if (!address) return '';
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
 function truncateDID(did: string): string {
+  if (!did) return '';
   if (did.length <= 24) return did;
   return `${did.slice(0, 12)}...${did.slice(-8)}`;
 }
@@ -118,46 +121,37 @@ function isExpiringSoon(expiresAt?: string): boolean {
 }
 
 export function PrivacyDashboard() {
-  const { ssoAuth, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const { data, loading: dataLoading, error } = useViewableAddresses();
   const [activeTab, setActiveTab] = useState<TabType>('own');
-  const [showPrivadoModal, setShowPrivadoModal] = useState(false);
 
   // Calculate stats
   const ownCount = data?.ownAddresses?.length ?? 0;
   const disclosedCount = data?.disclosedAddresses?.length ?? 0;
   const totalGrants = disclosedCount;
-  const expiringSoon = data?.disclosedAddresses?.filter(d => isExpiringSoon(d.expires_at)).length ?? 0;
+  const expiringSoon = (data?.disclosedAddresses?.filter(d => isExpiringSoon(d.expires_at)) || []).length;
 
   // Show authentication prompt if not authenticated via Privado
-  if (!ssoAuth.authenticated && (!authLoading || showPrivadoModal)) {
+  if (!isAuthenticated && !authLoading) {
     return (
-      <>
-        <div className="flex flex-col items-center justify-center py-16 space-y-4">
-          <div className="w-16 h-16 rounded-full bg-primary-50 flex items-center justify-center border border-primary-200">
-            <Fingerprint className="w-8 h-8 text-primary" />
-          </div>
-          <h2 className="text-xl font-semibold text-neutral-900">Privacy Dashboard</h2>
-          <p className="text-neutral-500 text-center max-w-md">
-            Sign in with Privado ID to view your addresses and privacy disclosures.
-          </p>
-          <div className="mt-4">
-            <button
-              onClick={() => setShowPrivadoModal(true)}
-              className="btn-primary flex items-center gap-2"
-            >
-              <Fingerprint className="w-4 h-4" />
-              Sign in with Privado
-            </button>
-          </div>
+      <div className="flex flex-col items-center justify-center py-16 space-y-4">
+        <div className="w-16 h-16 rounded-full bg-primary-50 flex items-center justify-center border border-primary-200">
+          <Fingerprint className="w-8 h-8 text-primary" />
         </div>
-        {showPrivadoModal && (
-          <PrivadoLogin
-            onClose={() => setShowPrivadoModal(false)}
-            returnUrl="/privacy"
-          />
-        )}
-      </>
+        <h2 className="text-xl font-semibold text-neutral-900">Privacy Dashboard</h2>
+        <p className="text-neutral-500 text-center max-w-md">
+          Sign in with Privado ID to view your addresses and privacy disclosures.
+        </p>
+        <div className="mt-4">
+          <button
+            onClick={() => redirectToLogin('/privacy')}
+            className="btn-primary flex items-center gap-2"
+          >
+            <Fingerprint className="w-4 h-4" />
+            Sign in with Privado
+          </button>
+        </div>
+      </div>
     );
   }
 
@@ -213,6 +207,9 @@ export function PrivacyDashboard() {
           color={expiringSoon > 0 ? 'warning' : 'neutral'}
         />
       </div>
+
+      {/* Linked ETH Addresses */}
+      <LinkedAddresses />
 
       {/* Tabs */}
       <div className="card">

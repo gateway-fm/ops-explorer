@@ -6,7 +6,7 @@ IMAGE_PREFIX ?= block-explorer
 .PHONY: dev dev-stop dev-destroy dev-logs dev-rebuild-backend
 .PHONY: run run-privacy stop destroy logs rebuild-backend
 .PHONY: version docker-build docker-build-api docker-build-indexer docker-build-frontend docker-build-dry-run
-.PHONY: lint test build
+.PHONY: lint test build clean clean-build
 
 # Default RPC URL (use host.docker.internal to reach host from Docker)
 RPC_URL ?= http://privacy-proxy-anvil-1:8545
@@ -91,11 +91,12 @@ run:
 	@echo ""
 
 run-privacy:
-	@echo "Starting Block Explorer with Privacy enabled..."
-	@echo "RPC URL: $(RPC_URL)"
+	@echo "Starting Block Explorer with Privacy Proxy enabled..."
+	@echo "  API  RPC: privacy-proxy-backend:8080 (proxy)"
+	@echo "  Indexer RPC: privacy-proxy-anvil:8545 (direct, for indexing)"
 	@echo ""
 	docker compose build
-	PRIVACY_ENABLED=true RPC_URL=$(RPC_URL) START_BLOCK=$(START_BLOCK) docker compose up -d
+	START_BLOCK=$(START_BLOCK) docker compose up -d
 	@echo ""
 	@echo "Waiting for services..."
 	@for i in 1 2 3 4 5 6 7 8 9 10; do \
@@ -126,6 +127,17 @@ logs:
 
 rebuild-backend:
 	docker compose build --no-cache api indexer && docker compose up -d api indexer
+
+# Clean Docker environment (stop services, remove volumes)
+clean:
+	docker compose down -v --remove-orphans
+	docker compose -f docker-compose.dev.yml down -v --remove-orphans
+	docker system prune -f
+
+# Clean build artifacts
+clean-build:
+	cd backend && go clean
+	rm -rf frontend/.next frontend/node_modules
 
 # =============================================================================
 # Version

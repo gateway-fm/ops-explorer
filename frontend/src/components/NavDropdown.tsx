@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, Boxes, ArrowLeftRight, Users, ShieldCheck, Coins, ArrowRightLeft, Fuel, LogIn, Shield, LogOut } from 'lucide-react';
+import { ChevronDown, Boxes, ArrowLeftRight, Users, ShieldCheck, Coins, ArrowRightLeft, Fuel, LogIn, Shield, LogOut, Eye, EyeOff, Copy, Check } from 'lucide-react';
 import { useAuth } from '../lib/auth';
-import { PrivadoLogin } from './PrivadoLogin';
+import { redirectToLogin } from '../lib/login';
 import { usePrivacyEnabled } from '../hooks/usePrivacyEnabled';
 import { MetaMaskFox } from './MetaMask';
 import { addNetworkToMetaMask } from '../lib/metamask';
@@ -74,10 +74,18 @@ function Dropdown({ label, items }: DropdownProps) {
 
 function AuthButton() {
   const privacyEnabled = usePrivacyEnabled();
-  const { isAuthenticated, ssoAuth, privadoLogout } = useAuth();
-  const [showLogin, setShowLogin] = useState(false);
+  const { isAuthenticated, auth, logout } = useAuth();
   const [showMenu, setShowMenu] = useState(false);
+  const [showDid, setShowDid] = useState(false);
+  const [copied, setCopied] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  function copyDid() {
+    if (!auth.did) return;
+    navigator.clipboard.writeText(auth.did);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -101,13 +109,37 @@ function AuthButton() {
         >
           <Shield className="w-4 h-4 text-success-500" />
           <span className="font-mono text-xs max-w-[100px] truncate">
-            {ssoAuth.did ? `${ssoAuth.did.slice(0, 16)}...` : 'Signed in'}
+            {auth.did ? `${auth.did.slice(0, 16)}...` : 'Signed in'}
           </span>
           <ChevronDown className={`w-4 h-4 transition-transform ${showMenu ? 'rotate-180' : ''}`} />
         </button>
 
         {showMenu && (
-          <div className="absolute top-full right-0 mt-2 w-48 card overflow-hidden z-50 shadow-elevated">
+          <div className="absolute top-full right-0 mt-2 w-56 card overflow-hidden z-50 shadow-elevated">
+            {auth.did && (
+              <div className="px-4 py-3 border-b border-neutral-100">
+                <div className="text-xs text-neutral-400 mb-1">Your DID</div>
+                <div className="flex items-center gap-1">
+                  <span className="font-mono text-xs text-neutral-700 flex-1 break-all">
+                    {showDid ? auth.did : `${auth.did.slice(0, 20)}...`}
+                  </span>
+                  <button
+                    onClick={() => setShowDid(!showDid)}
+                    className="shrink-0 p-1 text-neutral-400 hover:text-neutral-700 transition-colors"
+                    title={showDid ? 'Hide DID' : 'Show full DID'}
+                  >
+                    {showDid ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                  <button
+                    onClick={copyDid}
+                    className="shrink-0 p-1 text-neutral-400 hover:text-neutral-700 transition-colors"
+                    title="Copy DID"
+                  >
+                    {copied ? <Check className="w-3.5 h-3.5 text-success-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+            )}
             <Link
               to="/privacy"
               onClick={() => setShowMenu(false)}
@@ -117,7 +149,7 @@ function AuthButton() {
               <span className="text-sm text-neutral-700">Privacy</span>
             </Link>
             <button
-              onClick={() => { privadoLogout(); setShowMenu(false); }}
+              onClick={() => { logout(); setShowMenu(false); }}
               className="w-full flex items-center gap-3 px-4 py-3 hover:bg-primary-50 transition-colors"
             >
               <LogOut className="w-4 h-4 text-neutral-500" />
@@ -130,16 +162,13 @@ function AuthButton() {
   }
 
   return (
-    <>
-      <button
-        onClick={() => setShowLogin(true)}
-        className="flex items-center gap-1.5 px-3 py-2 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors text-sm font-medium"
-      >
-        <LogIn className="w-4 h-4" />
-        Sign in
-      </button>
-      {showLogin && <PrivadoLogin onClose={() => setShowLogin(false)} />}
-    </>
+    <button
+      onClick={() => redirectToLogin()}
+      className="flex items-center gap-1.5 px-3 py-2 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors text-sm font-medium"
+    >
+      <LogIn className="w-4 h-4" />
+      Sign in
+    </button>
   );
 }
 

@@ -39,11 +39,16 @@ type Config struct {
 	CatchupBatchSize int  `mapstructure:"catchup_batch_size"`
 	CatchupQueueSize int  `mapstructure:"catchup_queue_size"`
 
-	// PrivacyEnabled AND PrivacyProxyURL must both be set to enable privacy features
-	PrivacyEnabled  bool   `mapstructure:"privacy_enabled"`
-	PrivacyProxyURL string `mapstructure:"privacy_proxy_url"`
-	SSOClientID     string `mapstructure:"sso_client_id"`
-	SSORedirectURI  string `mapstructure:"sso_redirect_uri"`
+	// Set PRIVACY_PROXY_URL to enable proxy mode (auth + privacy enforcement).
+	// Leave empty for standalone mode (direct DB/RPC access).
+	PrivacyProxyURL       string `mapstructure:"privacy_proxy_url"`
+	// PrivacyProxyPublicURL is the browser-facing URL for OAuth redirects.
+	// Defaults to PrivacyProxyURL if not set. Set this when the proxy is on a
+	// Docker-internal hostname (e.g. privacy-proxy-proxy-backend-1) but the
+	// browser needs to reach it via localhost or a public hostname.
+	PrivacyProxyPublicURL string `mapstructure:"privacy_proxy_public_url"`
+	SSOClientID           string `mapstructure:"sso_client_id"`
+	SSORedirectURI        string `mapstructure:"sso_redirect_uri"`
 
 	EnableOPDeposits      bool          `mapstructure:"enable_op_deposits"`
 	L1RPCURL              string        `mapstructure:"l1_rpc_url"`
@@ -84,8 +89,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("catchup_batch_size", 100)
 	v.SetDefault("catchup_queue_size", 1000)
 
-	v.SetDefault("privacy_enabled", false)
 	v.SetDefault("privacy_proxy_url", "")
+	v.SetDefault("privacy_proxy_public_url", "")
 	v.SetDefault("sso_client_id", "explorer")
 	v.SetDefault("sso_redirect_uri", "http://localhost:8080/api/auth/callback")
 
@@ -142,8 +147,11 @@ func Load() (*Config, error) {
 	cfg.CatchupBatchSize = v.GetInt("catchup_batch_size")
 	cfg.CatchupQueueSize = v.GetInt("catchup_queue_size")
 
-	cfg.PrivacyEnabled = v.GetBool("privacy_enabled")
 	cfg.PrivacyProxyURL = v.GetString("privacy_proxy_url")
+	cfg.PrivacyProxyPublicURL = v.GetString("privacy_proxy_public_url")
+	if cfg.PrivacyProxyPublicURL == "" {
+		cfg.PrivacyProxyPublicURL = cfg.PrivacyProxyURL
+	}
 	cfg.SSOClientID = v.GetString("sso_client_id")
 	cfg.SSORedirectURI = v.GetString("sso_redirect_uri")
 
@@ -223,7 +231,6 @@ func (c *Config) String() string {
     CATCHUP_BATCH_SIZE: %d
     CATCHUP_QUEUE_SIZE: %d
   Privacy:
-    PRIVACY_ENABLED: %t
     PRIVACY_PROXY_URL: %s
     SSO_CLIENT_ID: %s
     SSO_REDIRECT_URI: %s
@@ -242,7 +249,7 @@ func (c *Config) String() string {
 		c.SolcPath, c.UseSourcifyFallback,
 		c.MetricsEnabled,
 		c.CatchupEnabled, c.CatchupWorkers, c.CatchupBatchSize, c.CatchupQueueSize,
-		c.PrivacyEnabled, c.PrivacyProxyURL, c.SSOClientID, c.SSORedirectURI,
+		c.PrivacyProxyURL, c.SSOClientID, c.SSORedirectURI,
 		c.EnableOPDeposits, c.L1RPCURL, c.OptimismPortalAddress, c.L1DepositPollInterval, c.L1DepositBatchSize, c.L1DepositStartBlock,
 	)
 }

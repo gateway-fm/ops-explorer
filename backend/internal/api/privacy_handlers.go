@@ -263,19 +263,19 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 
 	ctx := r.Context()
 
-	stats, err := s.db.GetAddressStats(ctx, resolved.RealAddress)
+	stats, err := s.provider.GetAddressStats(ctx, resolved.RealAddress)
 	if err != nil {
 		http.Error(w, "failed to get address stats: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	balance, err := s.rpc.GetBalance(ctx, common.HexToAddress(resolved.RealAddress))
+	balance, err := s.provider.GetBalance(ctx, resolved.RealAddress)
 	if err != nil {
 		http.Error(w, "failed to get balance: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	code, err := s.rpc.GetCode(ctx, common.HexToAddress(resolved.RealAddress))
+	code, err := s.provider.GetCode(ctx, resolved.RealAddress)
 	if err != nil {
 		http.Error(w, "failed to check contract status: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -302,7 +302,7 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 		DisplayAddress:  displayAddress,
 		DisclosureLevel: resolved.DisclosureLevel,
 		GrantID:         resolved.GrantID,
-		Balance:         balance.String(),
+		Balance:         string(*balance),
 		TxCount:         int64(stats.TxCount),
 		IsContract:      len(code) > 0,
 	}
@@ -386,7 +386,7 @@ func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *h
 
 	normalizedAddress := common.HexToAddress(resolved.RealAddress).Hex()
 
-	txs, err := s.db.GetTransactionsByAddress(ctx, normalizedAddress, limit+1, beforeBlock)
+	txs, err := s.provider.GetTransactionsByAddress(ctx, normalizedAddress, limit+1, beforeBlock)
 	if err != nil {
 		http.Error(w, "failed to get transactions: "+err.Error(), http.StatusInternalServerError)
 		return

@@ -6,17 +6,15 @@ import (
 	"fmt"
 	"strings"
 
-	"explorer/internal/db"
 	"explorer/internal/log"
-	"explorer/internal/rpc"
 
 	"github.com/ethereum/go-ethereum/common"
 )
 
 type Verifier struct {
-	db              *db.DB
-	rpc             *rpc.Client
-	solcManager     *SolcManager
+	db                  Database
+	rpc                 RPCClient
+	solcManager         *SolcManager
 	useSourcifyFallback bool
 }
 
@@ -25,11 +23,11 @@ type Config struct {
 	UseSourcifyFallback bool
 }
 
-func NewVerifier(database *db.DB, rpcClient *rpc.Client, cfg *Config) *Verifier {
+func NewVerifier(database Database, rpcClient RPCClient, cfg *Config) *Verifier {
 	return &Verifier{
-		db:              database,
-		rpc:             rpcClient,
-		solcManager:     NewSolcManager(cfg.SolcPath),
+		db:                  database,
+		rpc:                 rpcClient,
+		solcManager:         NewSolcManager(cfg.SolcPath),
 		useSourcifyFallback: cfg.UseSourcifyFallback,
 	}
 }

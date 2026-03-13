@@ -53,13 +53,18 @@ func main() {
 
 	var privacyClient *privacy.Client
 	var ssoClient *auth.SSOClient
-	if cfg.PrivacyEnabled && cfg.PrivacyProxyURL != "" {
+	var dataProvider api.DataProvider
+	if cfg.PrivacyProxyURL != "" {
 		privacyClient = privacy.NewClient(cfg.PrivacyProxyURL)
-		ssoClient = auth.NewSSOClient(cfg.PrivacyProxyURL, cfg.SSOClientID, cfg.SSORedirectURI)
-		log.Info("privacy integration enabled", "proxy_url", cfg.PrivacyProxyURL)
+		ssoClient = auth.NewSSOClient(cfg.PrivacyProxyURL, cfg.PrivacyProxyPublicURL, cfg.SSOClientID, cfg.SSORedirectURI)
+		dataProvider = api.NewProxyDataProvider(cfg.PrivacyProxyURL)
+		log.Info("proxy mode enabled", "proxy_url", cfg.PrivacyProxyURL)
+	} else {
+		dataProvider = api.NewDirectDBProvider(database, rpcClient, nil)
+		log.Info("standalone mode")
 	}
 
-	server := api.New(database, rpcClient, nil, priceService, eventBus, cfg.APIPort, serverCfg, privacyClient, ssoClient)
+	server := api.New(database, rpcClient, nil, priceService, eventBus, cfg.APIPort, serverCfg, privacyClient, ssoClient, dataProvider)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	priceService.StartBackgroundRefresh(ctx)

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"explorer/internal/auth"
-	"explorer/internal/db"
 	"explorer/internal/events"
 	"explorer/internal/gas"
 	"explorer/internal/indexer"
@@ -23,9 +22,10 @@ import (
 )
 
 type Server struct {
-	db            *db.DB
+	db            APIDatabase
 	rpc           *rpc.Client
 	indexer       *indexer.Indexer
+	provider      DataProvider
 	price         *price.Service
 	eventBus      *events.Bus
 	verifier      *verifier.Verifier
@@ -45,11 +45,12 @@ type ServerConfig struct {
 	MetricsEnabled      bool
 }
 
-func New(database *db.DB, rpcClient *rpc.Client, idx *indexer.Indexer, priceService *price.Service, eventBus *events.Bus, port int, cfg *ServerConfig, privacyClient *privacy.Client, ssoClient *auth.SSOClient) *Server {
+func New(database APIDatabase, rpcClient *rpc.Client, idx *indexer.Indexer, priceService *price.Service, eventBus *events.Bus, port int, cfg *ServerConfig, privacyClient *privacy.Client, ssoClient *auth.SSOClient, provider DataProvider) *Server {
 	s := &Server{
 		db:            database,
 		rpc:           rpcClient,
 		indexer:       idx,
+		provider:      provider,
 		price:         priceService,
 		eventBus:      eventBus,
 		privacyClient: privacyClient,
@@ -91,7 +92,7 @@ func (s *Server) setupRoutes() {
 
 	corsOpts := cors.Options{
 		AllowOriginFunc:  func(origin string) bool { return true },
-		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedMethods:   []string{"GET", "POST", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Content-Type", "Cookie"},
 		AllowCredentials: true,
 	}
@@ -100,6 +101,7 @@ func (s *Server) setupRoutes() {
 
 	if s.ssoClient != nil && s.ssoClient.IsEnabled() {
 		s.router.Use(s.refreshAuthMiddleware)
+		s.router.Use(s.authContextMiddleware)
 	}
 
 	s.router.Get("/health", s.handleHealthCheck)
@@ -128,11 +130,10 @@ func (s *Server) setupRoutes() {
 
 	if s.ssoClient != nil && s.ssoClient.IsEnabled() {
 		s.router.Route("/api/auth", func(r chi.Router) {
-			r.Post("/login", s.handleAuthLogin)
+			r.Get("/login", s.handleAuthLogin)
 			r.Get("/callback", s.handleAuthCallback)
 			r.Get("/status", s.handleAuthStatus)
 			r.Post("/logout", s.handleAuthLogout)
-			r.Get("/session/{id}/status", s.handleAuthSessionStatus)
 		})
 	}
 
@@ -143,6 +144,13 @@ func (s *Server) setupRoutes() {
 			r.Post("/check-addresses", s.handleBatchCheckAddresses)
 			r.Get("/grant/{grantId}/{addressId}", s.handleGetGrantedAddress)
 			r.Get("/grant/{grantId}/{addressId}/transactions", s.handleGetGrantedAddressTransactions)
+		})
+
+		s.router.Route("/api/eth", func(r chi.Router) {
+			r.Get("/addresses", s.handleGetLinkedAddresses)
+			r.Post("/link/challenge", s.handleCreateLinkChallenge)
+			r.Post("/link/verify", s.handleVerifyLink)
+			r.Delete("/addresses/{address}", s.handleUnlinkAddress)
 		})
 	}
 }
@@ -209,6 +217,18 @@ func (s *Server) setupAPIRoutes(r chi.Router) {
 func (s *Server) setupAPIV2Routes(r chi.Router) {
 	// V2 handlers detect v2 from the route context and adjust pagination accordingly
 	s.setupAPIRoutes(r)
+}
+
+func (s *Server) authContextMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := s.GetAuthToken(r)
+		if token != "" {
+			ctx := context.WithValue(r.Context(), rpc.ContextKeyAuthToken, token)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) Start(ctx context.Context) error {

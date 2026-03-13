@@ -11,7 +11,6 @@ import (
 	"explorer/internal/db"
 	"explorer/internal/events"
 	"explorer/internal/log"
-	"explorer/internal/rpc"
 	"explorer/internal/types"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -25,8 +24,8 @@ type CatchupConfig struct {
 }
 
 type CatchupIndexer struct {
-	db       *db.DB
-	rpc      *rpc.Client
+	db       Database
+	rpc      RPCClient
 	config   *CatchupConfig
 	idxCfg   *Config // Main indexer config for RPC settings
 	eventBus *events.Bus
@@ -62,8 +61,8 @@ type CatchupIndexer struct {
 }
 
 func NewCatchupIndexer(
-	database *db.DB,
-	rpcClient *rpc.Client,
+	database Database,
+	rpcClient RPCClient,
 	cfg *CatchupConfig,
 	idxCfg *Config,
 	tokenCache *TokenCache,
@@ -108,7 +107,7 @@ func (c *CatchupIndexer) Start(ctx context.Context, fromBlock, toBlock uint64) e
 		total, _ := c.collector.GetTotalMissingBlocks(ctx)
 		c.totalMissing = total
 	} else {
-		c.totalMissing = int64(toBlock - fromBlock)
+		c.totalMissing = int64(toBlock - fromBlock) // This is okay as long as delta < int64_max, but safer to check or use uint64 if possible. For now, matching similar casts.
 	}
 
 	log.Info("catchup: starting (continuous mode)",
@@ -329,7 +328,7 @@ func (c *CatchupIndexer) processBlock(number uint64) error {
 		return c.processBlockRaw(number)
 	}
 
-	block, err := c.rpc.BlockByNumber(c.ctx, big.NewInt(int64(number)))
+	block, err := c.rpc.BlockByNumber(c.ctx, new(big.Int).SetUint64(number))
 	if err != nil {
 		return err
 	}

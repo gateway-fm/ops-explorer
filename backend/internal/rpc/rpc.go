@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"math/big"
+	"net/http"
 	"sync"
 	"time"
 
@@ -18,13 +19,37 @@ import (
 	"golang.org/x/time/rate"
 )
 
+type contextKey string
+
+const (
+	// ContextKeyAuthToken is the key used to store the JWT in the context
+	ContextKeyAuthToken contextKey = "authToken"
+)
+
+type authTransport struct {
+	underlying http.RoundTripper
+}
+
+func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Extract token from context and add to headers
+	if token, ok := req.Context().Value(ContextKeyAuthToken).(string); ok && token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	return t.underlying.RoundTrip(req)
+}
+
 type Client struct {
 	eth *ethclient.Client
 	raw *rpc.Client // For trace_* and debug_* calls
 }
 
 func New(url string) (*Client, error) {
-	raw, err := rpc.Dial(url)
+	// Use custom http client to forward auth headers from context
+	httpClient := &http.Client{
+		Transport: &authTransport{underlying: http.DefaultTransport},
+	}
+
+	raw, err := rpc.DialHTTPWithClient(url, httpClient)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +165,7 @@ func (c *Client) GetTransactionByHash(ctx context.Context, hash common.Hash) (*e
 }
 
 func (c *Client) GetBlockByNumber(ctx context.Context, number uint64) (*explorerTypes.Block, error) {
-	block, err := c.eth.BlockByNumber(ctx, big.NewInt(int64(number)))
+	block, err := c.eth.BlockByNumber(ctx, new(big.Int).SetUint64(number))
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +183,7 @@ func (c *Client) GetBlockByNumber(ctx context.Context, number uint64) (*explorer
 }
 
 func (c *Client) GetBlockTransactions(ctx context.Context, number uint64) ([]*explorerTypes.Transaction, error) {
-	block, err := c.eth.BlockByNumber(ctx, big.NewInt(int64(number)))
+	block, err := c.eth.BlockByNumber(ctx, new(big.Int).SetUint64(number))
 	if err != nil {
 		return nil, err
 	}
@@ -461,5 +486,5 @@ func (c *Client) GetTotalDifficulty(ctx context.Context, blockNumber uint64) str
 }
 
 func toHex(n uint64) string {
-	return "0x" + big.NewInt(int64(n)).Text(16)
+	return "0x" + new(big.Int).SetUint64(n).Text(16)
 }

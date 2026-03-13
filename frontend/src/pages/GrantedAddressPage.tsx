@@ -1,11 +1,10 @@
-import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { PseudonymizedTransaction } from '../lib/api';
 import { formatWei, formatTimestamp } from '../lib/utils';
 import { useAuth } from '../lib/auth';
-import { PrivadoLogin } from '../components/PrivadoLogin';
+import { redirectToLogin } from '../lib/login';
 import { PageHeader } from '../components/PageHeader';
 import { Fingerprint, Unlock, ShieldAlert, EyeOff, ArrowDownLeft, ArrowUpRight, RotateCcw } from 'lucide-react';
 
@@ -21,7 +20,6 @@ import { Fingerprint, Unlock, ShieldAlert, EyeOff, ArrowDownLeft, ArrowUpRight, 
 export function GrantedAddressPage() {
   const { grantId, addressId } = useParams<{ grantId: string; addressId: string }>();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
-  const [showPrivadoModal, setShowPrivadoModal] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['grantedAddress', grantId, addressId],
@@ -41,32 +39,24 @@ export function GrantedAddressPage() {
   // Show authentication prompt if not logged in
   if (!isAuthenticated && !authLoading) {
     return (
-      <>
-        <div className="flex flex-col items-center justify-center py-16 space-y-4">
-          <div className="w-16 h-16 rounded-full bg-primary-50 flex items-center justify-center border border-primary-200">
-            <Fingerprint className="w-8 h-8 text-primary" />
-          </div>
-          <h2 className="text-xl font-semibold text-neutral-900">Authentication Required</h2>
-          <p className="text-neutral-500 text-center max-w-md">
-            Sign in with Privado ID to view disclosed address details.
-          </p>
-          <div className="mt-4">
-            <button
-              onClick={() => setShowPrivadoModal(true)}
-              className="btn-primary flex items-center gap-2"
-            >
-              <Fingerprint className="w-4 h-4" />
-              Sign in with Privado
-            </button>
-          </div>
+      <div className="flex flex-col items-center justify-center py-16 space-y-4">
+        <div className="w-16 h-16 rounded-full bg-primary-50 flex items-center justify-center border border-primary-200">
+          <Fingerprint className="w-8 h-8 text-primary" />
         </div>
-        {showPrivadoModal && (
-          <PrivadoLogin
-            onClose={() => setShowPrivadoModal(false)}
-            returnUrl={`/grant/${grantId}/${addressId}`}
-          />
-        )}
-      </>
+        <h2 className="text-xl font-semibold text-neutral-900">Authentication Required</h2>
+        <p className="text-neutral-500 text-center max-w-md">
+          Sign in with Privado ID to view disclosed address details.
+        </p>
+        <div className="mt-4">
+          <button
+            onClick={() => redirectToLogin(`/grant/${grantId}/${addressId}`)}
+            className="btn-primary flex items-center gap-2"
+          >
+            <Fingerprint className="w-4 h-4" />
+            Sign in with Privado
+          </button>
+        </div>
+      </div>
     );
   }
 

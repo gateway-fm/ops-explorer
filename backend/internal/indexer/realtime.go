@@ -10,7 +10,6 @@ import (
 	"explorer/internal/db"
 	"explorer/internal/events"
 	"explorer/internal/log"
-	"explorer/internal/rpc"
 	"explorer/internal/types"
 
 	"github.com/ethereum/go-ethereum"
@@ -24,8 +23,8 @@ type RealtimeConfig struct {
 }
 
 type RealtimeIndexer struct {
-	db       *db.DB
-	rpc      *rpc.Client
+	db       Database
+	rpc      RPCClient
 	config   *RealtimeConfig
 	idxCfg   *Config // Main indexer config for RPC settings
 	eventBus *events.Bus
@@ -53,8 +52,8 @@ type RealtimeIndexer struct {
 }
 
 func NewRealtimeIndexer(
-	database *db.DB,
-	rpcClient *rpc.Client,
+	database Database,
+	rpcClient RPCClient,
 	cfg *RealtimeConfig,
 	idxCfg *Config,
 	tokenCache *TokenCache,
@@ -267,7 +266,7 @@ func (r *RealtimeIndexer) processBlock(ctx context.Context, number uint64) error
 		return r.processBlockRaw(ctx, number)
 	}
 
-	block, err := r.rpc.BlockByNumber(ctx, big.NewInt(int64(number)))
+	block, err := r.rpc.BlockByNumber(ctx, new(big.Int).SetUint64(number))
 	if err != nil {
 		return err
 	}
