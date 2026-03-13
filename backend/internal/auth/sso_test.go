@@ -1,6 +1,12 @@
 package auth
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 )
@@ -135,5 +141,122 @@ func TestIsEnabled(t *testing.T) {
 				t.Fatalf("expected %v, got %v", tt.expected, got)
 			}
 		})
+	}
+}
+
+func TestRefreshTokens_Success(t *testing.T) {
+	wantRefresh := "old-refresh-token"
+	respPayload := RefreshResponse{
+		AccessToken:  "new-access-token",
+		RefreshToken: "new-refresh-token",
+		TokenType:    "Bearer",
+		ExpiresIn:    300,
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/refresh" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			t.Errorf("expected Content-Type application/json, got %s", ct)
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("failed to read request body: %v", err)
+		}
+		var reqBody map[string]string
+		if err := json.Unmarshal(body, &reqBody); err != nil {
+			t.Fatalf("failed to unmarshal request body: %v", err)
+		}
+		if reqBody["refresh_token"] != wantRefresh {
+			t.Errorf("expected refresh_token %q, got %q", wantRefresh, reqBody["refresh_token"])
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(respPayload)
+	}))
+	defer srv.Close()
+
+	c := NewSSOClient(srv.URL, srv.URL, "client-id", "http://redirect")
+	got, err := c.RefreshTokens(context.Background(), wantRefresh)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.AccessToken != respPayload.AccessToken {
+		t.Errorf("AccessToken = %q, want %q", got.AccessToken, respPayload.AccessToken)
+	}
+	if got.RefreshToken != respPayload.RefreshToken {
+		t.Errorf("RefreshToken = %q, want %q", got.RefreshToken, respPayload.RefreshToken)
+	}
+	if got.TokenType != respPayload.TokenType {
+		t.Errorf("TokenType = %q, want %q", got.TokenType, respPayload.TokenType)
+	}
+	if got.ExpiresIn != respPayload.ExpiresIn {
+		t.Errorf("ExpiresIn = %d, want %d", got.ExpiresIn, respPayload.ExpiresIn)
+	}
+}
+
+func TestRefreshTokens_Revoked(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+	}{
+		{"401 Unauthorized", http.StatusUnauthorized},
+		{"403 Forbidden", http.StatusForbidden},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.statusCode)
+				w.Write([]byte(`{"error":"token revoked"}`))
+			}))
+			defer srv.Close()
+
+			c := NewSSOClient(srv.URL, srv.URL, "client-id", "http://redirect")
+			_, err := c.RefreshTokens(context.Background(), "revoked-token")
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !errors.Is(err, ErrRefreshRevoked) {
+				t.Fatalf("expected ErrRefreshRevoked, got: %v", err)
+			}
+		})
+	}
+}
+
+func TestRefreshTokens_ServerError_500(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error":"internal server error"}`))
+	}))
+	defer srv.Close()
+
+	c := NewSSOClient(srv.URL, srv.URL, "client-id", "http://redirect")
+	_, err := c.RefreshTokens(context.Background(), "some-token")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if errors.Is(err, ErrRefreshRevoked) {
+		t.Fatal("expected generic error, not ErrRefreshRevoked")
+	}
+}
+
+func TestRefreshTokens_NetworkError(t *testing.T) {
+	// Point at a server that is immediately closed so the connection fails.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	srv.Close()
+
+	c := NewSSOClient(srv.URL, srv.URL, "client-id", "http://redirect")
+	_, err := c.RefreshTokens(context.Background(), "some-token")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if errors.Is(err, ErrRefreshRevoked) {
+		t.Fatal("expected network error, not ErrRefreshRevoked")
 	}
 }

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -12,8 +13,22 @@ import (
 
 const (
 	AuthCookieName  = "explorer_auth"
+	RefreshCookieName = "explorer_refresh"
 	StateCookieName = "explorer_oauth_state"
-	CookieMaxAge    = 30 * 60 // 30 minutes
+
+	// CookieMaxAge is the browser lifetime of the access-token cookie.
+	// This should stay in sync with the access token TTL on privacy-proxy
+	// (AccessTokenTTL = 5 min), but we extend the cookie on every successful
+	// token refresh so active sessions stay alive as a sliding window.
+	CookieMaxAge = 30 * 60 // 30 minutes
+
+	// RefreshCookieMaxAge is the lifetime of the refresh-token cookie.
+	// Matches RefreshTokenTTL on privacy-proxy (7 days).
+	RefreshCookieMaxAge = 7 * 24 * 60 * 60 // 7 days
+
+	// refreshThreshold is how close to JWT expiry we trigger a token refresh.
+	// Must be > AccessTokenTTL so we always refresh before the token expires.
+	refreshThreshold = 5 * time.Minute
 )
 
 func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
@@ -80,15 +95,29 @@ func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     AuthCookieName,
 		Value:    tokenResp.AccessToken,
 		Path:     "/",
-		MaxAge:   tokenResp.ExpiresIn,
+		MaxAge:   CookieMaxAge,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
+		Secure:   secure,
 	})
+
+	if tokenResp.RefreshToken != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name:     RefreshCookieName,
+			Value:    tokenResp.RefreshToken,
+			Path:     "/",
+			MaxAge:   RefreshCookieMaxAge,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Secure:   secure,
+		})
+	}
 
 	http.Redirect(w, r, returnURL, http.StatusFound)
 }
@@ -141,6 +170,12 @@ func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 		Path:   "/",
 		MaxAge: -1,
 	})
+	http.SetCookie(w, &http.Cookie{
+		Name:   RefreshCookieName,
+		Value:  "",
+		Path:   "/",
+		MaxAge: -1,
+	})
 
 	writeJSON(w, map[string]bool{"logged_out": true})
 }
@@ -173,26 +208,95 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
 
+// refreshAuthMiddleware transparently refreshes the access token when it is
+// close to expiry. The flow:
+//
+//  1. If the JWT has > refreshThreshold remaining — pass through unchanged.
+//  2. If the JWT has ≤ refreshThreshold remaining — call privacy-proxy /refresh
+//     with the refresh token cookie to obtain a new access + refresh token pair.
+//     The server rotates the refresh token on every call, so we must write back
+//     both updated cookies.
+//  3. If the refresh token is missing, invalid, or explicitly revoked (banned
+//     user) — clear both cookies immediately. The frontend will detect the
+//     missing auth cookie at the next /api/auth/status poll and show "Sign In".
+//
+// Security note: access tokens are intentionally short-lived (5 min). This
+// creates a bounded window between when a user is banned in the admin panel and
+// when they are actually locked out. The window is at most AccessTokenTTL.
+// Extending the TTL would widen that window; do not increase it without
+// reconsidering the ban enforcement strategy.
 func (s *Server) refreshAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie(AuthCookieName)
-		if err == nil && cookie.Value != "" {
-			claims, err := auth.ExtractClaims(cookie.Value)
-			if err == nil && !claims.IsExpired() {
-				// Refresh cookie if less than 5 minutes remaining
-				if claims.TimeToExpiry() < 5*time.Minute {
-					http.SetCookie(w, &http.Cookie{
-						Name:     AuthCookieName,
-						Value:    cookie.Value,
-						Path:     "/",
-						MaxAge:   CookieMaxAge,
-						HttpOnly: true,
-						SameSite: http.SameSiteLaxMode,
-						Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
-					})
-				}
-			}
+		accessCookie, err := r.Cookie(AuthCookieName)
+		if err != nil || accessCookie.Value == "" {
+			next.ServeHTTP(w, r)
+			return
 		}
+
+		claims, err := auth.ExtractClaims(accessCookie.Value)
+		if err != nil || claims.IsExpired() {
+			// Malformed or already-expired token — clear cookies so the
+			// frontend knows to show the login screen.
+			clearAuthCookies(w)
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if claims.TimeToExpiry() > refreshThreshold {
+			// Token is fresh enough — nothing to do.
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Token is within the refresh window. Attempt a silent refresh.
+		refreshCookie, err := r.Cookie(RefreshCookieName)
+		if err != nil || refreshCookie.Value == "" {
+			// No refresh token — cannot renew. Let the access token expire
+			// naturally; the next /api/auth/status call will clear it.
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if s.ssoClient == nil || !s.ssoClient.IsEnabled() {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		newTokens, err := s.ssoClient.RefreshTokens(context.Background(), refreshCookie.Value)
+		if err != nil {
+			// Revoked, banned, or network error — clear cookies to force re-login.
+			log.Printf("token refresh failed, clearing session: %v", err)
+			clearAuthCookies(w)
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+		http.SetCookie(w, &http.Cookie{
+			Name:     AuthCookieName,
+			Value:    newTokens.AccessToken,
+			Path:     "/",
+			MaxAge:   CookieMaxAge,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Secure:   secure,
+		})
+		http.SetCookie(w, &http.Cookie{
+			Name:     RefreshCookieName,
+			Value:    newTokens.RefreshToken,
+			Path:     "/",
+			MaxAge:   RefreshCookieMaxAge,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Secure:   secure,
+		})
+
 		next.ServeHTTP(w, r)
 	})
+}
+
+// clearAuthCookies removes both the access and refresh cookies.
+func clearAuthCookies(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{Name: AuthCookieName, Value: "", Path: "/", MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: RefreshCookieName, Value: "", Path: "/", MaxAge: -1})
 }

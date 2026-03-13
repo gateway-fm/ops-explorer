@@ -49,6 +49,20 @@ This document outlines the core functional requirements of the Block Explorer an
 - **REQ-5.2: Auth/SSO**
   - JWT-based authentication and OIDC/SSO integration.
   - Status: [x] Implemented
+- **REQ-5.3: Session Token Refresh**
+  - Access tokens are intentionally short-lived (5 minutes, set on privacy-proxy). This
+    creates a bounded enforcement window: when a user is banned in the admin panel, they
+    remain active at most until their current access token expires, at which point the
+    refresh attempt is rejected server-side and the session is terminated.
+  - The block explorer performs a silent token refresh via `POST /api/v1/refresh` when
+    the access token has ≤ 5 minutes remaining. Privacy-proxy rotates the refresh token
+    on every call (old token is revoked, new token is issued). Both the access and refresh
+    tokens are stored as `HttpOnly` cookies.
+  - If the refresh token is revoked (banned user, logout from another tab, admin revocation),
+    both cookies are cleared and the user is redirected to the login screen.
+  - **Do not increase AccessTokenTTL without reconsidering ban enforcement.** A longer
+    access token TTL widens the window during which a banned user can still act.
+  - Status: [x] Implemented
 
 ## 6. Advanced Chain Support
 - **REQ-6.1: OP Stack Support**

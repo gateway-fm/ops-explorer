@@ -34,9 +34,20 @@ type stateEntry struct {
 }
 
 type OAuthTokenResponse struct {
-	AccessToken string `json:"access_token"`
-	TokenType   string `json:"token_type"`
-	ExpiresIn   int    `json:"expires_in"`
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int    `json:"expires_in"`
+}
+
+// RefreshResponse is the response from POST /api/v1/refresh.
+// The server rotates the refresh token on every call, so both tokens must be
+// stored — the old refresh token is immediately revoked.
+type RefreshResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int    `json:"expires_in"`
 }
 
 type OAuthErrorResponse struct {
@@ -172,6 +183,59 @@ func (c *SSOClient) ExchangeCode(ctx context.Context, code string) (*OAuthTokenR
 
 	return &result, nil
 }
+
+// RefreshTokens exchanges a refresh token for a new access + refresh token pair.
+// Privacy-proxy rotates the refresh token on every call, so callers must
+// persist the new refresh token and discard the old one immediately.
+//
+// Returns ErrRefreshRevoked if the token has been revoked (e.g. the user was
+// banned). The caller should clear all auth cookies and treat the user as
+// logged out.
+func (c *SSOClient) RefreshTokens(ctx context.Context, refreshToken string) (*RefreshResponse, error) {
+	refreshURL := fmt.Sprintf("%s/api/v1/refresh", c.privacyProxyURL)
+
+	body, err := json.Marshal(map[string]string{"refresh_token": refreshToken})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal refresh request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, refreshURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create refresh request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call refresh endpoint: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read refresh response: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, ErrRefreshRevoked
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("refresh endpoint returned %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result RefreshResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to decode refresh response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// ErrRefreshRevoked is returned by RefreshTokens when the server explicitly
+// rejects the token (revoked, banned user, or expired). The caller should
+// clear all auth state and redirect to login.
+var ErrRefreshRevoked = fmt.Errorf("refresh token revoked or invalid")
 
 func (c *SSOClient) cleanupStates() {
 	ticker := time.NewTicker(StateCleanupInterval)
