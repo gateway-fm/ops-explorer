@@ -271,15 +271,15 @@ function TxRow({ tx }: { tx: Transaction }) {
           {formatHash(tx.hash, 12)}
         </Link>
         <div className="text-sm text-neutral-500">
-          <Link to={`/address/${tx.from}`} className="hover:text-neutral-700 transition-colors">
-            {formatAddress(tx.from, 6)}
-          </Link>
+          {tx.from.startsWith('0x')
+            ? <Link to={`/address/${tx.from}`} className="hover:text-neutral-700 transition-colors">{formatAddress(tx.from, 6)}</Link>
+            : <span className="text-neutral-400 italic">{tx.from}</span>}
           {tx.to && (
             <>
               {' → '}
-              <Link to={`/address/${tx.to}`} className="hover:text-neutral-700 transition-colors">
-                {formatAddress(tx.to, 6)}
-              </Link>
+              {tx.to.startsWith('0x')
+                ? <Link to={`/address/${tx.to}`} className="hover:text-neutral-700 transition-colors">{formatAddress(tx.to, 6)}</Link>
+                : <span className="text-neutral-400 italic">{tx.to}</span>}
             </>
           )}
         </div>

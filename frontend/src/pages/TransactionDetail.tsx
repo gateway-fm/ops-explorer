@@ -232,7 +232,11 @@ export function TransactionDetail() {
               />
               <InfoRow
                 label="Nonce"
-                value={<span className="font-mono text-sm">{tx.nonce ?? '-'}</span>}
+                value={
+                  tx.from === '[PRIVATE]'
+                    ? <span className="text-neutral-400 italic">hidden</span>
+                    : <span className="font-mono text-sm">{tx.nonce ?? '-'}</span>
+                }
               />
               <InfoRow
                 label="Position in Block"
