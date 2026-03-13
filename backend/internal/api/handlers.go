@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"explorer/internal/privacy"
 	"explorer/internal/types"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -405,6 +406,89 @@ func (s *Server) handleGetTransactionTransfers(w http.ResponseWriter, r *http.Re
 	writeJSON(w, transfers)
 }
 
+// extractAddressFromTopic checks if a topic string is a zero-padded 32-byte address
+// (12 zero bytes + 20-byte address). Returns the "0x"-prefixed address if found, empty string otherwise.
+func extractAddressFromTopic(topic string) string {
+	t := topic
+	if strings.HasPrefix(t, "0x") || strings.HasPrefix(t, "0X") {
+		t = t[2:]
+	}
+	if len(t) != 64 {
+		return ""
+	}
+	if t[:24] != "000000000000000000000000" {
+		return ""
+	}
+	return "0x" + t[24:]
+}
+
+// redactLogTopics replaces any topic that contains a private (hidden) address with a zeroed topic.
+// It uses a batch visibility check for efficiency. If privacy is not enabled, logs are returned as-is.
+func (s *Server) redactLogTopics(r *http.Request, logs []types.Log) []types.Log {
+	if s.privacyClient == nil || !s.privacyClient.IsEnabled() {
+		return logs
+	}
+
+	// Collect all unique addresses embedded in topics across all logs.
+	addrSet := make(map[string]struct{})
+	for i := range logs {
+		for _, t := range []*string{logs[i].Topic0, logs[i].Topic1, logs[i].Topic2, logs[i].Topic3} {
+			if t == nil || *t == "" {
+				continue
+			}
+			if addr := extractAddressFromTopic(*t); addr != "" {
+				addrSet[strings.ToLower(addr)] = struct{}{}
+			}
+		}
+	}
+
+	if len(addrSet) == 0 {
+		return logs
+	}
+
+	addrs := make([]string, 0, len(addrSet))
+	for addr := range addrSet {
+		addrs = append(addrs, addr)
+	}
+
+	viewer := s.getViewerIdentity(r)
+	visMap, err := s.privacyClient.CheckAddressesWithIdentity(r.Context(), viewer, addrs)
+	if err != nil {
+		// Fail-closed: if we can't check visibility, redact all embedded addresses.
+		visMap = make(map[string]*privacy.AddressVisibility)
+	}
+
+	const zeroTopic = "0x" + "0000000000000000000000000000000000000000000000000000000000000000"
+
+	redactTopic := func(t *string) *string {
+		if t == nil || *t == "" {
+			return t
+		}
+		addr := extractAddressFromTopic(*t)
+		if addr == "" {
+			return t
+		}
+		vis, ok := visMap[strings.ToLower(addr)]
+		if !ok || !vis.Visible {
+			zeroed := zeroTopic
+			return &zeroed
+		}
+		return t
+	}
+
+	// Work on copies so we don't mutate the provider's cached data.
+	result := make([]types.Log, len(logs))
+	for i, l := range logs {
+		l.Topic0 = redactTopic(l.Topic0)
+		l.Topic1 = redactTopic(l.Topic1)
+		l.Topic2 = redactTopic(l.Topic2)
+		l.Topic3 = redactTopic(l.Topic3)
+		// TODO: redact private addresses embedded in l.Data (ABI-encoded, more complex)
+		result[i] = l
+	}
+	return result
+}
+
 func (s *Server) handleGetTransactionLogs(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 	if !strings.HasPrefix(hash, "0x") {
@@ -421,7 +505,7 @@ func (s *Server) handleGetTransactionLogs(w http.ResponseWriter, r *http.Request
 		logs = []types.Log{}
 	}
 
-	writeJSON(w, logs)
+	writeJSON(w, s.redactLogTopics(r, logs))
 }
 
 func (s *Server) handleGetAccounts(w http.ResponseWriter, r *http.Request) {
@@ -1003,7 +1087,7 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 		logs = []types.Log{}
 	}
 
-	writeJSON(w, logs)
+	writeJSON(w, s.redactLogTopics(r, logs))
 }
 
 func (s *Server) handleGetSyncStatus(w http.ResponseWriter, r *http.Request) {
@@ -1069,7 +1153,7 @@ func (s *Server) handleGetAddressLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, types.OffsetPaginatedResponse[types.Log]{
-		Data:       logs,
+		Data:       s.redactLogTopics(r, logs),
 		Total:      total,
 		Page:       page,
 		PageSize:   pageSize,
