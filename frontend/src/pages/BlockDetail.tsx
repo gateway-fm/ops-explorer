@@ -271,21 +271,25 @@ function TxRow({ tx }: { tx: Transaction }) {
           {formatHash(tx.hash, 12)}
         </Link>
         <div className="text-sm text-neutral-500">
-          <Link to={`/address/${tx.from}`} className="hover:text-neutral-700 transition-colors">
-            {formatAddress(tx.from, 6)}
-          </Link>
+          {tx.from.startsWith('0x')
+            ? <Link to={`/address/${tx.from}`} className="hover:text-neutral-700 transition-colors">{formatAddress(tx.from, 6)}</Link>
+            : <span className="text-neutral-400 italic">{tx.from}</span>}
           {tx.to && (
             <>
               {' → '}
-              <Link to={`/address/${tx.to}`} className="hover:text-neutral-700 transition-colors">
-                {formatAddress(tx.to, 6)}
-              </Link>
+              {tx.to.startsWith('0x')
+                ? <Link to={`/address/${tx.to}`} className="hover:text-neutral-700 transition-colors">{formatAddress(tx.to, 6)}</Link>
+                : <span className="text-neutral-400 italic">{tx.to}</span>}
             </>
           )}
         </div>
       </div>
       <div className="text-right text-sm">
-        <div className="text-neutral-700">{formatWei(tx.value)} ETH</div>
+        <div className="text-neutral-700">
+          {tx.value === '' || tx.value == null
+            ? <span className="text-neutral-400 italic">hidden</span>
+            : `${formatWei(tx.value)} ETH`}
+        </div>
         <div className={tx.status === 1 ? 'text-success-600' : 'text-error-600'}>
           {tx.status === 1 ? 'Success' : 'Failed'}
         </div>
@@ -321,7 +325,11 @@ function InternalTxRow({ itx }: { itx: InternalTransaction }) {
         </div>
       </div>
       <div className="text-right text-sm">
-        <div className="text-neutral-700">{formatWei(itx.value)} ETH</div>
+        <div className="text-neutral-700">
+          {itx.value === '' || itx.value == null
+            ? <span className="text-neutral-400 italic">hidden</span>
+            : `${formatWei(itx.value)} ETH`}
+        </div>
         {itx.error && (
           <div className="text-error-600">Error</div>
         )}

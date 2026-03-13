@@ -384,7 +384,9 @@ function TransactionRow({
         )}
       </td>
       <td className="text-right font-mono text-sm">
-        {formatWei(String(tx.value))} ETH
+        {tx.value === '' || tx.value == null
+          ? <span className="text-neutral-400 italic">hidden</span>
+          : `${formatWei(String(tx.value))} ETH`}
       </td>
       <td>
         {tx.status === 1 ? (
