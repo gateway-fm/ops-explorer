@@ -160,65 +160,6 @@ func (s *Server) checkAddressVisibility(r *http.Request, address string) *privac
 	return vis
 }
 
-func (s *Server) filterAddressesForVisibility(r *http.Request, addresses []string) map[string]AddressDisplayInfo {
-	viewer := s.getViewerIdentity(r)
-	result := make(map[string]AddressDisplayInfo)
-
-	if viewer.DID == "" || !s.privacyClient.IsEnabled() {
-		for _, addr := range addresses {
-			result[addr] = AddressDisplayInfo{
-				Address:     addr,
-				DisplayName: addr,
-				IsPrivate:   false,
-			}
-		}
-		return result
-	}
-
-	visibilities, err := s.privacyClient.CheckAddressesWithIdentity(r.Context(), viewer, addresses)
-	if err != nil {
-		// Fail closed on error — treat all addresses as private
-		for _, addr := range addresses {
-			result[addr] = AddressDisplayInfo{
-				Address:     addr,
-				DisplayName: "[PRIVATE]",
-				IsPrivate:   true,
-			}
-		}
-		return result
-	}
-
-	for _, addr := range addresses {
-		vis, ok := visibilities[strings.ToLower(addr)]
-		if !ok || !vis.Visible {
-			result[addr] = AddressDisplayInfo{
-				Address:     addr,
-				DisplayName: "[PRIVATE]",
-				IsPrivate:   true,
-			}
-		} else {
-			displayName := addr
-			if vis.Level == privacy.VisibilityPseudonymous && vis.Pseudonym != nil {
-				displayName = *vis.Pseudonym
-			}
-			result[addr] = AddressDisplayInfo{
-				Address:     addr,
-				DisplayName: displayName,
-				IsPrivate:   false,
-				Visibility:  vis,
-			}
-		}
-	}
-
-	return result
-}
-
-type AddressDisplayInfo struct {
-	Address     string                     `json:"address"`
-	DisplayName string                     `json:"display_name"`
-	IsPrivate   bool                       `json:"is_private"`
-	Visibility  *privacy.AddressVisibility `json:"visibility,omitempty"`
-}
 
 // SECURITY: Addresses are redacted based on disclosure_level before being sent to the frontend.
 type GrantedAddressResponse struct {

@@ -146,24 +146,6 @@ func TestHandleBatchCheckAddresses_TooManyAddresses(t *testing.T) {
 	}
 }
 
-func TestFilterAddressesForVisibility_NoIdentity(t *testing.T) {
-	s := &Server{}
-	req := httptest.NewRequest("GET", "/test", nil)
-
-	result := s.filterAddressesForVisibility(req, []string{"0x1234", "0x5678"})
-
-	if len(result) != 2 {
-		t.Errorf("expected 2 results, got %d", len(result))
-	}
-	for _, info := range result {
-		if info.IsPrivate {
-			t.Errorf("expected not private, got private for %s", info.Address)
-		}
-		if info.DisplayName == "[PRIVATE]" {
-			t.Errorf("expected non-private display name, got [PRIVATE]")
-		}
-	}
-}
 
 // ============================================================================
 // Test: handleGetGrantedAddress
@@ -279,64 +261,6 @@ func TestHandleGetGrantedAddress_RevokedGrant(t *testing.T) {
 	}
 }
 
-// ============================================================================
-// Test: filterAddressesForVisibility with disclosure levels
-// ============================================================================
-
-func TestFilterAddressesForVisibility_PseudonymousAddress(t *testing.T) {
-	pseudonym := "Address-KLMN"
-	grantID := "grant-123"
-
-	client := mockPrivacyServer(t, func(w http.ResponseWriter, r *http.Request) {
-		resp := privacy.BatchCheckAddressesResponse{
-			Results: map[string]privacy.AddressVisibility{
-				"0x3333333333333333333333333333333333333333": {
-					Address:   "0x3333333333333333333333333333333333333333",
-					Visible:   true,
-					Level:     privacy.VisibilityPseudonymous,
-					Reason:    privacy.ReasonDisclosureGrant,
-					Pseudonym: &pseudonym,
-					GrantID:   &grantID,
-				},
-			},
-		}
-		json.NewEncoder(w).Encode(resp)
-	})
-
-	// Note: In SSO-only mode, we need a DID from auth cookie.
-	// For this test, we set a mock cookie. However, since the viewer identity
-	// extraction uses GetAuthDID which requires a valid JWT, we test with
-	// the privacy client directly.
-	s := &Server{privacyClient: client}
-
-	// Without auth, filterAddressesForVisibility returns all visible (fail open)
-	req := httptest.NewRequest("GET", "/test", nil)
-	result := s.filterAddressesForVisibility(req, []string{"0x3333333333333333333333333333333333333333"})
-
-	if len(result) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(result))
-	}
-	info := result["0x3333333333333333333333333333333333333333"]
-	if info.IsPrivate {
-		t.Error("expected not private (fail open without auth)")
-	}
-}
-
-func TestFilterAddressesForVisibility_NoPrivacyClient(t *testing.T) {
-	s := &Server{privacyClient: nil}
-	req := httptest.NewRequest("GET", "/test", nil)
-
-	result := s.filterAddressesForVisibility(req, []string{"0x1234", "0x5678"})
-
-	if len(result) != 2 {
-		t.Errorf("expected 2 results, got %d", len(result))
-	}
-	for _, info := range result {
-		if info.IsPrivate {
-			t.Errorf("expected not private without privacy client")
-		}
-	}
-}
 
 // ============================================================================
 // Test: checkAddressVisibility helper
@@ -368,43 +292,3 @@ func TestCheckAddressVisibility_NoIdentity(t *testing.T) {
 	}
 }
 
-// ============================================================================
-// Test: AddressDisplayInfo struct
-// ============================================================================
-
-func TestAddressDisplayInfo_Fields(t *testing.T) {
-	grantID := "grant-test"
-	pseudonym := "Address-TEST"
-
-	visibility := &privacy.AddressVisibility{
-		Address:   "0x1234567890123456789012345678901234567890",
-		Visible:   true,
-		Level:     privacy.VisibilityPseudonymous,
-		Reason:    privacy.ReasonDisclosureGrant,
-		Pseudonym: &pseudonym,
-		GrantID:   &grantID,
-	}
-
-	info := AddressDisplayInfo{
-		Address:     "0x1234567890123456789012345678901234567890",
-		DisplayName: pseudonym,
-		IsPrivate:   false,
-		Visibility:  visibility,
-	}
-
-	if info.Address != "0x1234567890123456789012345678901234567890" {
-		t.Errorf("unexpected address: %s", info.Address)
-	}
-	if info.DisplayName != "Address-TEST" {
-		t.Errorf("unexpected display name: %s", info.DisplayName)
-	}
-	if info.IsPrivate {
-		t.Error("expected not private")
-	}
-	if info.Visibility == nil {
-		t.Error("expected non-nil visibility")
-	}
-	if info.Visibility.Level != privacy.VisibilityPseudonymous {
-		t.Errorf("unexpected visibility level: %s", info.Visibility.Level)
-	}
-}
