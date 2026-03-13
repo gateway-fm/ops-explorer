@@ -212,7 +212,11 @@ function TxTableRow({ tx, visibilities }: { tx: Transaction; visibilities: Recor
           <span className="text-neutral-400">Contract</span>
         )}
       </td>
-      <td className="text-sm text-neutral-700">{formatWei(tx.value)} ETH</td>
+      <td className="text-sm text-neutral-700">
+        {tx.value === '' || tx.value == null
+          ? <span className="text-neutral-400 italic">hidden</span>
+          : `${formatWei(tx.value)} ETH`}
+      </td>
       <td>
         <span className={`badge ${tx.status === 1 ? 'badge-success' : 'badge-error'}`}>
           {tx.status === 1 ? 'Success' : 'Failed'}

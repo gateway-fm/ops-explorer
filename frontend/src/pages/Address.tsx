@@ -811,7 +811,9 @@ function TxTableRow({ tx, currentAddress, visibilities }: { tx: Transaction; cur
 
       {/* Value */}
       <td className="text-right font-mono text-neutral-700">
-        {formatWei(tx.value)} ETH
+        {tx.value === '' || tx.value == null
+          ? <span className="text-neutral-400 italic">hidden</span>
+          : `${formatWei(tx.value)} ETH`}
       </td>
 
       {/* Txn Fee */}
