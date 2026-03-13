@@ -285,7 +285,11 @@ function TxRow({ tx }: { tx: Transaction }) {
         </div>
       </div>
       <div className="text-right text-sm">
-        <div className="text-neutral-700">{formatWei(tx.value)} ETH</div>
+        <div className="text-neutral-700">
+          {tx.value === '' || tx.value == null
+            ? <span className="text-neutral-400 italic">hidden</span>
+            : `${formatWei(tx.value)} ETH`}
+        </div>
         <div className={tx.status === 1 ? 'text-success-600' : 'text-error-600'}>
           {tx.status === 1 ? 'Success' : 'Failed'}
         </div>
@@ -321,7 +325,11 @@ function InternalTxRow({ itx }: { itx: InternalTransaction }) {
         </div>
       </div>
       <div className="text-right text-sm">
-        <div className="text-neutral-700">{formatWei(itx.value)} ETH</div>
+        <div className="text-neutral-700">
+          {itx.value === '' || itx.value == null
+            ? <span className="text-neutral-400 italic">hidden</span>
+            : `${formatWei(itx.value)} ETH`}
+        </div>
         {itx.error && (
           <div className="text-error-600">Error</div>
         )}

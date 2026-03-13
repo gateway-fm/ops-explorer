@@ -183,7 +183,14 @@ export function TransactionDetail() {
               </div>
             )}
 
-            <InfoRow label="Value" value={`${formatWei(tx.value)} ETH`} />
+            <InfoRow
+              label="Value"
+              value={
+                tx.value === '' || tx.value == null
+                  ? <span className="text-neutral-400 italic">hidden</span>
+                  : `${formatWei(tx.value)} ETH`
+              }
+            />
             <InfoRow
               label="Transaction Fee"
               value={`${formatWei((BigInt(tx.gasUsed) * BigInt(tx.gasPrice)).toString())} ETH`}
