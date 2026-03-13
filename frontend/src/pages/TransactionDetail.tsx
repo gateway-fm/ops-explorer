@@ -233,9 +233,9 @@ export function TransactionDetail() {
               <InfoRow
                 label="Nonce"
                 value={
-                  tx.from === '[PRIVATE]'
+                  tx.nonce == null
                     ? <span className="text-neutral-400 italic">hidden</span>
-                    : <span className="font-mono text-sm">{tx.nonce ?? '-'}</span>
+                    : <span className="font-mono text-sm">{tx.nonce}</span>
                 }
               />
               <InfoRow
