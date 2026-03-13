@@ -1,5 +1,8 @@
 FROM golang:1.24-alpine AS builder
 
+# Upgrade system packages
+RUN apk update --no-cache && apk upgrade --no-cache
+
 WORKDIR /app
 
 COPY go.mod go.sum ./
@@ -12,6 +15,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /indexer ./cmd/indexer
 
 FROM alpine:3.19
 
+RUN apk update --no-cache && apk upgrade --no-cache
 RUN apk --no-cache add ca-certificates libc6-compat
 
 # Download solc static binaries for contract verification
