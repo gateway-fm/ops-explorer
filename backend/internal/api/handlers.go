@@ -288,7 +288,7 @@ func (s *Server) handleGetAddress(w http.ResponseWriter, r *http.Request) {
 		Address:    address,
 		Balance:    *balance,
 		TxCount:    stats.TxCount,
-		IsContract: len(code) > 0,
+		IsContract: len(code) > 0 && string(code) != "0x",
 	}
 
 	writeJSON(w, info)
