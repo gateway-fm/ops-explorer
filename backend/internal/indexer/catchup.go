@@ -2,8 +2,6 @@ package indexer
 
 import (
 	"context"
-	"fmt"
-	"math/big"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -11,10 +9,6 @@ import (
 	"explorer/internal/db"
 	"explorer/internal/events"
 	"explorer/internal/log"
-	"explorer/internal/types"
-
-	"github.com/ethereum/go-ethereum/common"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
 )
 
 type CatchupConfig struct {
@@ -329,23 +323,7 @@ func (c *CatchupIndexer) worker(id int) {
 }
 
 func (c *CatchupIndexer) processBlock(number uint64) error {
-	// Use raw JSON-RPC path for OP Stack chains
-	if c.idxCfg.EnableOPDeposits {
-		return c.processBlockRaw(number)
-	}
-
-	block, err := c.rpc.BlockByNumber(c.ctx, new(big.Int).SetUint64(number))
-	if err != nil {
-		return err
-	}
-
-	txCount := len(block.Transactions())
-	if txCount > 0 {
-		return c.processBlockWithTxs(block)
-	}
-
-	// Empty block - just insert the block record
-	return c.insertEmptyBlock(block)
+	return c.processBlockRaw(number)
 }
 
 func (c *CatchupIndexer) processBlockRaw(number uint64) error {
@@ -373,67 +351,4 @@ func (c *CatchupIndexer) processBlockRaw(number uint64) error {
 	}
 
 	return idx.processBlockRaw(c.ctx, number)
-}
-
-func (c *CatchupIndexer) insertEmptyBlock(block *ethtypes.Block) error {
-	var baseFeePerGas *uint64
-	if block.BaseFee() != nil {
-		baseFee := block.BaseFee().Uint64()
-		baseFeePerGas = &baseFee
-	}
-
-	// Get total difficulty (separate RPC call for post-merge compatibility)
-	totalDifficulty := c.rpc.GetTotalDifficulty(c.ctx, block.NumberU64())
-
-	b := &db.BlockData{
-		Block: &types.Block{
-			Number:           block.NumberU64(),
-			Hash:             block.Hash().Hex(),
-			ParentHash:       block.ParentHash().Hex(),
-			Timestamp:        block.Time(),
-			GasUsed:          block.GasUsed(),
-			GasLimit:         block.GasLimit(),
-			BaseFeePerGas:    baseFeePerGas,
-			TransactionCount: 0,
-			// Additional block fields
-			Size:             block.Size(),
-			Difficulty:       block.Difficulty().String(),
-			TotalDifficulty:  totalDifficulty,
-			Nonce:            fmt.Sprintf("0x%016x", block.Nonce()),
-			Miner:            block.Coinbase().Hex(),
-			ExtraData:        common.Bytes2Hex(block.Extra()),
-			StateRoot:        block.Root().Hex(),
-			TransactionsRoot: block.TxHash().Hex(),
-			ReceiptsRoot:     block.ReceiptHash().Hex(),
-		},
-		Transactions:         make([]*types.Transaction, 0),
-		Logs:                 make([]*types.Log, 0),
-		Transfers:            make([]*types.TokenTransfer, 0),
-		Contracts:            make([]*types.Contract, 0),
-		Tokens:               make([]*types.Token, 0),
-		InternalTransactions: make([]*types.InternalTransaction, 0),
-		AddressStats:         make(map[string]*db.AddressStatsDelta),
-		SkipAddressStats:     true, // Skip during catchup to avoid deadlocks
-	}
-
-	return c.db.InsertBlockDataBatch(c.ctx, b)
-}
-
-func (c *CatchupIndexer) processBlockWithTxs(block *ethtypes.Block) error {
-	catchupConfig := *c.idxCfg
-	catchupConfig.SkipAddressStats = true
-
-	// Reuse Indexer's processBlockParallel to avoid duplicating block processing code
-	idx := &Indexer{
-		db:               c.db,
-		rpc:              c.rpc,
-		config:           &catchupConfig,
-		tokenCache:       c.tokenCache,
-		contractCache:    c.contractCache,
-		balanceWorkers:   c.balanceWorkers,
-		tracingSupported: c.tracingSupported,
-		eventBus:         c.eventBus,
-	}
-
-	return idx.processBlockParallel(c.ctx, block)
 }

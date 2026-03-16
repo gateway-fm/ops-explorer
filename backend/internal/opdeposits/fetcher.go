@@ -10,14 +10,11 @@ import (
 	"explorer/internal/log"
 	"explorer/internal/types"
 
-	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethclient"
+	"explorer/pkg/eth/common"
+	"explorer/pkg/eth/crypto"
+	"explorer/pkg/eth/rpclient"
 )
 
-// TransactionDeposited event signature:
-// TransactionDeposited(address indexed from, address indexed to, uint256 indexed version, bytes opaqueData)
 var transactionDepositedTopic = crypto.Keccak256Hash([]byte("TransactionDeposited(address,address,uint256,bytes)"))
 
 type FetcherConfig struct {
@@ -25,15 +22,15 @@ type FetcherConfig struct {
 	OptimismPortalAddress common.Address
 	PollInterval          time.Duration
 	BatchSize             int
-	StartBlock            uint64 // 0 = auto-detect from DB
-	ConfirmationBlocks    uint64 // L1 confirmation buffer (default: 12)
+	StartBlock            uint64
+	ConfirmationBlocks    uint64
 }
 
 type Fetcher struct {
 	db     *db.DB
 	config *FetcherConfig
 
-	l1Client *ethclient.Client
+	l1Client *rpclient.Client
 	ctx      context.Context
 	cancel   context.CancelFunc
 }
@@ -49,11 +46,7 @@ func NewFetcher(database *db.DB, cfg *FetcherConfig) *Fetcher {
 }
 
 func (f *Fetcher) Start(ctx context.Context) error {
-	client, err := ethclient.Dial(f.config.L1RPCURL)
-	if err != nil {
-		return fmt.Errorf("failed to connect to L1 RPC: %w", err)
-	}
-	f.l1Client = client
+	f.l1Client = rpclient.Dial(f.config.L1RPCURL)
 
 	go f.run(ctx)
 	return nil
@@ -96,11 +89,11 @@ func (f *Fetcher) poll(ctx context.Context) error {
 	if safeHead > f.config.ConfirmationBlocks {
 		safeHead -= f.config.ConfirmationBlocks
 	} else {
-		return nil // L1 not far enough ahead
+		return nil
 	}
 
 	if fromBlock > safeHead {
-		return nil // Already caught up
+		return nil
 	}
 
 	batchSize := uint64(f.config.BatchSize)
@@ -154,7 +147,7 @@ func (f *Fetcher) getStartBlock(ctx context.Context) (uint64, error) {
 }
 
 func (f *Fetcher) fetchDepositEvents(ctx context.Context, fromBlock, toBlock uint64) ([]*types.OPDeposit, error) {
-	query := ethereum.FilterQuery{
+	query := rpclient.FilterQuery{
 		FromBlock: new(big.Int).SetUint64(fromBlock),
 		ToBlock:   new(big.Int).SetUint64(toBlock),
 		Addresses: []common.Address{f.config.OptimismPortalAddress},
@@ -175,13 +168,10 @@ func (f *Fetcher) fetchDepositEvents(ctx context.Context, fromBlock, toBlock uin
 
 		fromAddr := common.BytesToAddress(logEntry.Topics[1].Bytes())
 		toAddr := common.BytesToAddress(logEntry.Topics[2].Bytes())
-		// version := logEntry.Topics[3] — unused but kept for documentation
-
 		if len(logEntry.Data) < 64 {
 			continue
 		}
 
-		// ABI decode: bytes is encoded as offset (32) + length (32) + data
 		offset := new(big.Int).SetBytes(logEntry.Data[:32]).Uint64()
 		if offset+32 > uint64(len(logEntry.Data)) {
 			continue

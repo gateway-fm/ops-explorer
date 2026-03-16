@@ -15,14 +15,10 @@ import (
 	"explorer/internal/rpc"
 	"explorer/internal/types"
 
-	"github.com/ethereum/go-ethereum/common"
+	"explorer/pkg/eth/common"
 )
 
-// DataProvider defines the interface for all data fetching and control operations
-// used by the API handlers. This allows switching between a direct database/RPC
-// connection (Standalone Mode) and a remote API connection (Proxy Mode).
 type DataProvider interface {
-	// Chain & Sync Info
 	GetChainStats(ctx context.Context) (*types.ChainStats, error)
 	GetChainID(ctx context.Context) (uint64, error)
 	GetSyncStatus(ctx context.Context) (*types.SyncStatus, error)
@@ -30,14 +26,12 @@ type DataProvider interface {
 	GetIndexerProgress(ctx context.Context) (*db.IndexerProgress, error)
 	GetCatchupProgress(ctx context.Context) (processed int64, total uint64, percentComplete float64, isRunning bool, err error)
 
-	// Blocks
 	GetBlocks(ctx context.Context, limit int, beforeBlock *uint64) ([]types.Block, error)
 	GetBlock(ctx context.Context, number uint64) (*types.Block, error)
 	GetBlockByHash(ctx context.Context, hash string) (*types.Block, error)
 	GetLatestBlockNumber(ctx context.Context) (uint64, error)
 	GetInternalTransactionsByBlock(ctx context.Context, blockNumber uint64) ([]types.InternalTransaction, error)
 
-	// Transactions
 	GetTransactions(ctx context.Context, limit int, beforeBlock *uint64) ([]types.Transaction, error)
 	GetTransactionsPaginated(ctx context.Context, page, pageSize int) ([]types.Transaction, int64, error)
 	GetTransactionsByBlock(ctx context.Context, blockNumber uint64) ([]types.Transaction, error)
@@ -51,7 +45,6 @@ type DataProvider interface {
 	GetLogsByTransaction(ctx context.Context, txHash string) ([]types.Log, error)
 	GetOPDeposit(ctx context.Context, txHash string) (*types.OPDeposit, error)
 
-	// Addresses & Tokens
 	GetAddressStats(ctx context.Context, address string) (*types.AddressStats, error)
 	GetBalance(ctx context.Context, address string) (*types.JSONString, error)
 	GetCode(ctx context.Context, address string) ([]byte, error)
@@ -65,25 +58,20 @@ type DataProvider interface {
 	UpdateContractABI(ctx context.Context, address string, abi json.RawMessage) error
 	VerifyContract(ctx context.Context, address string, name string, compilerVersion string, optimizationUsed bool, sourceCode string, abi json.RawMessage, evmVersion string, licenseType string, constructorArgs string, optimizationRuns int) error
 
-	// Tokens List & Holders
 	GetTokens(ctx context.Context, limit int, offset int, tokenType string) ([]types.Token, int64, error)
 	GetToken(ctx context.Context, address string) (*types.Token, error)
 	GetTokenHolders(ctx context.Context, address string, limit int, offset int) ([]types.TokenHolder, int64, error)
 	GetTransfersByToken(ctx context.Context, tokenAddress string, limit int, offset int) ([]types.TokenTransfer, int64, error)
 	GetAllTransfers(ctx context.Context, limit int, offset int) ([]types.TokenTransfer, int64, error)
 
-	// Accounts & Search
 	GetAccountsPaginated(ctx context.Context, page, pageSize int) ([]types.AddressStats, int64, error)
 	SearchSuggestions(ctx context.Context, query string, limit int) ([]types.SearchSuggestion, error)
 
-	// Indexing Control
 	IndexBlock(ctx context.Context, number uint64) error
 
-	// RPC Fallbacks (needed for handleGetTransaction if not found in DB)
 	GetTransactionByHashRPC(ctx context.Context, hash string) (*types.Transaction, *uint64, error)
 }
 
-// DirectDBProvider implementation
 type DirectDBProvider struct {
 	db      APIDatabase
 	rpc     *rpc.Client
@@ -308,9 +296,8 @@ func (p *DirectDBProvider) GetTransactionByHashRPC(ctx context.Context, hash str
 		return nil, nil, err
 	}
 
-	// Convert rpc.Transaction to types.Transaction (simplified)
 	t := &types.Transaction{
-		Hash: tx.Hash().Hex(),
+		Hash: tx.Hash.Hex(),
 	}
 	var blockNumber *uint64
 	if receipt.BlockNumber != nil {
@@ -320,7 +307,6 @@ func (p *DirectDBProvider) GetTransactionByHashRPC(ctx context.Context, hash str
 	return t, blockNumber, nil
 }
 
-// ProxyDataProvider implementation
 type ProxyDataProvider struct {
 	baseURL string
 	client  *http.Client

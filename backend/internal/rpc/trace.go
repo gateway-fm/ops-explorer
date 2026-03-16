@@ -12,8 +12,8 @@ import (
 	"explorer/internal/log"
 	explorerTypes "explorer/internal/types"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
+	"explorer/pkg/eth/common"
+	"explorer/pkg/eth/hexutil"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 )

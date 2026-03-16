@@ -2,19 +2,13 @@ package indexer
 
 import (
 	"context"
-	"fmt"
-	"math/big"
 	"sync"
 	"time"
 
-	"explorer/internal/db"
 	"explorer/internal/events"
 	"explorer/internal/log"
-	"explorer/internal/types"
 
-	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/common"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"explorer/pkg/eth/rpclient"
 )
 
 type RealtimeConfig struct {
@@ -116,7 +110,7 @@ func (r *RealtimeIndexer) Start(ctx context.Context, startBlock uint64) error {
 		"from_block", startBlock,
 		"confirmation_blocks", r.config.ConfirmationBlocks)
 
-	headers := make(chan *ethtypes.Header)
+	headers := make(chan *rpclient.Header)
 	sub, err := r.rpc.SubscribeNewHead(ctx, headers)
 	if err != nil {
 		log.Warn("realtime: WebSocket subscription failed, falling back to polling", "error", err)
@@ -131,7 +125,7 @@ func (r *RealtimeIndexer) Stop() {
 	r.cancel()
 }
 
-func (r *RealtimeIndexer) runSubscriptionMode(ctx context.Context, headers <-chan *ethtypes.Header, sub ethereum.Subscription) error {
+func (r *RealtimeIndexer) runSubscriptionMode(ctx context.Context, headers <-chan *rpclient.Header, sub rpclient.Subscription) error {
 	defer sub.Unsubscribe()
 
 	for {
@@ -261,23 +255,7 @@ func (r *RealtimeIndexer) runPollingMode(ctx context.Context) error {
 }
 
 func (r *RealtimeIndexer) processBlock(ctx context.Context, number uint64) error {
-	// Use raw JSON-RPC path for OP Stack chains
-	if r.idxCfg.EnableOPDeposits {
-		return r.processBlockRaw(ctx, number)
-	}
-
-	block, err := r.rpc.BlockByNumber(ctx, new(big.Int).SetUint64(number))
-	if err != nil {
-		return err
-	}
-
-	txCount := len(block.Transactions())
-	if txCount > 0 {
-		return r.processBlockWithTxs(ctx, block)
-	}
-
-	// Empty block - just insert the block record
-	return r.insertEmptyBlock(ctx, block)
+	return r.processBlockRaw(ctx, number)
 }
 
 func (r *RealtimeIndexer) processBlockRaw(ctx context.Context, number uint64) error {
@@ -295,68 +273,6 @@ func (r *RealtimeIndexer) processBlockRaw(ctx context.Context, number uint64) er
 	return idx.processBlockRaw(ctx, number)
 }
 
-func (r *RealtimeIndexer) insertEmptyBlock(ctx context.Context, block *ethtypes.Block) error {
-	var baseFeePerGas *uint64
-	if block.BaseFee() != nil {
-		baseFee := block.BaseFee().Uint64()
-		baseFeePerGas = &baseFee
-	}
-
-	// Get total difficulty (separate RPC call for post-merge compatibility)
-	totalDifficulty := r.rpc.GetTotalDifficulty(ctx, block.NumberU64())
-
-	b := &db.BlockData{
-		Block: &types.Block{
-			Number:           block.NumberU64(),
-			Hash:             block.Hash().Hex(),
-			ParentHash:       block.ParentHash().Hex(),
-			Timestamp:        block.Time(),
-			GasUsed:          block.GasUsed(),
-			GasLimit:         block.GasLimit(),
-			BaseFeePerGas:    baseFeePerGas,
-			TransactionCount: 0,
-			// Additional block fields
-			Size:             block.Size(),
-			Difficulty:       block.Difficulty().String(),
-			TotalDifficulty:  totalDifficulty,
-			Nonce:            fmt.Sprintf("0x%016x", block.Nonce()),
-			Miner:            block.Coinbase().Hex(),
-			ExtraData:        common.Bytes2Hex(block.Extra()),
-			StateRoot:        block.Root().Hex(),
-			TransactionsRoot: block.TxHash().Hex(),
-			ReceiptsRoot:     block.ReceiptHash().Hex(),
-		},
-		Transactions:         make([]*types.Transaction, 0),
-		Logs:                 make([]*types.Log, 0),
-		Transfers:            make([]*types.TokenTransfer, 0),
-		Contracts:            make([]*types.Contract, 0),
-		Tokens:               make([]*types.Token, 0),
-		InternalTransactions: make([]*types.InternalTransaction, 0),
-		AddressStats:         make(map[string]*db.AddressStatsDelta),
-	}
-
-	if r.eventBus != nil {
-		r.eventBus.PublishNewBlock(b.Block)
-	}
-
-	return r.db.InsertBlockDataBatch(ctx, b)
-}
-
-func (r *RealtimeIndexer) processBlockWithTxs(ctx context.Context, block *ethtypes.Block) error {
-	idx := &Indexer{
-		db:               r.db,
-		rpc:              r.rpc,
-		config:           r.idxCfg,
-		tokenCache:       r.tokenCache,
-		contractCache:    r.contractCache,
-		balanceWorkers:   r.balanceWorkers,
-		tracingSupported: r.tracingSupported,
-		eventBus:         r.eventBus,
-	}
-
-	return idx.processBlockParallel(ctx, block)
-}
-
 func (r *RealtimeIndexer) detectReorg(ctx context.Context, blockNumber uint64) (uint64, error) {
 	maxReorgCheck := uint64(10)
 	for depth := uint64(0); depth < maxReorgCheck && blockNumber > depth; depth++ {
@@ -367,17 +283,7 @@ func (r *RealtimeIndexer) detectReorg(ctx context.Context, blockNumber uint64) (
 			continue
 		}
 
-		// Use raw path when OP deposits are enabled
-		var chainHash string
-		if r.idxCfg.EnableOPDeposits {
-			chainHash, err = r.rpc.RawBlockHash(ctx, checkBlock)
-		} else {
-			var chainBlock *ethtypes.Block
-			chainBlock, err = r.rpc.BlockByNumber(ctx, big.NewInt(int64(checkBlock)))
-			if err == nil {
-				chainHash = chainBlock.Hash().Hex()
-			}
-		}
+		chainHash, err := r.rpc.RawBlockHash(ctx, checkBlock)
 		if err != nil {
 			return 0, err
 		}
