@@ -64,6 +64,27 @@ This document outlines the core functional requirements of the Block Explorer an
     access token TTL widens the window during which a banned user can still act.
   - Status: [x] Implemented
 
+- **REQ-5.4: Participant Visibility**
+  - Transaction participants (sender or receiver) must see the counterparty's address
+    in their own transactions, even if the counterparty is otherwise private.
+  - The visibility override is per-transaction only — the counterparty address remains
+    hidden in transactions where the viewer is not a participant.
+  - Implemented in privacy-proxy's RedactionEngine (not the block-explorer).
+  - Status: [x] Implemented
+
+- **REQ-5.5: Address Visibility Labels**
+  - Transaction lists and detail pages show labels next to addresses indicating
+    the viewer's relationship: Mine, My Org, Public, Disclosed, Private.
+  - "Private" label shown for counterparty addresses visible via participant visibility,
+    indicating the address is private but visible in this transaction context.
+  - Status: [x] Implemented
+
+- **REQ-5.6: Privacy-Restricted Pages**
+  - When an unauthenticated user accesses a private address, transaction, or token page,
+    show a clean "Restricted" message with sign-in prompt instead of a raw error.
+  - Public addresses must be viewable without authentication.
+  - Status: [x] Implemented
+
 ## 6. Advanced Chain Support
 - **REQ-6.1: OP Stack Support**
   - Handle L1->L2 deposit transactions (Type 0x7E).
