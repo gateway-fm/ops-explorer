@@ -7,8 +7,8 @@ export function formatAddress(address: string, chars = 6): string {
   return `${address.slice(0, chars + 2)}...${address.slice(-chars)}`;
 }
 
-export function formatHash(hash: string, chars = 8): string {
-  return `${hash.slice(0, chars + 2)}...${hash.slice(-chars)}`;
+export function formatHash(hash: string, chars = 10): string {
+  return `${hash.slice(0, chars + 2)}...`;
 }
 
 export function formatTimestamp(timestamp: number): string {

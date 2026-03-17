@@ -9,11 +9,10 @@ import { AddressLink } from '../components/AddressLink';
 import { AddressLabel } from '../components/AddressLabel';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { ContractInteraction } from '../components/ContractInteraction';
-import { FileCode2, BookOpen, Loader2, PenLine, Fingerprint, Unlock, ShieldCheck, Wallet, X, ShieldOff } from 'lucide-react';
+import { FileCode2, BookOpen, Loader2, PenLine, Unlock, ShieldCheck, Wallet, X, ShieldOff } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { useAuth } from '../lib/auth';
 import { useAddressVisibility, useBatchAddressVisibility } from '../hooks/useAddressVisibility';
-import { redirectToLogin } from '../lib/login';
 import { usePrivacyEnabled } from '../hooks/usePrivacyEnabled';
 
 type TabType = 'transactions' | 'code' | 'read' | 'write';
@@ -155,9 +154,9 @@ export function Address() {
   const { visibility } = useAddressVisibility(address);
 
   const { data: info, isLoading: infoLoading, error } = useQuery({
-    queryKey: ['address', address, privacyEnabled ? isAuthenticated : true],
+    queryKey: ['address', address, isAuthenticated],
     queryFn: () => api.getAddress(address!),
-    enabled: !!address && (!privacyEnabled || isAuthenticated),
+    enabled: !!address,
     retry: false,
   });
 
@@ -196,34 +195,12 @@ export function Address() {
   // Default code sub-tab based on verification status
   const activeCodeSubTab = codeSubTab ?? (contract?.isVerified ? 'source' : 'bytecode');
 
-  // Show authentication prompt if not logged in (only when privacy is enabled)
-  if (privacyEnabled && !isAuthenticated) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 space-y-4">
-        <div className="w-16 h-16 rounded-full bg-primary-50 flex items-center justify-center border border-primary-200">
-          <Fingerprint className="w-8 h-8 text-primary" />
-        </div>
-        <h2 className="text-xl font-semibold text-neutral-900">Authentication Required</h2>
-        <p className="text-neutral-500 text-center max-w-md">
-          Sign in with Privado ID to view address details and transaction history.
-        </p>
-        <div className="mt-4">
-          <button
-            onClick={() => redirectToLogin(`/address/${address}`)}
-            className="btn-primary flex items-center gap-2"
-          >
-            <Fingerprint className="w-4 h-4" />
-            Sign in with Privado
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   if (infoLoading) return <div className="text-neutral-400">Loading...</div>;
 
-  // Privacy-restricted address (API returns 403)
-  if (error && error instanceof Error && error.message.includes('403')) {
+  // Privacy-restricted address: API returns 403 (direct privacy check) or 500 (privacy-proxy
+  // masks forbidden as "not found" to prevent info leaks, which the provider surfaces as 500).
+  // In both cases, show the privacy restriction UI rather than a raw error.
+  if (error && error instanceof Error && (error.message.includes('403') || error.message.includes('500'))) {
     return (
       <div className="space-y-6">
         <PageHeader title="Address" />
