@@ -70,6 +70,24 @@ export default function TokenDetail() {
     );
   }
 
+  if (tokenError && tokenError instanceof Error && (tokenError.message.includes('403') || tokenError.message.includes('500'))) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Token" />
+        <div className="card">
+          <div className="flex flex-col items-center justify-center py-16 space-y-4">
+            <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center border border-neutral-200">
+              <svg className="w-8 h-8 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" /></svg>
+            </div>
+            <h2 className="text-xl font-semibold text-neutral-900">Token Restricted</h2>
+            <p className="text-neutral-500 text-center max-w-md text-sm">
+              This token belongs to a private organization. Sign in to view it if you have access.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (tokenError || !token) {
     return (
       <div className="space-y-6">

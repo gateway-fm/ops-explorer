@@ -6,6 +6,8 @@ import { api } from '../lib/api';
 import type { TokenTransfer, Log, TxCategory } from '../lib/api';
 import { formatWei, formatGas, formatTimestamp } from '../lib/utils';
 import { AddressLink, TokenAddressLink } from '../components/AddressLink';
+import { AddressLabel } from '../components/AddressLabel';
+import { useBatchAddressVisibility } from '../hooks/useAddressVisibility';
 import { PageHeader } from '../components/PageHeader';
 import { CopyButton } from '../components/CopyButton';
 import { decodeEvent, getMethodId, fetchEventSignature, decodeEventWithSignature, KNOWN_EVENTS } from '../lib/eventDecoder';
@@ -65,8 +67,33 @@ export function TransactionDetail() {
     enabled: !!hash,
   });
 
+  // Collect from/to addresses for visibility labels
+  const txAddresses = tx ? [tx.from, tx.to, tx.contractAddress].filter((a): a is string => !!a && a !== '[PRIVATE]') : [];
+  const { visibilities } = useBatchAddressVisibility(txAddresses);
+
   if (isLoading) return <div className="text-neutral-400">Loading...</div>;
+  if (error && error instanceof Error && (error.message.includes('403') || error.message.includes('500'))) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Transaction" />
+        <div className="card">
+          <div className="flex flex-col items-center justify-center py-16 space-y-4">
+            <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center border border-neutral-200">
+              <svg className="w-8 h-8 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v.01M12 12a1.5 1.5 0 001.5-1.5c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5M19.5 12c0 4.14-3.36 7.5-7.5 7.5S4.5 16.14 4.5 12 7.86 4.5 12 4.5s7.5 3.36 7.5 7.5z" /></svg>
+            </div>
+            <h2 className="text-xl font-semibold text-neutral-900">Transaction Restricted</h2>
+            <p className="text-neutral-500 text-center max-w-md text-sm">
+              This transaction involves private addresses. Sign in to view it if you are a participant.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (error || !tx) return <div className="text-error-600">Transaction not found</div>;
+
+  const fromVis = visibilities[tx.from?.toLowerCase()];
+  const toVis = tx.to ? visibilities[tx.to.toLowerCase()] : undefined;
 
   const hasLogs = logs && logs.length > 0;
 
@@ -143,6 +170,7 @@ export function TransactionDetail() {
               value={
                 <span className="flex items-center gap-1">
                   <AddressLink address={tx.from} full className="text-sm" />
+                  <AddressLabel reason={fromVis?.reason} />
                   <CopyButton text={tx.from} />
                 </span>
               }
@@ -153,6 +181,7 @@ export function TransactionDetail() {
                 tx.to ? (
                   <span className="flex items-center gap-1">
                     <AddressLink address={tx.to} full className="text-sm" />
+                    <AddressLabel reason={toVis?.reason} />
                     {tx.to !== '[PRIVATE]' && <CopyButton text={tx.to} />}
                   </span>
                 ) : tx.contractAddress ? (
