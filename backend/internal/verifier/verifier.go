@@ -8,7 +8,7 @@ import (
 
 	"explorer/internal/log"
 
-	"github.com/ethereum/go-ethereum/common"
+	"explorer/pkg/eth/common"
 )
 
 type Verifier struct {

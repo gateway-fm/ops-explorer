@@ -2,7 +2,6 @@ package indexer
 
 import (
 	"context"
-	"fmt"
 	"math/big"
 	"strings"
 	"time"
@@ -13,8 +12,7 @@ import (
 	"explorer/internal/rpc"
 	"explorer/internal/types"
 
-	"github.com/ethereum/go-ethereum/common"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"explorer/pkg/eth/common"
 )
 
 type Config struct {
@@ -25,28 +23,22 @@ type Config struct {
 	BalanceWorkers       int
 	EnableAsyncBalance   bool
 
-	// Tracing settings
 	EnableTracing  bool
 	TraceRateLimit int
 	TraceWorkers   int
 
-	// Catchup mode settings
 	CatchupEnabled   bool
 	CatchupWorkers   int
 	CatchupBatchSize int
 	CatchupQueueSize int
 
-	// Skip address stats during catchup (avoids deadlocks, rebuild after)
 	SkipAddressStats bool
 
-	// OP Stack deposit transaction support
 	EnableOPDeposits bool
 }
 
-// ERC20 Transfer event topic
 var transferTopic = common.HexToHash("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef")
 
-// Zero address for detecting mints/burns
 var zeroAddress = common.HexToAddress("0x0000000000000000000000000000000000000000")
 
 type Indexer struct {
@@ -55,33 +47,22 @@ type Indexer struct {
 	pollInterval time.Duration
 	startBlock   uint64
 
-	// Channel for on-demand block indexing requests
 	indexRequests chan indexRequest
+	config        *Config
 
-	// Parallelization config
-	config *Config
-
-	// Caches
 	tokenCache    *TokenCache
 	contractCache *ContractCache
 
-	// Async balance worker pool
 	balanceWorkers *BalanceWorkerPool
 
-	// Tracing support
 	tracingSupported bool
+	eventBus         *events.Bus
 
-	// Event bus for publishing events
-	eventBus *events.Bus
-
-	// Missing range collector for gap discovery
 	missingRangeCollector *MissingRangeCollector
 
-	// Catchup and realtime indexers
 	catchupIndexer  *CatchupIndexer
 	realtimeIndexer *RealtimeIndexer
 
-	// Mode tracking
 	catchupRunning bool
 }
 
@@ -152,8 +133,6 @@ func NewWithConfig(database Database, rpcClient RPCClient, pollInterval time.Dur
 	return idx
 }
 
-// IndexBlock indexes a specific block on-demand, used by the API when
-// a user requests data that hasn't been indexed yet.
 func (i *Indexer) IndexBlock(ctx context.Context, blockNumber uint64) error {
 	done := make(chan error, 1)
 	select {
@@ -456,16 +435,7 @@ func (i *Indexer) detectReorg(ctx context.Context, blockNumber uint64) (uint64, 
 			continue
 		}
 
-		var chainHash string
-		if i.config.EnableOPDeposits {
-			chainHash, err = i.rpc.RawBlockHash(ctx, checkBlock)
-		} else {
-			var chainBlock *ethtypes.Block
-			chainBlock, err = i.rpc.BlockByNumber(ctx, new(big.Int).SetUint64(checkBlock))
-			if err == nil {
-				chainHash = chainBlock.Hash().Hex()
-			}
-		}
+		chainHash, err := i.rpc.RawBlockHash(ctx, checkBlock)
 		if err != nil {
 			return 0, err
 		}
@@ -492,7 +462,6 @@ func (i *Indexer) detectReorg(ctx context.Context, blockNumber uint64) (uint64, 
 func (i *Indexer) handleReorg(ctx context.Context, fromBlock uint64) error {
 	log.Info("reverting blocks due to reorg", "from_block", fromBlock)
 
-	// Delete blocks (cascades to transactions, logs, transfers due to FK constraints)
 	lastIndexed, err := i.db.GetLatestBlockNumber(ctx)
 	if err != nil {
 		return err
@@ -510,57 +479,9 @@ func (i *Indexer) handleReorg(ctx context.Context, fromBlock uint64) error {
 }
 
 func (i *Indexer) processBlock(ctx context.Context, number uint64) error {
-	// Use raw JSON-RPC path for OP Stack chains to handle deposit transactions (type 0x7E)
-	if i.config.EnableOPDeposits {
-		return i.processBlockRaw(ctx, number)
-	}
-
-	block, err := i.rpc.BlockByNumber(ctx, new(big.Int).SetUint64(number))
-	if err != nil {
-		return err
-	}
-
-	txCount := len(block.Transactions())
-	if txCount > 0 {
-		return i.processBlockParallel(ctx, block)
-	}
-
-	// Empty block - just insert the block record
-	var baseFeePerGas *uint64
-	if block.BaseFee() != nil {
-		baseFee := block.BaseFee().Uint64()
-		baseFeePerGas = &baseFee
-	}
-
-	// Get total difficulty (separate RPC call for post-merge compatibility)
-	totalDifficulty := i.rpc.GetTotalDifficulty(ctx, block.NumberU64())
-
-	b := &types.Block{
-		Number:           block.NumberU64(),
-		Hash:             block.Hash().Hex(),
-		ParentHash:       block.ParentHash().Hex(),
-		Timestamp:        block.Time(),
-		GasUsed:          block.GasUsed(),
-		GasLimit:         block.GasLimit(),
-		BaseFeePerGas:    baseFeePerGas,
-		TransactionCount: 0,
-		// Additional block fields
-		Size:             block.Size(),
-		Difficulty:       block.Difficulty().String(),
-		TotalDifficulty:  totalDifficulty,
-		Nonce:            fmt.Sprintf("0x%016x", block.Nonce()),
-		Miner:            block.Coinbase().Hex(),
-		ExtraData:        common.Bytes2Hex(block.Extra()),
-		StateRoot:        block.Root().Hex(),
-		TransactionsRoot: block.TxHash().Hex(),
-		ReceiptsRoot:     block.ReceiptHash().Hex(),
-	}
-
-	return i.db.InsertBlock(ctx, b)
+	return i.processBlockRaw(ctx, number)
 }
 
-// processBlockRaw fetches and processes a block using raw JSON-RPC to handle
-// OP Stack deposit transactions (type 0x7E) that go-ethereum cannot unmarshal.
 func (i *Indexer) processBlockRaw(ctx context.Context, number uint64) error {
 	rawBlock, err := i.rpc.RawBlockByNumber(ctx, number)
 	if err != nil {
@@ -571,7 +492,6 @@ func (i *Indexer) processBlockRaw(ctx context.Context, number uint64) error {
 		return i.processBlockParallelRaw(ctx, rawBlock)
 	}
 
-	// Empty block - just insert the block record
 	b := &types.Block{
 		Number:           rawBlock.NumberU64(),
 		Hash:             rawBlock.Hash.Hex(),
@@ -595,10 +515,6 @@ func (i *Indexer) processBlockRaw(ctx context.Context, number uint64) error {
 	return i.db.InsertBlock(ctx, b)
 }
 
-// processBlockParallelRaw processes a raw block with transactions.
-// This mirrors processBlockParallel but reads from RawTransaction fields
-// instead of go-ethereum's *types.Transaction methods, enabling support
-// for OP Stack deposit transactions (type 0x7E).
 func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.RawBlock) error {
 	start := time.Now()
 	blockNumber := rawBlock.NumberU64()
@@ -650,9 +566,8 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 	balanceWork := make([]BalanceWork, 0)
 
 	for idx, rawTx := range rawTxs {
-		receipt := receipts[rawTx.Hash] // nil if receipt was unavailable
+		receipt := receipts[rawTx.Hash]
 
-		// From is always present in JSON-RPC response (computed by the node)
 		from := rawTx.From.Hex()
 
 		var to *string
@@ -666,7 +581,6 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 			inputData = common.Bytes2Hex(rawTx.Input)
 		}
 
-		// Nonce: nil for deposit txs (store as 0)
 		var nonce uint64
 		if rawTx.Nonce != nil {
 			nonce = uint64(*rawTx.Nonce)
@@ -685,7 +599,6 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 			value = rawTx.Value.ToInt().String()
 		}
 
-		// EIP-1559 fields (naturally nil for deposits)
 		var maxFeePerGas, maxPriorityFeePerGas *uint64
 		if rawTx.MaxFeePerGas != nil {
 			mfpg := rawTx.MaxFeePerGas.ToInt().Uint64()
@@ -696,7 +609,6 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 			maxPriorityFeePerGas = &mpfpg
 		}
 
-		// Use receipt data when available, fall back to tx-only data otherwise
 		var gasUsed uint64
 		var status int
 		var txError *string
@@ -940,356 +852,6 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 	return nil
 }
 
-func (i *Indexer) processBlockParallel(ctx context.Context, block *ethtypes.Block) error {
-	start := time.Now()
-	blockNumber := block.NumberU64()
-	txs := block.Transactions()
-	blockTimestamp := block.Time()
-
-	chainID, err := i.rpc.ChainID(ctx)
-	if err != nil {
-		return err
-	}
-	signer := ethtypes.LatestSignerForChainID(chainID)
-
-	txHashes := make([]common.Hash, len(txs))
-	for idx, tx := range txs {
-		txHashes[idx] = tx.Hash()
-	}
-
-	receipts, err := i.rpc.FetchReceiptsBatch(ctx, txHashes, i.config.RPCWorkers, i.config.RPCRateLimit)
-	if err != nil {
-		return err
-	}
-
-	var baseFeePerGas *uint64
-	if block.BaseFee() != nil {
-		baseFee := block.BaseFee().Uint64()
-		baseFeePerGas = &baseFee
-	}
-
-	// Get total difficulty (separate RPC call for post-merge compatibility)
-	totalDifficulty := i.rpc.GetTotalDifficulty(ctx, blockNumber)
-
-	blockData := &db.BlockData{
-		Block: &types.Block{
-			Number:           blockNumber,
-			Hash:             block.Hash().Hex(),
-			ParentHash:       block.ParentHash().Hex(),
-			Timestamp:        blockTimestamp,
-			GasUsed:          block.GasUsed(),
-			GasLimit:         block.GasLimit(),
-			BaseFeePerGas:    baseFeePerGas,
-			TransactionCount: len(txs),
-			// Additional block fields
-			Size:             block.Size(),
-			Difficulty:       block.Difficulty().String(),
-			TotalDifficulty:  totalDifficulty,
-			Nonce:            fmt.Sprintf("0x%016x", block.Nonce()),
-			Miner:            block.Coinbase().Hex(),
-			ExtraData:        common.Bytes2Hex(block.Extra()),
-			StateRoot:        block.Root().Hex(),
-			TransactionsRoot: block.TxHash().Hex(),
-			ReceiptsRoot:     block.ReceiptHash().Hex(),
-		},
-		Transactions:         make([]*types.Transaction, 0, len(txs)),
-		Logs:                 make([]*types.Log, 0),
-		Transfers:            make([]*types.TokenTransfer, 0),
-		Contracts:            make([]*types.Contract, 0),
-		Tokens:               make([]*types.Token, 0),
-		InternalTransactions: make([]*types.InternalTransaction, 0),
-		AddressStats:         make(map[string]*db.AddressStatsDelta),
-		SkipAddressStats:     i.config.SkipAddressStats,
-	}
-
-	newTokenAddresses := make([]common.Address, 0)
-	newTokenTxHashes := make(map[common.Address]string)
-	balanceWork := make([]BalanceWork, 0)
-
-	for idx, tx := range txs {
-		receipt := receipts[tx.Hash()] // nil if receipt was unavailable
-
-		from, err := ethtypes.Sender(signer, tx)
-		if err != nil {
-			log.Warn("failed to get sender for tx", "tx", tx.Hash().Hex(), "error", err)
-			continue
-		}
-
-		var to *string
-		if tx.To() != nil {
-			toStr := tx.To().Hex()
-			to = &toStr
-		}
-
-		inputData := ""
-		if len(tx.Data()) > 0 {
-			inputData = common.Bytes2Hex(tx.Data())
-		}
-
-		nonce := tx.Nonce()
-		gasLimit := tx.Gas()
-		txType := int(tx.Type())
-
-		var maxFeePerGas, maxPriorityFeePerGas *uint64
-		if tx.Type() == ethtypes.DynamicFeeTxType {
-			if tx.GasFeeCap() != nil {
-				mfpg := tx.GasFeeCap().Uint64()
-				maxFeePerGas = &mfpg
-			}
-			if tx.GasTipCap() != nil {
-				mpfpg := tx.GasTipCap().Uint64()
-				maxPriorityFeePerGas = &mpfpg
-			}
-		}
-
-		// Use receipt data when available, fall back to tx-only data otherwise.
-		// Receipt may be unavailable when the RPC node (e.g. op-reth) fails to
-		// compute L1 fee fields due to missing L1 block info deposit transactions.
-		var gasUsed uint64
-		var status int
-		var txError *string
-		if receipt != nil {
-			gasUsed = receipt.GasUsed
-			status = int(receipt.Status)
-			if receipt.Status == 0 {
-				errMsg := "transaction reverted"
-				txError = &errMsg
-			}
-		} else {
-			// No receipt: assume success, use gas limit as estimate
-			gasUsed = gasLimit
-			status = 1
-		}
-
-		blockData.Transactions = append(blockData.Transactions, &types.Transaction{
-			Hash:                 tx.Hash().Hex(),
-			BlockNumber:          blockNumber,
-			TxIndex:              idx,
-			From:                 from.Hex(),
-			To:                   to,
-			Value:                types.JSONString(tx.Value().String()),
-			GasUsed:              gasUsed,
-			GasPrice:             tx.GasPrice().Uint64(),
-			GasLimit:             &gasLimit,
-			MaxFeePerGas:         maxFeePerGas,
-			MaxPriorityFeePerGas: maxPriorityFeePerGas,
-			Nonce:                &nonce,
-			TxType:               txType,
-			InputData:            inputData,
-			Status:               status,
-			Error:                txError,
-		})
-
-		i.updateAddressStatsDelta(blockData.AddressStats, from.Hex(), blockNumber, false)
-
-		if to != nil {
-			isContract := i.contractCache.Has(*to)
-			i.updateAddressStatsDelta(blockData.AddressStats, *to, blockNumber, isContract)
-		}
-
-		if receipt != nil && tx.To() == nil && receipt.ContractAddress != (common.Address{}) {
-			contractAddr := receipt.ContractAddress.Hex()
-			code, err := i.rpc.GetCode(ctx, receipt.ContractAddress)
-			if err == nil && len(code) > 0 {
-				bytecodeHash := common.BytesToHash(common.FromHex(common.Bytes2Hex(code))).Hex()
-				blockData.Contracts = append(blockData.Contracts, &types.Contract{
-					Address:      contractAddr,
-					Bytecode:     common.Bytes2Hex(code),
-					BytecodeHash: &bytecodeHash,
-					Creator:      from.Hex(),
-					CreationTx:   tx.Hash().Hex(),
-					BlockNumber:  blockNumber,
-					IsVerified:   false,
-				})
-				i.contractCache.Add(contractAddr)
-				i.updateAddressStatsDelta(blockData.AddressStats, contractAddr, blockNumber, true)
-			}
-		}
-
-		if receipt == nil {
-			continue
-		}
-		for _, logEntry := range receipt.Logs {
-			var topic0, topic1, topic2, topic3 *string
-			if len(logEntry.Topics) > 0 {
-				t := logEntry.Topics[0].Hex()
-				topic0 = &t
-			}
-			if len(logEntry.Topics) > 1 {
-				t := logEntry.Topics[1].Hex()
-				topic1 = &t
-			}
-			if len(logEntry.Topics) > 2 {
-				t := logEntry.Topics[2].Hex()
-				topic2 = &t
-			}
-			if len(logEntry.Topics) > 3 {
-				t := logEntry.Topics[3].Hex()
-				topic3 = &t
-			}
-
-			blockData.Logs = append(blockData.Logs, &types.Log{
-				TxHash:      tx.Hash().Hex(),
-				LogIndex:    int(logEntry.Index),
-				Address:     logEntry.Address.Hex(),
-				Topic0:      topic0,
-				Topic1:      topic1,
-				Topic2:      topic2,
-				Topic3:      topic3,
-				Data:        common.Bytes2Hex(logEntry.Data),
-				BlockNumber: blockNumber,
-				Timestamp:   &blockTimestamp,
-				Removed:     logEntry.Removed,
-			})
-
-			if len(logEntry.Topics) >= 3 && logEntry.Topics[0] == transferTopic {
-				fromAddr := common.BytesToAddress(logEntry.Topics[1].Bytes())
-				toAddr := common.BytesToAddress(logEntry.Topics[2].Bytes())
-
-				transferType := types.TransferTypeTransfer
-				if fromAddr == zeroAddress {
-					transferType = types.TransferTypeMint
-				} else if toAddr == zeroAddress {
-					transferType = types.TransferTypeBurn
-				}
-
-				tokenType := types.TokenTypeERC20
-				var tokenID *string
-				if len(logEntry.Topics) == 4 {
-					tokenType = types.TokenTypeERC721
-					tid := logEntry.Topics[3].Big().String()
-					tokenID = &tid
-				}
-
-				value := "0"
-				if tokenType == types.TokenTypeERC20 && len(logEntry.Data) > 0 {
-					value = new(big.Int).SetBytes(logEntry.Data).String()
-				} else if tokenType == types.TokenTypeERC721 {
-					value = "1"
-				}
-
-				blockData.Transfers = append(blockData.Transfers, &types.TokenTransfer{
-					TxHash:       tx.Hash().Hex(),
-					LogIndex:     int(logEntry.Index),
-					TokenAddress: logEntry.Address.Hex(),
-					From:         fromAddr.Hex(),
-					To:           toAddr.Hex(),
-					Value:        types.JSONString(value),
-					BlockNumber:  blockNumber,
-					Timestamp:    &blockTimestamp,
-					TransferType: transferType,
-					TokenType:    tokenType,
-					TokenID:      tokenID,
-					IsInternal:   false,
-				})
-
-				if fromAddr != zeroAddress {
-					balanceWork = append(balanceWork, BalanceWork{
-						Address:      fromAddr,
-						TokenAddress: logEntry.Address,
-						BlockNumber:  blockNumber,
-					})
-				}
-				if toAddr != zeroAddress {
-					balanceWork = append(balanceWork, BalanceWork{
-						Address:      toAddr,
-						TokenAddress: logEntry.Address,
-						BlockNumber:  blockNumber,
-					})
-				}
-
-				if !i.tokenCache.Has(logEntry.Address.Hex()) {
-					if _, exists := newTokenTxHashes[logEntry.Address]; !exists {
-						newTokenAddresses = append(newTokenAddresses, logEntry.Address)
-						newTokenTxHashes[logEntry.Address] = tx.Hash().Hex()
-					}
-				}
-
-				if delta, ok := blockData.AddressStats[strings.ToLower(from.Hex())]; ok {
-					delta.TokenTransferDelta++
-				}
-				if to != nil {
-					if delta, ok := blockData.AddressStats[strings.ToLower(*to)]; ok {
-						delta.TokenTransferDelta++
-					}
-				}
-			}
-		}
-	}
-
-	if i.tracingSupported && len(txHashes) > 0 {
-		internalTxs, err := i.rpc.FetchTracesBatch(ctx, txHashes, blockNumber, blockTimestamp,
-			i.config.TraceWorkers, i.config.TraceRateLimit)
-		if err != nil {
-			log.Warn("failed to fetch traces for block", "block", blockNumber, "error", err)
-		} else if len(internalTxs) > 0 {
-			blockData.InternalTransactions = internalTxs
-
-			for _, it := range internalTxs {
-				i.updateAddressStatsDeltaInternal(blockData.AddressStats, it.From, blockNumber)
-				if it.To != nil {
-					i.updateAddressStatsDeltaInternal(blockData.AddressStats, *it.To, blockNumber)
-				}
-			}
-		}
-	}
-
-	if len(newTokenAddresses) > 0 {
-		tokenMetadata, err := i.rpc.FetchTokenMetadataBatch(ctx, newTokenAddresses, i.config.TokenMetadataWorkers, i.config.RPCRateLimit)
-		if err != nil {
-			log.Warn("failed to fetch token metadata batch", "error", err)
-		} else {
-			for addr, meta := range tokenMetadata {
-				if meta.Err != nil {
-					continue
-				}
-				txHash := newTokenTxHashes[addr]
-				blockData.Tokens = append(blockData.Tokens, &types.Token{
-					Address:     addr.Hex(),
-					Symbol:      meta.Symbol,
-					Name:        meta.Name,
-					Decimals:    meta.Decimals,
-					TokenType:   types.TokenTypeERC20,
-					BlockNumber: blockNumber,
-					CreationTx:  &txHash,
-				})
-				i.tokenCache.Add(addr.Hex())
-			}
-		}
-	}
-
-	if err := i.db.InsertBlockDataBatch(ctx, blockData); err != nil {
-		return err
-	}
-
-	if i.balanceWorkers != nil && len(balanceWork) > 0 {
-		queued := i.balanceWorkers.QueueWorkBatch(balanceWork)
-		if queued < len(balanceWork) {
-			log.Warn("balance queue full, dropped items", "dropped", len(balanceWork)-queued)
-		}
-	}
-
-	if i.eventBus != nil {
-		i.eventBus.PublishNewBlock(blockData.Block)
-
-		for _, tx := range blockData.Transactions {
-			i.eventBus.PublishNewTransaction(tx)
-		}
-	}
-
-	elapsed := time.Since(start)
-	if blockNumber%100 == 0 || elapsed > 2*time.Second {
-		log.Info("indexed block",
-			"block", blockNumber,
-			"txs", len(txs),
-			"transfers", len(blockData.Transfers),
-			"new_tokens", len(blockData.Tokens),
-			"elapsed", elapsed)
-	}
-
-	return nil
-}
-
 func (i *Indexer) updateAddressStatsDelta(stats map[string]*db.AddressStatsDelta, address string, blockNumber uint64, isContract bool) {
 	key := strings.ToLower(address)
 	if delta, ok := stats[key]; ok {
@@ -1318,233 +880,6 @@ func (i *Indexer) updateAddressStatsDeltaInternal(stats map[string]*db.AddressSt
 			BlockNumber:          blockNumber,
 		}
 	}
-}
-
-func (i *Indexer) processTransaction(ctx context.Context, tx *ethtypes.Transaction, block *ethtypes.Block, idx int) error {
-	receipt, err := i.rpc.TransactionReceipt(ctx, tx.Hash())
-	if err != nil {
-		log.Warn("failed to fetch receipt, indexing tx without receipt data",
-			"tx", tx.Hash().Hex(), "error", err)
-		// Continue without receipt — we can still index the transaction
-	}
-
-	from, err := ethtypes.Sender(ethtypes.LatestSignerForChainID(tx.ChainId()), tx)
-	if err != nil {
-		return err
-	}
-
-	var to *string
-	if tx.To() != nil {
-		toStr := tx.To().Hex()
-		to = &toStr
-	}
-
-	inputData := ""
-	if len(tx.Data()) > 0 {
-		inputData = common.Bytes2Hex(tx.Data())
-	}
-
-	nonce := tx.Nonce()
-	gasLimit := tx.Gas()
-	txType := int(tx.Type())
-
-	var maxFeePerGas, maxPriorityFeePerGas *uint64
-	if tx.Type() == ethtypes.DynamicFeeTxType {
-		if tx.GasFeeCap() != nil {
-			mfpg := tx.GasFeeCap().Uint64()
-			maxFeePerGas = &mfpg
-		}
-		if tx.GasTipCap() != nil {
-			mpfpg := tx.GasTipCap().Uint64()
-			maxPriorityFeePerGas = &mpfpg
-		}
-	}
-
-	// Use receipt data when available, fall back to tx-only data otherwise
-	var gasUsed uint64
-	var status int
-	var txError, revertReason *string
-	if receipt != nil {
-		gasUsed = receipt.GasUsed
-		status = int(receipt.Status)
-		if receipt.Status == 0 {
-			errMsg := "transaction reverted"
-			txError = &errMsg
-		}
-	} else {
-		gasUsed = gasLimit
-		status = 1
-	}
-
-	t := &types.Transaction{
-		Hash:                 tx.Hash().Hex(),
-		BlockNumber:          block.NumberU64(),
-		TxIndex:              idx,
-		From:                 from.Hex(),
-		To:                   to,
-		Value:                types.JSONString(tx.Value().String()),
-		GasUsed:              gasUsed,
-		GasPrice:             tx.GasPrice().Uint64(),
-		GasLimit:             &gasLimit,
-		MaxFeePerGas:         maxFeePerGas,
-		MaxPriorityFeePerGas: maxPriorityFeePerGas,
-		Nonce:                &nonce,
-		TxType:               txType,
-		InputData:            inputData,
-		Status:               status,
-		Error:                txError,
-		RevertReason:         revertReason,
-	}
-
-	if err := i.db.InsertTransaction(ctx, t); err != nil {
-		return err
-	}
-
-	isContractCreation := receipt != nil && tx.To() == nil && receipt.ContractAddress != (common.Address{})
-	if isContractCreation {
-		contractAddr := receipt.ContractAddress.Hex()
-		code, err := i.rpc.GetCode(ctx, receipt.ContractAddress)
-		if err != nil {
-			log.Error("failed to get contract code", "address", contractAddr, "error", err)
-		} else if len(code) > 0 {
-			bytecodeHash := common.BytesToHash(common.FromHex(common.Bytes2Hex(code))).Hex()
-
-			contract := &types.Contract{
-				Address:      contractAddr,
-				Bytecode:     common.Bytes2Hex(code),
-				BytecodeHash: &bytecodeHash,
-				Creator:      from.Hex(),
-				CreationTx:   tx.Hash().Hex(),
-				BlockNumber:  block.NumberU64(),
-				IsVerified:   false,
-			}
-			if err := i.db.InsertContract(ctx, contract); err != nil {
-				log.Error("failed to insert contract", "address", contractAddr, "error", err)
-			} else {
-				log.Info("indexed contract", "address", contractAddr, "creator", from.Hex())
-			}
-
-			if err := i.db.UpsertAddressStats(ctx, contractAddr, block.NumberU64(), true); err != nil {
-				log.Error("failed to update address stats for contract", "address", contractAddr, "error", err)
-			}
-		}
-	}
-
-	if err := i.db.UpsertAddressStats(ctx, from.Hex(), block.NumberU64(), false); err != nil {
-		log.Error("failed to update address stats", "address", from.Hex(), "error", err)
-	}
-
-	if to != nil {
-		isContract, _ := i.db.IsContract(ctx, *to)
-		if err := i.db.UpsertAddressStats(ctx, *to, block.NumberU64(), isContract); err != nil {
-			log.Error("failed to update address stats", "address", *to, "error", err)
-		}
-	}
-
-	blockTimestamp := block.Time()
-
-	for _, logEntry := range receipt.Logs {
-		var topic0, topic1, topic2, topic3 *string
-		if len(logEntry.Topics) > 0 {
-			t := logEntry.Topics[0].Hex()
-			topic0 = &t
-		}
-		if len(logEntry.Topics) > 1 {
-			t := logEntry.Topics[1].Hex()
-			topic1 = &t
-		}
-		if len(logEntry.Topics) > 2 {
-			t := logEntry.Topics[2].Hex()
-			topic2 = &t
-		}
-		if len(logEntry.Topics) > 3 {
-			t := logEntry.Topics[3].Hex()
-			topic3 = &t
-		}
-
-		logRecord := &types.Log{
-			TxHash:      tx.Hash().Hex(),
-			LogIndex:    int(logEntry.Index),
-			Address:     logEntry.Address.Hex(),
-			Topic0:      topic0,
-			Topic1:      topic1,
-			Topic2:      topic2,
-			Topic3:      topic3,
-			Data:        common.Bytes2Hex(logEntry.Data),
-			BlockNumber: block.NumberU64(),
-			Timestamp:   &blockTimestamp,
-			Removed:     logEntry.Removed,
-		}
-		if err := i.db.InsertLog(ctx, logRecord); err != nil {
-			log.Error("failed to insert log", "error", err)
-		}
-	}
-
-	transferCount := 0
-	for _, logEntry := range receipt.Logs {
-		if len(logEntry.Topics) >= 3 && logEntry.Topics[0] == transferTopic {
-			fromAddr := common.BytesToAddress(logEntry.Topics[1].Bytes())
-			toAddr := common.BytesToAddress(logEntry.Topics[2].Bytes())
-
-			transferType := types.TransferTypeTransfer
-			if fromAddr == zeroAddress {
-				transferType = types.TransferTypeMint
-			} else if toAddr == zeroAddress {
-				transferType = types.TransferTypeBurn
-			}
-
-			// ERC721 transfers have 4 topics (with tokenId in topic[3]),
-			// ERC20 transfers have 3 topics
-			tokenType := types.TokenTypeERC20
-			var tokenID *string
-			if len(logEntry.Topics) == 4 {
-				tokenType = types.TokenTypeERC721
-				tid := logEntry.Topics[3].Big().String()
-				tokenID = &tid
-			}
-
-			value := "0"
-			if tokenType == types.TokenTypeERC20 && len(logEntry.Data) > 0 {
-				value = new(big.Int).SetBytes(logEntry.Data).String()
-			} else if tokenType == types.TokenTypeERC721 {
-				value = "1"
-			}
-
-			transfer := &types.TokenTransfer{
-				TxHash:       tx.Hash().Hex(),
-				LogIndex:     int(logEntry.Index),
-				TokenAddress: logEntry.Address.Hex(),
-				From:         fromAddr.Hex(),
-				To:           toAddr.Hex(),
-				Value:        types.JSONString(value),
-				BlockNumber:  block.NumberU64(),
-				Timestamp:    &blockTimestamp,
-				TransferType: transferType,
-				TokenType:    tokenType,
-				TokenID:      tokenID,
-				IsInternal:   false,
-			}
-			if err := i.db.InsertTokenTransfer(ctx, transfer); err != nil {
-				log.Error("failed to insert token transfer", "error", err)
-			} else {
-				transferCount++
-
-				i.trackBalance(ctx, fromAddr, logEntry.Address, block.NumberU64())
-				i.trackBalance(ctx, toAddr, logEntry.Address, block.NumberU64())
-			}
-
-			i.maybeIndexToken(ctx, logEntry.Address, block.NumberU64(), tx.Hash().Hex())
-		}
-	}
-
-	if transferCount > 0 {
-		i.db.UpdateAddressStatsCounters(ctx, from.Hex(), 0, transferCount)
-		if to != nil {
-			i.db.UpdateAddressStatsCounters(ctx, *to, 0, transferCount)
-		}
-	}
-
-	return nil
 }
 
 func (i *Indexer) trackBalance(ctx context.Context, addr common.Address, tokenAddress common.Address, blockNumber uint64) {
@@ -1592,7 +927,6 @@ func (i *Indexer) maybeIndexToken(ctx context.Context, tokenAddress common.Addre
 		return
 	}
 
-	// Double-check database (in case cache was not preloaded)
 	existing, err := i.db.GetToken(ctx, tokenAddress.Hex())
 	if err == nil && existing != nil {
 		i.tokenCache.Add(tokenAddress.Hex())
@@ -1623,7 +957,6 @@ func (i *Indexer) maybeIndexToken(ctx context.Context, tokenAddress common.Addre
 }
 
 func (i *Indexer) fetchTokenMetadata(ctx context.Context, tokenAddress common.Address) (symbol string, name *string, decimals int, err error) {
-	// ERC20 symbol() = 0x95d89b41
 	symbolData, err := i.rpc.CallContract(ctx, tokenAddress, common.FromHex("0x95d89b41"))
 	if err != nil {
 		return "", nil, 0, err
@@ -1633,7 +966,6 @@ func (i *Indexer) fetchTokenMetadata(ctx context.Context, tokenAddress common.Ad
 		symbol = "UNKNOWN"
 	}
 
-	// ERC20 name() = 0x06fdde03
 	nameData, err := i.rpc.CallContract(ctx, tokenAddress, common.FromHex("0x06fdde03"))
 	if err == nil {
 		n := parseStringResult(nameData)
@@ -1642,7 +974,6 @@ func (i *Indexer) fetchTokenMetadata(ctx context.Context, tokenAddress common.Ad
 		}
 	}
 
-	// ERC20 decimals() = 0x313ce567
 	decimalsData, err := i.rpc.CallContract(ctx, tokenAddress, common.FromHex("0x313ce567"))
 	if err == nil && len(decimalsData) >= 32 {
 		decimals = int(new(big.Int).SetBytes(decimalsData).Int64())
@@ -1655,11 +986,9 @@ func (i *Indexer) fetchTokenMetadata(ctx context.Context, tokenAddress common.Ad
 
 func parseStringResult(data []byte) string {
 	if len(data) < 64 {
-		// Try to parse as raw bytes
 		return strings.TrimRight(string(data), "\x00")
 	}
 
-	// ABI-encoded string: offset (32 bytes) + length (32 bytes) + data
 	offset := new(big.Int).SetBytes(data[:32]).Uint64()
 	if offset >= uint64(len(data)) {
 		return ""

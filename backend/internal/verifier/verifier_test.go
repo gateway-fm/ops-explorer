@@ -3,13 +3,11 @@ package verifier
 import (
 	"context"
 	"encoding/json"
-	"math/big"
 	"testing"
 
 	"explorer/internal/types"
 
-	"github.com/ethereum/go-ethereum/common"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"explorer/pkg/eth/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -55,14 +53,6 @@ type MockRPCClient struct {
 func (m *MockRPCClient) GetCode(ctx context.Context, address common.Address) ([]byte, error) {
 	args := m.Called(ctx, address)
 	return args.Get(0).([]byte), args.Error(1)
-}
-
-func (m *MockRPCClient) BlockByNumber(ctx context.Context, number *big.Int) (*ethtypes.Block, error) {
-	args := m.Called(ctx, number)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*ethtypes.Block), args.Error(1)
 }
 
 func TestVerifyRequest(t *testing.T) {

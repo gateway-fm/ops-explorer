@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS tokens (
     icon_url TEXT,
     l1_address TEXT,
     block_number BIGINT NOT NULL,
-    creation_tx TEXT REFERENCES transactions(hash),
+    creation_tx TEXT REFERENCES transactions(hash) ON DELETE CASCADE,
     off_chain_updated_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW()
 );
@@ -135,7 +135,7 @@ CREATE TABLE IF NOT EXISTS contracts (
     bytecode TEXT NOT NULL,
     bytecode_hash TEXT,
     creator TEXT NOT NULL,
-    creation_tx TEXT NOT NULL REFERENCES transactions(hash),
+    creation_tx TEXT NOT NULL REFERENCES transactions(hash) ON DELETE CASCADE,
     block_number BIGINT NOT NULL,
     is_verified BOOLEAN DEFAULT false,
     contract_name TEXT,

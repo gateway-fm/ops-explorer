@@ -9,16 +9,14 @@ import (
 	"time"
 
 	"explorer/internal/db"
+	"explorer/internal/rpc"
 	"explorer/internal/types"
+	"explorer/pkg/eth/hexutil"
 
-	"github.com/ethereum/go-ethereum/common"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/trie"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
 
-// mockSubscription implements ethereum.Subscription for testing SubscribeNewHead failure paths.
 type mockSubscription struct {
 	errCh chan error
 }
@@ -43,6 +41,13 @@ func newTestCatchupIndexer(mockDB *MockDatabase, mockRPC *MockRPCClient) *Catchu
 	return NewCatchupIndexer(mockDB, mockRPC, cfg, idxCfg, NewTokenCache(), NewContractCache(), nil, false)
 }
 
+func makeRawBlock(number uint64) *rpc.RawBlock {
+	return &rpc.RawBlock{
+		Number:    (*hexutil.Big)(big.NewInt(int64(number))),
+		Timestamp: hexutil.Uint64(time.Now().Unix()),
+	}
+}
+
 func TestCatchupIndexer_WorkerProcessesBlock(t *testing.T) {
 	mockDB := new(MockDatabase)
 	mockRPC := new(MockRPCClient)
@@ -51,33 +56,24 @@ func TestCatchupIndexer_WorkerProcessesBlock(t *testing.T) {
 
 	blockNum := uint64(5)
 
-	// Block does not exist in DB
 	mockDB.On("HasBlock", mock.Anything, blockNum).Return(false, nil).Once()
 
-	// processBlock: RPC returns empty block
-	header := &ethtypes.Header{
-		Number: big.NewInt(int64(blockNum)),
-		Time:   uint64(time.Now().Unix()),
-	}
-	ethBlock := ethtypes.NewBlock(header, &ethtypes.Body{}, nil, trie.NewStackTrie(nil))
+	rawBlock := makeRawBlock(blockNum)
 
-	mockRPC.On("BlockByNumber", mock.Anything, big.NewInt(int64(blockNum))).Return(ethBlock, nil).Once()
-	mockRPC.On("GetTotalDifficulty", mock.Anything, blockNum).Return("100").Once()
-	mockDB.On("InsertBlockDataBatch", mock.Anything, mock.MatchedBy(func(b *db.BlockData) bool {
-		return b.Block.Number == blockNum
-	})).Return(nil).Once()
+	mockRPC.On("RawBlockByNumber", mock.Anything, blockNum).Return(rawBlock, nil)
+	mockDB.On("InsertBlock", mock.Anything, mock.MatchedBy(func(b *types.Block) bool {
+		return b.Number == blockNum
+	})).Return(nil)
+	mockDB.On("InsertBlockDataBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
 
-	// After processing, DeleteMissingRangeByBlock is called (no collector set)
 	mockDB.On("DeleteMissingRangeByBlock", mock.Anything, blockNum).Return(nil).Once()
 
-	// Send block to work queue and run worker
 	ctx, cancel := context.WithCancel(context.Background())
 	catchup.ctx = ctx
 	catchup.cancel = cancel
 
 	go func() {
 		catchup.workQueue <- blockNum
-		// Close after sending to stop worker
 		time.Sleep(50 * time.Millisecond)
 		cancel()
 	}()
@@ -97,13 +93,7 @@ func TestCatchupIndexer_WorkerSkipsExistingBlock(t *testing.T) {
 
 	blockNum := uint64(5)
 
-	// Block already exists
 	mockDB.On("HasBlock", mock.Anything, blockNum).Return(true, nil).Once()
-
-	// Since no collector is set, DeleteMissingRangeByBlock should NOT be called
-	// (the worker only calls collector.MarkBlockProcessed or db.DeleteMissingRangeByBlock
-	//  when processing succeeds OR when block exists with collector set)
-	// With no collector, and block exists, it just increments processed and continues.
 
 	ctx, cancel := context.WithCancel(context.Background())
 	catchup.ctx = ctx
@@ -120,8 +110,7 @@ func TestCatchupIndexer_WorkerSkipsExistingBlock(t *testing.T) {
 
 	assert.Equal(t, int64(1), atomic.LoadInt64(&catchup.processedBlocks))
 
-	// processBlock should NOT have been called (no BlockByNumber)
-	mockRPC.AssertNotCalled(t, "BlockByNumber", mock.Anything, mock.Anything)
+	mockRPC.AssertNotCalled(t, "RawBlockByNumber", mock.Anything, mock.Anything)
 	mockDB.AssertExpectations(t)
 }
 
@@ -131,7 +120,6 @@ func TestCatchupIndexer_WorkerSkipsExistingBlock_WithCollector(t *testing.T) {
 
 	catchup := newTestCatchupIndexer(mockDB, mockRPC)
 
-	// Set up a collector so MarkBlockProcessed is called
 	collectorDB := new(MockDatabase)
 	collectorRPC := new(MockRPCClient)
 	collector := NewMissingRangeCollector(collectorDB, collectorRPC, nil)
@@ -139,10 +127,8 @@ func TestCatchupIndexer_WorkerSkipsExistingBlock_WithCollector(t *testing.T) {
 
 	blockNum := uint64(5)
 
-	// Block already exists
 	mockDB.On("HasBlock", mock.Anything, blockNum).Return(true, nil).Once()
 
-	// collector.MarkBlockProcessed calls collector.db.DeleteMissingRangeByBlock
 	collectorDB.On("DeleteMissingRangeByBlock", mock.Anything, blockNum).Return(nil).Once()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -159,7 +145,7 @@ func TestCatchupIndexer_WorkerSkipsExistingBlock_WithCollector(t *testing.T) {
 	catchup.worker(0)
 
 	assert.Equal(t, int64(1), atomic.LoadInt64(&catchup.processedBlocks))
-	mockRPC.AssertNotCalled(t, "BlockByNumber", mock.Anything, mock.Anything)
+	mockRPC.AssertNotCalled(t, "RawBlockByNumber", mock.Anything, mock.Anything)
 	collectorDB.AssertCalled(t, "DeleteMissingRangeByBlock", mock.Anything, blockNum)
 }
 
@@ -171,13 +157,10 @@ func TestCatchupIndexer_WorkerRetriesOnError(t *testing.T) {
 
 	blockNum := uint64(5)
 
-	// Block doesn't exist
 	mockDB.On("HasBlock", mock.Anything, blockNum).Return(false, nil).Once()
 
-	// processBlock fails (RPC error)
-	mockRPC.On("BlockByNumber", mock.Anything, big.NewInt(int64(blockNum))).Return(nil, fmt.Errorf("connection refused")).Once()
+	mockRPC.On("RawBlockByNumber", mock.Anything, blockNum).Return(nil, fmt.Errorf("connection refused")).Once()
 
-	// Block must be requeued after failure so it's not permanently lost
 	mockDB.On("RequeueMissingBlock", mock.Anything, blockNum).Return(nil).Once()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -193,15 +176,10 @@ func TestCatchupIndexer_WorkerRetriesOnError(t *testing.T) {
 	catchup.wg.Add(1)
 	catchup.worker(0)
 
-	// processedBlocks should NOT have been incremented on error
 	assert.Equal(t, int64(0), atomic.LoadInt64(&catchup.processedBlocks))
 
-	// DeleteMissingRangeByBlock should NOT have been called
 	mockDB.AssertNotCalled(t, "DeleteMissingRangeByBlock", mock.Anything, mock.Anything)
 
-	// RequeueMissingBlock MUST be called so the block is not permanently lost.
-	// Without this, the block is gone: the parent range was already deleted
-	// when a sibling block succeeded earlier.
 	mockDB.AssertCalled(t, "RequeueMissingBlock", mock.Anything, blockNum)
 }
 
@@ -217,49 +195,35 @@ func TestCatchupIndexer_BlockProducer_QueuesAllBlocksInRange(t *testing.T) {
 	idxCfg := &Config{RPCWorkers: 1, RPCRateLimit: 100}
 	catchup := NewCatchupIndexer(mockDB, mockRPC, cfg, idxCfg, NewTokenCache(), NewContractCache(), nil, false)
 
-	// Set up a collector
 	collectorDB := new(MockDatabase)
 	collectorRPC := new(MockRPCClient)
 	collector := NewMissingRangeCollector(collectorDB, collectorRPC, nil)
 	catchup.collector = collector
 
-	// GetMissingRangesBatch: first call returns [1,9], subsequent calls return empty
-	// First call returns [1,9], subsequent calls return empty
 	collectorDB.On("GetMissingRangesBatch", mock.Anything, 100).
 		Return([]db.BlockRange{{FromNumber: 1, ToNumber: 9}}, nil).Once()
 	collectorDB.On("GetMissingRangesBatch", mock.Anything, 100).
 		Return([]db.BlockRange{}, nil)
 
-	// For each block 1-9: HasBlock returns false, processBlock works, MarkBlockProcessed called
 	for blockNum := uint64(1); blockNum <= 9; blockNum++ {
 		mockDB.On("HasBlock", mock.Anything, blockNum).Return(false, nil).Once()
 
-		header := &ethtypes.Header{
-			Number: big.NewInt(int64(blockNum)),
-			Time:   uint64(time.Now().Unix()),
-		}
-		ethBlock := ethtypes.NewBlock(header, &ethtypes.Body{}, nil, trie.NewStackTrie(nil))
+		rawBlock := makeRawBlock(blockNum)
 
-		mockRPC.On("BlockByNumber", mock.Anything, big.NewInt(int64(blockNum))).Return(ethBlock, nil).Once()
-		mockRPC.On("GetTotalDifficulty", mock.Anything, blockNum).Return("100").Once()
-		mockDB.On("InsertBlockDataBatch", mock.Anything, mock.MatchedBy(func(b *db.BlockData) bool {
-			return b.Block.Number >= 1 && b.Block.Number <= 9
-		})).Return(nil).Maybe()
+		mockRPC.On("RawBlockByNumber", mock.Anything, blockNum).Return(rawBlock, nil)
+		mockDB.On("InsertBlock", mock.Anything, mock.Anything).Return(nil).Maybe()
+		mockDB.On("InsertBlockDataBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
 
-		// collector.MarkBlockProcessed -> collectorDB.DeleteMissingRangeByBlock
 		collectorDB.On("DeleteMissingRangeByBlock", mock.Anything, blockNum).Return(nil).Once()
 	}
 
-	// GetTotalMissingBlocks for initial count
 	collectorDB.On("GetTotalMissingBlocks", mock.Anything).Return(int64(9), nil).Maybe()
 
-	// RebuildAddressStats called when idle for 3 polls
 	mockDB.On("RebuildAddressStats", mock.Anything).Return(nil).Maybe()
 
 	err := catchup.Start(context.Background(), 1, 9)
 	assert.NoError(t, err)
 
-	// Wait for all blocks to be processed (with timeout)
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if atomic.LoadInt64(&catchup.processedBlocks) >= 9 {
@@ -273,7 +237,6 @@ func TestCatchupIndexer_BlockProducer_QueuesAllBlocksInRange(t *testing.T) {
 
 	catchup.Stop()
 
-	// Verify all blocks 1-9 had MarkBlockProcessed called
 	for blockNum := uint64(1); blockNum <= 9; blockNum++ {
 		collectorDB.AssertCalled(t, "DeleteMissingRangeByBlock", mock.Anything, blockNum)
 	}
@@ -296,7 +259,6 @@ func TestCatchupIndexer_BlockProducer_MultipleRanges(t *testing.T) {
 	collector := NewMissingRangeCollector(collectorDB, collectorRPC, nil)
 	catchup.collector = collector
 
-	// First call returns two ranges (newest first), subsequent calls return empty
 	collectorDB.On("GetMissingRangesBatch", mock.Anything, 100).
 		Return([]db.BlockRange{
 			{FromNumber: 100, ToNumber: 110},
@@ -305,7 +267,6 @@ func TestCatchupIndexer_BlockProducer_MultipleRanges(t *testing.T) {
 	collectorDB.On("GetMissingRangesBatch", mock.Anything, 100).
 		Return([]db.BlockRange{}, nil)
 
-	// Set up expectations for ALL blocks: 100-110 and 1-9
 	allBlocks := make([]uint64, 0)
 	for b := uint64(100); b <= 110; b++ {
 		allBlocks = append(allBlocks, b)
@@ -317,24 +278,18 @@ func TestCatchupIndexer_BlockProducer_MultipleRanges(t *testing.T) {
 	for _, blockNum := range allBlocks {
 		mockDB.On("HasBlock", mock.Anything, blockNum).Return(false, nil).Once()
 
-		header := &ethtypes.Header{
-			Number: big.NewInt(int64(blockNum)),
-			Time:   uint64(time.Now().Unix()),
-		}
-		ethBlock := ethtypes.NewBlock(header, &ethtypes.Body{}, nil, trie.NewStackTrie(nil))
+		rawBlock := makeRawBlock(blockNum)
 
-		mockRPC.On("BlockByNumber", mock.Anything, big.NewInt(int64(blockNum))).Return(ethBlock, nil).Once()
-		mockRPC.On("GetTotalDifficulty", mock.Anything, blockNum).Return("100").Once()
-		mockDB.On("InsertBlockDataBatch", mock.Anything, mock.MatchedBy(func(b *db.BlockData) bool {
-			return b.Block.Number >= 1 && b.Block.Number <= 110
-		})).Return(nil).Maybe()
+		mockRPC.On("RawBlockByNumber", mock.Anything, blockNum).Return(rawBlock, nil)
+		mockDB.On("InsertBlock", mock.Anything, mock.Anything).Return(nil).Maybe()
+		mockDB.On("InsertBlockDataBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
 		collectorDB.On("DeleteMissingRangeByBlock", mock.Anything, blockNum).Return(nil).Once()
 	}
 
 	collectorDB.On("GetTotalMissingBlocks", mock.Anything).Return(int64(20), nil).Maybe()
 	mockDB.On("RebuildAddressStats", mock.Anything).Return(nil).Maybe()
 
-	totalExpected := int64(11 + 9) // blocks 100-110 (11) + blocks 1-9 (9)
+	totalExpected := int64(11 + 9)
 
 	err := catchup.Start(context.Background(), 1, 110)
 	assert.NoError(t, err)
@@ -365,7 +320,6 @@ func TestCatchupIndexer_BlockProducer_GoesIdleWhenNoRanges(t *testing.T) {
 	idxCfg := &Config{RPCWorkers: 1, RPCRateLimit: 100}
 	catchup := NewCatchupIndexer(mockDB, mockRPC, cfg, idxCfg, NewTokenCache(), NewContractCache(), nil, false)
 
-	// No missing ranges
 	mockDB.On("GetMissingRangesBatch", mock.Anything, 100).Return([]db.BlockRange{}, nil)
 	mockDB.On("GetTotalMissingBlocks", mock.Anything).Return(int64(0), nil).Maybe()
 
@@ -380,13 +334,10 @@ func TestCatchupIndexer_BlockProducer_GoesIdleWhenNoRanges(t *testing.T) {
 	err := catchup.Start(context.Background(), 0, 0)
 	assert.NoError(t, err)
 
-	// onComplete should NOT be called when processedBlocks == 0 (no work was done)
-	// The code checks: if !completionCalled && idleCount >= 3 && processed > 0
 	select {
 	case <-completeCalled:
 		t.Fatal("onComplete should not be called when no blocks were processed")
 	case <-time.After(200 * time.Millisecond):
-		// Expected: no completion callback since processedBlocks == 0
 	}
 
 	catchup.Stop()
@@ -408,7 +359,6 @@ func TestRealtimeIndexer_DetectReorg_BlockNotInDB_Continues(t *testing.T) {
 
 	blockNum := uint64(50)
 
-	// GetBlock returns nil for all blocks checked — blocks not yet in DB
 	mockDB.On("GetBlock", mock.Anything, mock.Anything).Return(nil, nil)
 
 	reorgDepth, err := rt.detectReorg(context.Background(), blockNum)
@@ -430,35 +380,22 @@ func TestRealtimeIndexer_DetectReorg_RPCError_DoesNotTriggerDeletion(t *testing.
 
 	blockNum := uint64(50)
 
-	// DB has the block
 	mockDB.On("GetBlock", mock.Anything, blockNum).Return(&types.Block{
 		Number: blockNum,
-		Hash:   "0xabc123",
+		Hash:   "0xabc123def456789a",
 	}, nil).Once()
 
-	// RPC fails
-	mockRPC.On("BlockByNumber", mock.Anything, big.NewInt(int64(blockNum))).Return(nil, fmt.Errorf("connection refused")).Once()
+	mockRPC.On("RawBlockHash", mock.Anything, blockNum).Return("", fmt.Errorf("connection refused")).Once()
 
 	reorgDepth, err := rt.detectReorg(context.Background(), blockNum)
 
-	// detectReorg returns error — caller should handle gracefully
 	assert.Error(t, err)
 	assert.Equal(t, uint64(0), reorgDepth)
 
-	// DeleteBlock should NEVER be called
 	mockDB.AssertNotCalled(t, "DeleteBlock", mock.Anything, mock.Anything)
 }
 
 func TestRealtimeIndexer_ProcessingLoop_SkipsBlock0(t *testing.T) {
-	// The realtime indexer loop is:
-	//   for blockNum := lastProcessed + 1; blockNum <= safeBlock
-	//
-	// When lastProcessed=0, the loop starts at block 1.
-	// Block 0 (genesis) is NEVER processed by the realtime indexer.
-	//
-	// This is by design: the catchup/missing-range system should handle block 0.
-	// But if the missing range collector ALSO misses block 0, it won't be indexed.
-
 	mockDB := new(MockDatabase)
 	mockRPC := new(MockRPCClient)
 
@@ -471,43 +408,26 @@ func TestRealtimeIndexer_ProcessingLoop_SkipsBlock0(t *testing.T) {
 	rt := NewRealtimeIndexer(mockDB, mockRPC, cfg, idxCfg, NewTokenCache(), NewContractCache(), nil, false)
 	rt.SetLastProcessedBlock(0)
 
-	// Simulate polling mode: chain is at block 10, safe = 9
-	// First poll returns block 10
 	mockRPC.On("BlockNumber", mock.Anything).Return(uint64(10), nil)
 
-	// For blocks 1 through 9:
 	for blockNum := uint64(1); blockNum <= 9; blockNum++ {
-		// detectReorg: GetBlock for blockNum-1 returns nil (not in DB yet) — continue
 		mockDB.On("GetBlock", mock.Anything, blockNum-1).Return(nil, nil).Maybe()
 
-		header := &ethtypes.Header{
-			Number:     big.NewInt(int64(blockNum)),
-			Time:       uint64(time.Now().Unix()),
-			ParentHash: common.HexToHash(fmt.Sprintf("0x%064x", blockNum-1)),
-		}
-		ethBlock := ethtypes.NewBlock(header, &ethtypes.Body{}, nil, trie.NewStackTrie(nil))
+		rawBlock := makeRawBlock(blockNum)
 
-		mockRPC.On("BlockByNumber", mock.Anything, big.NewInt(int64(blockNum))).Return(ethBlock, nil).Once()
-		mockRPC.On("GetTotalDifficulty", mock.Anything, blockNum).Return("100").Once()
-		mockDB.On("InsertBlock", mock.Anything, mock.MatchedBy(func(b *types.Block) bool {
-			return b.Number == blockNum
-		})).Return(nil).Maybe()
-		mockDB.On("InsertBlockDataBatch", mock.Anything, mock.MatchedBy(func(b *db.BlockData) bool {
-			return b.Block.Number == blockNum
-		})).Return(nil).Maybe()
+		mockRPC.On("RawBlockByNumber", mock.Anything, blockNum).Return(rawBlock, nil)
+		mockDB.On("InsertBlock", mock.Anything, mock.Anything).Return(nil).Maybe()
+		mockDB.On("InsertBlockDataBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
 		mockDB.On("UpdateSyncStatus", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 	}
 
-	// Subscribe fails, falls back to polling
 	mockRPC.On("SubscribeNewHead", mock.Anything, mock.Anything).Return(newMockSubscription(), fmt.Errorf("not supported"))
 
-	// Run in a goroutine with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
 	go rt.Start(ctx, 0)
 
-	// Wait for processing
 	deadline := time.Now().Add(1 * time.Second)
 	for time.Now().Before(deadline) {
 		if rt.GetLastProcessedBlock() >= 9 {
@@ -516,10 +436,8 @@ func TestRealtimeIndexer_ProcessingLoop_SkipsBlock0(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	// Block 0 should NEVER have been requested from RPC
-	mockRPC.AssertNotCalled(t, "BlockByNumber", mock.Anything, big.NewInt(0))
+	mockRPC.AssertNotCalled(t, "RawBlockByNumber", mock.Anything, uint64(0))
 
-	// Blocks 1-9 SHOULD have been processed
 	lastProcessed := rt.GetLastProcessedBlock()
 	assert.GreaterOrEqual(t, lastProcessed, uint64(9),
 		"blocks 1-9 should have been processed, but lastProcessed=%d", lastProcessed)
@@ -528,16 +446,6 @@ func TestRealtimeIndexer_ProcessingLoop_SkipsBlock0(t *testing.T) {
 }
 
 func TestRealtimeIndexer_ReorgError_DoesNotDeleteBlocks(t *testing.T) {
-	// When detectReorg returns an error, the polling loop should:
-	// 1. Log the error
-	// 2. Continue processing the block (NOT delete anything)
-	//
-	// This tests the behavior in runPollingMode lines 235-238:
-	//   if err != nil { log.Error(...) }
-	//   else if reorgDepth > 0 { ... handleReorg ... }
-	//
-	// On error: no reorg handling, falls through to processBlock
-
 	mockDB := new(MockDatabase)
 	mockRPC := new(MockRPCClient)
 
@@ -550,31 +458,21 @@ func TestRealtimeIndexer_ReorgError_DoesNotDeleteBlocks(t *testing.T) {
 	rt := NewRealtimeIndexer(mockDB, mockRPC, cfg, idxCfg, NewTokenCache(), NewContractCache(), nil, false)
 	rt.SetLastProcessedBlock(4)
 
-	// Chain at block 6, safe = 5
 	mockRPC.On("BlockNumber", mock.Anything).Return(uint64(6), nil)
 
-	// detectReorg for block 4 (blockNum=5, check parent=4):
-	// GetBlock returns a stored block, but RPC fails
 	mockDB.On("GetBlock", mock.Anything, uint64(4)).Return(&types.Block{
 		Number: 4,
 		Hash:   "0xstoredblock4hash",
 	}, nil)
-	mockRPC.On("BlockByNumber", mock.Anything, big.NewInt(4)).Return(nil, fmt.Errorf("RPC unavailable")).Once()
+	mockRPC.On("RawBlockHash", mock.Anything, uint64(4)).Return("", fmt.Errorf("RPC unavailable")).Once()
 
-	// Despite reorg check error, block 5 should still be processed
-	header5 := &ethtypes.Header{
-		Number: big.NewInt(5),
-		Time:   uint64(time.Now().Unix()),
-	}
-	ethBlock5 := ethtypes.NewBlock(header5, &ethtypes.Body{}, nil, trie.NewStackTrie(nil))
+	rawBlock5 := makeRawBlock(5)
 
-	mockRPC.On("BlockByNumber", mock.Anything, big.NewInt(5)).Return(ethBlock5, nil).Once()
-	mockRPC.On("GetTotalDifficulty", mock.Anything, uint64(5)).Return("100").Once()
+	mockRPC.On("RawBlockByNumber", mock.Anything, uint64(5)).Return(rawBlock5, nil)
 	mockDB.On("InsertBlock", mock.Anything, mock.Anything).Return(nil).Maybe()
 	mockDB.On("InsertBlockDataBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
 	mockDB.On("UpdateSyncStatus", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
-	// SubscribeNewHead fails -> polling mode
 	mockRPC.On("SubscribeNewHead", mock.Anything, mock.Anything).Return(newMockSubscription(), fmt.Errorf("not supported"))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
@@ -582,7 +480,6 @@ func TestRealtimeIndexer_ReorgError_DoesNotDeleteBlocks(t *testing.T) {
 
 	go rt.Start(ctx, 4)
 
-	// Wait for block 5 to be processed
 	deadline := time.Now().Add(1 * time.Second)
 	for time.Now().Before(deadline) {
 		if rt.GetLastProcessedBlock() >= 5 {
@@ -591,10 +488,8 @@ func TestRealtimeIndexer_ReorgError_DoesNotDeleteBlocks(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	// CRITICAL: DeleteBlock should NEVER be called when detectReorg errors
 	mockDB.AssertNotCalled(t, "DeleteBlock", mock.Anything, mock.Anything)
 
-	// Block 5 should have been processed despite the reorg check error
 	assert.GreaterOrEqual(t, rt.GetLastProcessedBlock(), uint64(5))
 
 	rt.Stop()

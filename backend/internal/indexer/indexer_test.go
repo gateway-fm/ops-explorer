@@ -10,11 +10,10 @@ import (
 	"explorer/internal/rpc"
 	"explorer/internal/types"
 
-	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/common"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/trie"
+	"explorer/pkg/eth/common"
+	"explorer/pkg/eth/hexutil"
+	"explorer/pkg/eth/rpclient"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -193,14 +192,6 @@ func (m *MockRPCClient) BlockNumber(ctx context.Context) (uint64, error) {
 	return args.Get(0).(uint64), args.Error(1)
 }
 
-func (m *MockRPCClient) BlockByNumber(ctx context.Context, number *big.Int) (*ethtypes.Block, error) {
-	args := m.Called(ctx, number)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*ethtypes.Block), args.Error(1)
-}
-
 func (m *MockRPCClient) RawBlockByNumber(ctx context.Context, number uint64) (*rpc.RawBlock, error) {
 	args := m.Called(ctx, number)
 	if args.Get(0) == nil {
@@ -214,9 +205,9 @@ func (m *MockRPCClient) RawBlockHash(ctx context.Context, number uint64) (string
 	return args.String(0), args.Error(1)
 }
 
-func (m *MockRPCClient) FetchReceiptsBatch(ctx context.Context, txHashes []common.Hash, workers int, rateLimit int) (map[common.Hash]*ethtypes.Receipt, error) {
+func (m *MockRPCClient) FetchReceiptsBatch(ctx context.Context, txHashes []common.Hash, workers int, rateLimit int) (map[common.Hash]*rpclient.Receipt, error) {
 	args := m.Called(ctx, txHashes, workers, rateLimit)
-	return args.Get(0).(map[common.Hash]*ethtypes.Receipt), args.Error(1)
+	return args.Get(0).(map[common.Hash]*rpclient.Receipt), args.Error(1)
 }
 
 func (m *MockRPCClient) GetTotalDifficulty(ctx context.Context, blockNumber uint64) string {
@@ -229,9 +220,9 @@ func (m *MockRPCClient) CheckTracingSupport(ctx context.Context) (bool, error) {
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *MockRPCClient) SubscribeNewHead(ctx context.Context, ch chan<- *ethtypes.Header) (ethereum.Subscription, error) {
+func (m *MockRPCClient) SubscribeNewHead(ctx context.Context, ch chan<- *rpclient.Header) (rpclient.Subscription, error) {
 	args := m.Called(ctx, ch)
-	return args.Get(0).(ethereum.Subscription), args.Error(1)
+	return args.Get(0).(rpclient.Subscription), args.Error(1)
 }
 
 func (m *MockRPCClient) CallContract(ctx context.Context, to common.Address, data []byte) ([]byte, error) {
@@ -259,12 +250,12 @@ func (m *MockRPCClient) ChainID(ctx context.Context) (*big.Int, error) {
 	return args.Get(0).(*big.Int), args.Error(1)
 }
 
-func (m *MockRPCClient) TransactionReceipt(ctx context.Context, txHash common.Hash) (*ethtypes.Receipt, error) {
+func (m *MockRPCClient) TransactionReceipt(ctx context.Context, txHash common.Hash) (*rpclient.Receipt, error) {
 	args := m.Called(ctx, txHash)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*ethtypes.Receipt), args.Error(1)
+	return args.Get(0).(*rpclient.Receipt), args.Error(1)
 }
 
 func TestIndexer_GetCatchupProgress(t *testing.T) {
@@ -288,14 +279,10 @@ func TestIndexer_DetectReorg(t *testing.T) {
 		idx := New(mockDB, mockRPC, time.Second, 0)
 
 		blockNum := uint64(100)
-		header := &ethtypes.Header{
-			Number: big.NewInt(int64(blockNum)),
-		}
-		chainBlock := ethtypes.NewBlockWithHeader(header)
-		expectedHash := chainBlock.Hash().Hex()
+		expectedHash := "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
 
 		mockDB.On("GetBlock", ctx, mock.Anything).Return(&types.Block{Hash: expectedHash}, nil)
-		mockRPC.On("BlockByNumber", ctx, mock.Anything).Return(chainBlock, nil)
+		mockRPC.On("RawBlockHash", ctx, mock.Anything).Return(expectedHash, nil)
 
 		reorgAt, err := idx.detectReorg(ctx, blockNum)
 		assert.NoError(t, err)
@@ -312,17 +299,14 @@ func TestIndexer_DetectReorg(t *testing.T) {
 		blockNum := uint64(100)
 
 		// Current block matches
-		header := &ethtypes.Header{Number: big.NewInt(100)}
-		block := ethtypes.NewBlockWithHeader(header)
-		mockDB.On("GetBlock", ctx, uint64(100)).Return(&types.Block{Hash: block.Hash().Hex()}, nil).Once()
-		mockRPC.On("BlockByNumber", ctx, big.NewInt(100)).Return(block, nil).Once()
+		chainHash100 := "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+		mockDB.On("GetBlock", ctx, uint64(100)).Return(&types.Block{Hash: chainHash100}, nil).Once()
+		mockRPC.On("RawBlockHash", ctx, uint64(100)).Return(chainHash100, nil).Once()
 
 		// Parent doesn't match
-		mockDB.On("GetBlock", ctx, uint64(99)).Return(&types.Block{Hash: "0xdb_parent"}, nil).Once()
-
-		parentHeader := &ethtypes.Header{Number: big.NewInt(99)}
-		parentBlock := ethtypes.NewBlockWithHeader(parentHeader)
-		mockRPC.On("BlockByNumber", ctx, big.NewInt(99)).Return(parentBlock, nil).Once()
+		mockDB.On("GetBlock", ctx, uint64(99)).Return(&types.Block{Hash: "0xdb_parent_hash_00000000000000000000000000000000000000000000000000"}, nil).Once()
+		chainHash99 := "0x1111111111111111111111111111111111111111111111111111111111111111"
+		mockRPC.On("RawBlockHash", ctx, uint64(99)).Return(chainHash99, nil).Once()
 
 		reorgAt, err := idx.detectReorg(ctx, blockNum)
 		assert.NoError(t, err)
@@ -341,16 +325,20 @@ func TestIndexer_ProcessBlock(t *testing.T) {
 		idx := New(mockDB, mockRPC, time.Second, 0)
 
 		blockNum := uint64(200)
+		blockNumber := hexutil.Big(*big.NewInt(int64(blockNum)))
 
-		header := &ethtypes.Header{
-			Number:     big.NewInt(int64(blockNum)),
-			Time:       uint64(time.Now().Unix()),
+		rawBlock := &rpc.RawBlock{
+			Number:     &blockNumber,
+			Hash:       common.HexToHash("0xaaa"),
 			ParentHash: common.HexToHash("0x123"),
+			Timestamp:  hexutil.Uint64(time.Now().Unix()),
+			GasUsed:    hexutil.Uint64(0),
+			GasLimit:   hexutil.Uint64(8000000),
+			Miner:      common.HexToAddress("0x0"),
+			Transactions: []rpc.RawTransaction{},
 		}
-		ethBlock := ethtypes.NewBlock(header, &ethtypes.Body{}, nil, trie.NewStackTrie(nil))
 
-		mockRPC.On("BlockByNumber", ctx, big.NewInt(int64(blockNum))).Return(ethBlock, nil).Once()
-		mockRPC.On("GetTotalDifficulty", ctx, blockNum).Return("1000").Once()
+		mockRPC.On("RawBlockByNumber", ctx, blockNum).Return(rawBlock, nil).Once()
 
 		mockDB.On("InsertBlock", ctx, mock.MatchedBy(func(b *types.Block) bool {
 			return b.Number == blockNum
@@ -369,22 +357,39 @@ func TestIndexer_ProcessBlock(t *testing.T) {
 		idx := New(mockDB, mockRPC, time.Second, 0)
 
 		blockNum := uint64(201)
+		blockNumber := hexutil.Big(*big.NewInt(int64(blockNum)))
 		toAddr := common.HexToAddress("0x222")
-		privKey, _ := crypto.GenerateKey()
-		tx := ethtypes.NewTransaction(0, toAddr, big.NewInt(0), 21000, big.NewInt(1), nil)
-		signedTx, _ := ethtypes.SignTx(tx, ethtypes.NewEIP155Signer(big.NewInt(1)), privKey)
+		txHash := common.HexToHash("0xdeadbeef")
 
-		header := &ethtypes.Header{
-			Number: big.NewInt(int64(blockNum)),
-			Time:   uint64(time.Now().Unix()),
+		rawBlock := &rpc.RawBlock{
+			Number:     &blockNumber,
+			Hash:       common.HexToHash("0xbbb"),
+			ParentHash: common.HexToHash("0x000"),
+			Timestamp:  hexutil.Uint64(time.Now().Unix()),
+			GasUsed:    hexutil.Uint64(21000),
+			GasLimit:   hexutil.Uint64(8000000),
+			Miner:      common.HexToAddress("0x0"),
+			Transactions: []rpc.RawTransaction{
+				{
+					Hash:             txHash,
+					BlockHash:        common.HexToHash("0xbbb"),
+					BlockNumber:      &blockNumber,
+					TransactionIndex: hexutil.Uint64(0),
+					From:             common.HexToAddress("0x111"),
+					To:               &toAddr,
+					Value:            func() *hexutil.Big { v := hexutil.Big(*big.NewInt(0)); return &v }(),
+					Gas:              hexutil.Uint64(21000),
+					GasPrice:         func() *hexutil.Big { v := hexutil.Big(*big.NewInt(1)); return &v }(),
+					Input:            hexutil.Bytes{},
+					Nonce:            func() *hexutil.Uint64 { v := hexutil.Uint64(0); return &v }(),
+					Type:             hexutil.Uint64(0),
+				},
+			},
 		}
-		ethBlock := ethtypes.NewBlock(header, &ethtypes.Body{Transactions: []*ethtypes.Transaction{signedTx}}, nil, trie.NewStackTrie(nil))
 
-		mockRPC.On("BlockByNumber", ctx, big.NewInt(int64(blockNum))).Return(ethBlock, nil).Once()
-		mockRPC.On("GetTotalDifficulty", ctx, blockNum).Return("1001").Once()
-		mockRPC.On("ChainID", ctx).Return(big.NewInt(1), nil).Once()
-		mockRPC.On("FetchReceiptsBatch", ctx, []common.Hash{signedTx.Hash()}, mock.Anything, mock.Anything).Return(map[common.Hash]*ethtypes.Receipt{
-			signedTx.Hash(): {Status: 1, TxHash: signedTx.Hash()},
+		mockRPC.On("RawBlockByNumber", ctx, blockNum).Return(rawBlock, nil).Once()
+		mockRPC.On("FetchReceiptsBatch", ctx, []common.Hash{txHash}, mock.Anything, mock.Anything).Return(map[common.Hash]*rpclient.Receipt{
+			txHash: {Status: 1, TxHash: txHash},
 		}, nil).Once()
 
 		mockDB.On("InsertBlockDataBatch", ctx, mock.MatchedBy(func(b *db.BlockData) bool {

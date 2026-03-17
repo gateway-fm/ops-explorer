@@ -4,15 +4,12 @@ import (
 	"encoding/binary"
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/rlp"
+	"explorer/pkg/eth/common"
+	"explorer/pkg/eth/crypto"
+	"explorer/pkg/eth/rlp"
 )
 
-// depositTxType is the EIP-2718 type byte for OP Stack deposit transactions.
 const depositTxType = 0x7E
-
-// sourceHash = keccak256(bytes32(0) || keccak256(l1BlockHash || bytes32(logIndex)))
 func ComputeSourceHash(l1BlockHash common.Hash, logIndex uint64) common.Hash {
 	var logIndexBytes [32]byte
 	binary.BigEndian.PutUint64(logIndexBytes[24:], logIndex)
@@ -22,7 +19,6 @@ func ComputeSourceHash(l1BlockHash common.Hash, logIndex uint64) common.Hash {
 	copy(innerInput[32:], logIndexBytes[:])
 	innerHash := crypto.Keccak256Hash(innerInput)
 
-	// Domain 0 = user deposit
 	var domain [32]byte
 	outerInput := make([]byte, 64)
 	copy(outerInput[:32], domain[:])
@@ -34,7 +30,7 @@ func ComputeSourceHash(l1BlockHash common.Hash, logIndex uint64) common.Hash {
 type depositTxFields struct {
 	SourceHash  common.Hash
 	From        common.Address
-	To          *common.Address // nil for contract creation
+	To          *common.Address
 	Mint        *big.Int
 	Value       *big.Int
 	Gas         uint64
@@ -42,7 +38,6 @@ type depositTxFields struct {
 	Data        []byte
 }
 
-// L2 tx hash = keccak256(0x7E || RLP([sourceHash, from, to, mint, value, gas, isSystemTx, data]))
 func ComputeL2DepositTxHash(sourceHash common.Hash, from common.Address, to *common.Address, mint, value *big.Int, gas uint64, isSystemTx bool, data []byte) (common.Hash, error) {
 	if mint == nil {
 		mint = big.NewInt(0)
@@ -74,13 +69,6 @@ func ComputeL2DepositTxHash(sourceHash common.Hash, from common.Address, to *com
 	return crypto.Keccak256Hash(txBytes), nil
 }
 
-// opaqueData layout:
-//
-//	[0:32]   - msg.value (uint256)
-//	[32:64]  - value (uint256)
-//	[64:72]  - gasLimit (uint64)
-//	[72:73]  - isCreation (bool, 0 or 1)
-//	[73:]    - data (remaining bytes)
 func ParseOpaqueData(opaqueData []byte) (msgValue, value *big.Int, gasLimit uint64, isCreation bool, data []byte, err error) {
 	if len(opaqueData) < 73 {
 		return nil, nil, 0, false, nil, nil

@@ -9,7 +9,7 @@ import (
 
 	"explorer/internal/privacy"
 	"explorer/internal/types"
-	"github.com/ethereum/go-ethereum/common"
+	"explorer/pkg/eth/common"
 	"github.com/go-chi/chi/v5"
 )
 
