@@ -45,7 +45,9 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     image: gatewayfm/block-explorer-frontend:${BLOCK_EXPLORER_VERSION:-latest}
-    volumes: !reset []   # No source mount in production
-    ports: !reset []     # Not exposed directly — sit behind a reverse proxy
+    working_dir: !reset ""  # Clear dev working_dir so nginx uses its own root
+    command: !reset []       # Clear dev command so Dockerfile CMD (nginx) runs
+    volumes: !reset []       # No source mount in production
+    ports: !reset []         # Not exposed directly — sit behind a reverse proxy
     environment:
       VITE_API_URL: /api

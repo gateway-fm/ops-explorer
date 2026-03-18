@@ -89,7 +89,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 Backend test coverage is ~6.7% (tracked in `requirements.md`). Core indexing and API logic relies on integration-level validation rather than unit tests. Recent security patches (SSRF, integer overflows) have been applied.
 
 ### Health Checks
-Neither the API nor the indexer exposes a dedicated health endpoint. For Kubernetes readiness probes, use a basic HTTP check against `/api/v1/blocks`.
+The API exposes `/health`, `/health/live`, and `/health/ready`. Use `/health/ready` for Kubernetes readiness probes and `/health/live` for liveness.
 
 ### Database Migrations
 Migrations run automatically on startup. If the database is unavailable at first boot the service will exit and restart — standard Kubernetes behaviour. No separate migration job is needed, but the database must be reachable before traffic is sent.
