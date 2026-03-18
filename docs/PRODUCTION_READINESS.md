@@ -52,20 +52,34 @@ In privacy mode the indexer's `RPC_URL` should point at the Privacy Proxy RPC en
 
 ## Deployment Steps
 
+### Standalone
+
 ```bash
-# 1. Set required environment variables
 export DATABASE_URL="postgres://user:pass@host:5432/explorer?sslmode=require"
 export RPC_URL="https://rpc.yourdomain.com"
+
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+
+# Verify (exec into container — API port is not exposed to host in prod)
+docker compose exec api wget -qO- http://localhost:8080/api/v1/blocks?limit=1
+```
+
+### Privacy Mode
+
+```bash
+export DATABASE_URL="postgres://user:pass@host:5432/explorer?sslmode=require"
+export RPC_URL="http://privacy-proxy-backend:8080"
 export PRIVACY_PROXY_URL="http://privacy-proxy-backend:8080"
 export PRIVACY_PROXY_PUBLIC_URL="https://proxy.yourdomain.com"
 export SSO_REDIRECT_URI="https://explorer.yourdomain.com/api/auth/callback"
 
-# 2. Start services
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# The external privacy-proxy network must exist before starting
+docker network create privacy-proxy_proxy-network 2>/dev/null || true
 
-# 3. Verify
-curl http://localhost:8080/api/v1/blocks?limit=1
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
+
+> **Note:** Docker Compose v2.x is required — the prod overlay uses the `!reset` tag to clear port and volume mappings, which is not supported by legacy `docker-compose` v1.
 
 ---
 
