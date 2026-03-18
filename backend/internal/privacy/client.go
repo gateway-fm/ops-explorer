@@ -89,8 +89,9 @@ type BatchCheckAddressesResponse struct {
 }
 
 type ViewerIdentity struct {
-	Wallet string // Wallet address (optional if DID is provided)
-	DID    string // DID from SSO (optional, takes precedence over wallet)
+	Wallet   string // Wallet address (used for DB-verified DID lookup)
+	DID      string // DID extracted locally (for display only, NOT sent to proxy)
+	JWTToken string // Raw JWT token forwarded to privacy-proxy for authenticated requests
 }
 
 func (c *Client) GetViewableAddresses(ctx context.Context, wallet string) (*ViewableAddressesResponse, error) {
@@ -107,14 +108,14 @@ func (c *Client) GetViewableAddressesWithIdentity(ctx context.Context, viewer Vi
 	if viewer.Wallet != "" {
 		q.Set("wallet", viewer.Wallet)
 	}
-	if viewer.DID != "" {
-		q.Set("did", viewer.DID)
-	}
 	u.RawQuery = q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	if viewer.JWTToken != "" {
+		req.Header.Set("Authorization", "Bearer "+viewer.JWTToken)
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -151,14 +152,14 @@ func (c *Client) CheckAddressWithIdentity(ctx context.Context, viewer ViewerIden
 	if viewer.Wallet != "" {
 		q.Set("wallet", viewer.Wallet)
 	}
-	if viewer.DID != "" {
-		q.Set("did", viewer.DID)
-	}
 	u.RawQuery = q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	if viewer.JWTToken != "" {
+		req.Header.Set("Authorization", "Bearer "+viewer.JWTToken)
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -197,9 +198,6 @@ func (c *Client) CheckAddressesWithIdentity(ctx context.Context, viewer ViewerId
 	u.RawQuery = q.Encode()
 
 	reqBody := map[string]interface{}{"addresses": addresses}
-	if viewer.DID != "" {
-		reqBody["did"] = viewer.DID
-	}
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request body: %w", err)
@@ -210,6 +208,9 @@ func (c *Client) CheckAddressesWithIdentity(ctx context.Context, viewer ViewerId
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if viewer.JWTToken != "" {
+		req.Header.Set("Authorization", "Bearer "+viewer.JWTToken)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
