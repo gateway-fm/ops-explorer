@@ -15,7 +15,8 @@ import (
 
 func (s *Server) getViewerIdentity(r *http.Request) privacy.ViewerIdentity {
 	return privacy.ViewerIdentity{
-		DID: s.GetAuthDID(r),
+		DID:      s.GetAuthDID(r),
+		JWTToken: s.GetAuthToken(r),
 	}
 }
 

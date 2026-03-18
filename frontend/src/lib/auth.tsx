@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
 
 interface AuthState {
@@ -25,6 +26,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     expiresAt: null,
   });
 
+  const queryClient = useQueryClient();
+
   const checkStatus = useCallback(async () => {
     try {
       const status = await api.auth.status();
@@ -48,9 +51,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await api.auth.logout();
     } finally {
+      queryClient.clear();
       setAuth({ authenticated: false, did: null, expiresAt: null });
     }
-  }, []);
+  }, [queryClient]);
 
   return (
     <AuthContext.Provider
