@@ -143,7 +143,12 @@ func (s *Server) checkAddressVisibility(r *http.Request, address string) *privac
 
 	viewer := s.getViewerIdentity(r)
 	if viewer.DID == "" {
-		return nil
+		return &privacy.AddressVisibility{
+			Address: strings.ToLower(address),
+			Visible: false,
+			Level:   privacy.VisibilityHidden,
+			Reason:  privacy.ReasonNoAccess,
+		}
 	}
 
 	vis, err := s.privacyClient.CheckAddressWithIdentity(r.Context(), viewer, address)

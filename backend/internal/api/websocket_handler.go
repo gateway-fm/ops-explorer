@@ -31,6 +31,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := ws.NewClient(s.wsHub, conn, s.wsConfig)
+	client.Authenticated = s.isPrivacyAuthenticated(r)
 
 	s.wsHub.Register(client)
 

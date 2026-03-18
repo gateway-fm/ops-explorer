@@ -198,14 +198,14 @@ function TxTableRow({ tx, visibilities }: { tx: Transaction; visibilities: Recor
       </td>
       <td className="text-sm">
         <span className="inline-flex items-center gap-1">
-          <AddressLink address={tx.from} chars={6} />
+          <AddressLink address={tx.from} chars={6} visibility={fromVis} />
           <AddressLabel reason={fromVis?.reason} />
         </span>
       </td>
       <td className="text-sm">
         {tx.to ? (
           <span className="inline-flex items-center gap-1">
-            <AddressLink address={tx.to} chars={6} />
+            <AddressLink address={tx.to} chars={6} visibility={toVis} />
             <AddressLabel reason={toVis?.reason} />
           </span>
         ) : (
