@@ -1,0 +1,45 @@
+# Production overrides — use with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# What this changes vs the base file:
+#   - Frontend runs the compiled nginx image instead of the Vite dev server
+#   - PostgreSQL port is not exposed to the host
+#   - DATABASE_URL must be provided via environment (no hardcoded credentials)
+#   - SSO redirect URI and public URLs must be set for the real domain
+#
+# Required environment variables (no defaults — services will fail to start without these):
+#   DATABASE_URL              postgres://user:pass@host:5432/explorer?sslmode=require
+#   RPC_URL                   http(s)://your-rpc-endpoint
+#   PRIVACY_PROXY_URL         http://privacy-proxy-backend:8080  (internal, if co-deployed with privacy proxy)
+#   PRIVACY_PROXY_PUBLIC_URL  https://proxy.yourdomain.com       (browser-facing URL for OAuth)
+#   SSO_REDIRECT_URI          https://explorer.yourdomain.com/api/auth/callback
+
+services:
+  postgres:
+    ports: !reset []   # Internal only — not exposed to host in production
+
+  api:
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      RPC_URL: ${RPC_URL}
+      PRIVACY_PROXY_URL: ${PRIVACY_PROXY_URL}
+      PRIVACY_PROXY_PUBLIC_URL: ${PRIVACY_PROXY_PUBLIC_URL}
+      SSO_REDIRECT_URI: ${SSO_REDIRECT_URI}
+    ports: !reset []   # Not exposed directly — sit behind a reverse proxy
+
+  indexer:
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      RPC_URL: ${RPC_URL}
+
+  # Replace dev server with compiled nginx image
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: gatewayfm/block-explorer-frontend:${BLOCK_EXPLORER_VERSION:-latest}
+    volumes: !reset []   # No source mount in production
+    command: []          # Dockerfile CMD (nginx) takes over
+    ports: !reset []     # Not exposed directly — sit behind a reverse proxy
+    environment:
+      VITE_API_URL: /api
