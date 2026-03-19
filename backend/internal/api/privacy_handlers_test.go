@@ -169,6 +169,7 @@ func setupPrivacyTestServerWithMock(privacyClient *privacy.Client) *chi.Mux {
 		r.Get("/check-address/{address}", s.handleCheckAddressVisibility)
 		r.Post("/check-addresses", s.handleBatchCheckAddresses)
 		r.Get("/grant/{grantId}/{addressId}", s.handleGetGrantedAddress)
+		r.Get("/grant/{grantId}/{addressId}/transactions", s.handleGetGrantedAddressTransactions)
 	})
 
 	return r
@@ -289,6 +290,96 @@ func TestCheckAddressVisibility_NoIdentity(t *testing.T) {
 	result := s.checkAddressVisibility(req, "0x2222222222222222222222222222222222222222")
 	if result != nil {
 		t.Error("expected nil without identity")
+	}
+}
+
+// ============================================================================
+// Test: handleGetGrantedAddressTransactions opaque error handling
+// ============================================================================
+
+func TestHandleGetGrantedAddressTransactions_NotFound(t *testing.T) {
+	client := mockPrivacyServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	router := setupPrivacyTestServerWithMock(client)
+
+	req := httptest.NewRequest("GET", "/api/privacy/grant/missing-grant/addr-456/transactions", nil)
+	req.AddCookie(mockAuthCookie())
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected status %d, got %d", http.StatusNotFound, w.Code)
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("grant or address not found")) {
+		t.Errorf("expected not found message, got %s", w.Body.String())
+	}
+}
+
+func TestHandleGetGrantedAddressTransactions_ExpiredGrant(t *testing.T) {
+	client := mockPrivacyServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(`{"error": "grant has expired"}`))
+	})
+	router := setupPrivacyTestServerWithMock(client)
+
+	req := httptest.NewRequest("GET", "/api/privacy/grant/expired-grant/addr-456/transactions", nil)
+	req.AddCookie(mockAuthCookie())
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected status %d (opaque denial), got %d", http.StatusNotFound, w.Code)
+	}
+}
+
+func TestHandleGetGrantedAddressTransactions_RevokedGrant(t *testing.T) {
+	client := mockPrivacyServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(`{"error": "grant has been revoked"}`))
+	})
+	router := setupPrivacyTestServerWithMock(client)
+
+	req := httptest.NewRequest("GET", "/api/privacy/grant/revoked-grant/addr-456/transactions", nil)
+	req.AddCookie(mockAuthCookie())
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected status %d (opaque denial), got %d", http.StatusNotFound, w.Code)
+	}
+}
+
+func TestHandleGetGrantedAddressTransactions_NoAuth(t *testing.T) {
+	router := setupPrivacyTestServerWithMock(nil)
+
+	req := httptest.NewRequest("GET", "/api/privacy/grant/grant-123/addr-456/transactions", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected status %d, got %d", http.StatusUnauthorized, w.Code)
+	}
+}
+
+func TestHandleGetGrantedAddressTransactions_NoErrorLeakage(t *testing.T) {
+	client := mockPrivacyServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(`secret internal reason that should not leak`))
+	})
+	router := setupPrivacyTestServerWithMock(client)
+
+	req := httptest.NewRequest("GET", "/api/privacy/grant/bad-grant/addr-456/transactions", nil)
+	req.AddCookie(mockAuthCookie())
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	if bytes.Contains([]byte(body), []byte("secret")) {
+		t.Errorf("internal error details leaked to client: %s", body)
+	}
+	if bytes.Contains([]byte(body), []byte("internal reason")) {
+		t.Errorf("internal error details leaked to client: %s", body)
 	}
 }
 
