@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+var ErrNotFound = fmt.Errorf("not found")
+
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
@@ -446,16 +448,11 @@ func (c *Client) ResolveAddressID(ctx context.Context, grantID, addressID string
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("grant or address not found")
-	}
-	if resp.StatusCode == http.StatusForbidden {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("access denied: %s", string(body))
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
+		return nil, ErrNotFound
 	}
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("privacy proxy request failed with status %d", resp.StatusCode)
 	}
 
 	var result ResolveAddressResponse
