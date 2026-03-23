@@ -41,7 +41,7 @@ func (s *Server) handleGetViewableAddresses(w http.ResponseWriter, r *http.Reque
 
 	result, err := s.privacyClient.GetViewableAddressesWithIdentity(r.Context(), viewer)
 	if err != nil {
-		slog.Warn("failed to get viewable addresses", "error", err)
+		slog.Warn("failed to get viewable addresses")
 		http.Error(w, "failed to get viewable addresses", http.StatusInternalServerError)
 		return
 	}
@@ -75,7 +75,7 @@ func (s *Server) handleCheckAddressVisibility(w http.ResponseWriter, r *http.Req
 
 	result, err := s.privacyClient.CheckAddressWithIdentity(r.Context(), viewer, address)
 	if err != nil {
-		slog.Warn("failed to check address visibility", "address", address, "error", err)
+		slog.Warn("failed to check address visibility", "address", address)
 		http.Error(w, "failed to check address visibility", http.StatusInternalServerError)
 		return
 	}
