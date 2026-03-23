@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { TokenHolder, TokenTransfer } from '../lib/api';
 import { AddressLink } from '../components/AddressLink';
+import { AddressLabel } from '../components/AddressLabel';
 import { PageHeader } from '../components/PageHeader';
+import { useBatchAddressVisibility } from '../hooks/useAddressVisibility';
 
 function formatTokenValue(value: string | number, decimals: number): string {
   const strValue = String(value);
@@ -58,6 +60,25 @@ export default function TokenDetail() {
     setActiveTab(tab);
     setSearchParams({ page: '1' });
   };
+
+  // Collect unique addresses from holders and transfers for batch visibility check
+  const uniqueAddresses = useMemo(() => {
+    const set = new Set<string>();
+    if (holders?.data) {
+      for (const h of holders.data) {
+        if (h.address && h.address !== '[PRIVATE]') set.add(h.address.toLowerCase());
+      }
+    }
+    if (transfers?.data) {
+      for (const t of transfers.data) {
+        if (t.from && t.from !== '[PRIVATE]') set.add(t.from.toLowerCase());
+        if (t.to && t.to !== '[PRIVATE]') set.add(t.to.toLowerCase());
+      }
+    }
+    return Array.from(set);
+  }, [holders, transfers]);
+
+  const { visibilities } = useBatchAddressVisibility(uniqueAddresses);
 
   if (tokenLoading) {
     return (
@@ -189,14 +210,17 @@ export default function TokenDetail() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(holders?.data || []).map((holder: TokenHolder, index: number) => (
+                  {(holders?.data || []).map((holder: TokenHolder, index: number) => {
+                    const holderVis = visibilities[holder.address?.toLowerCase()];
+                    return (
                     <tr key={holder.address}>
                       <td className="text-neutral-400">
                         {(page - 1) * 25 + index + 1}
                       </td>
                       <td>
                         <div className="flex items-center gap-2">
-                          <AddressLink address={holder.address} />
+                          <AddressLink address={holder.address} visibility={holderVis} />
+                          <AddressLabel reason={holderVis?.reason} />
                           {holder.isContract && (
                             <span className="badge badge-neutral text-xs">
                               Contract
@@ -211,7 +235,8 @@ export default function TokenDetail() {
                         {holder.percentage.toFixed(2)}%
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -229,7 +254,10 @@ export default function TokenDetail() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(transfers?.data || []).map((transfer: TokenTransfer) => (
+                  {(transfers?.data || []).map((transfer: TokenTransfer) => {
+                    const fromVis = visibilities[transfer.from?.toLowerCase()];
+                    const toVis = visibilities[transfer.to?.toLowerCase()];
+                    return (
                     <tr key={`${transfer.txHash}-${transfer.logIndex}`}>
                       <td>
                         <a
@@ -240,10 +268,16 @@ export default function TokenDetail() {
                         </a>
                       </td>
                       <td>
-                        <AddressLink address={transfer.from} />
+                        <span className="inline-flex items-center gap-1">
+                          <AddressLink address={transfer.from} visibility={fromVis} />
+                          <AddressLabel reason={fromVis?.reason} />
+                        </span>
                       </td>
                       <td>
-                        <AddressLink address={transfer.to} />
+                        <span className="inline-flex items-center gap-1">
+                          <AddressLink address={transfer.to} visibility={toVis} />
+                          <AddressLabel reason={toVis?.reason} />
+                        </span>
                       </td>
                       <td className="text-neutral-700 font-mono">
                         {formatTokenValue(transfer.value, token.decimals)}
@@ -257,7 +291,8 @@ export default function TokenDetail() {
                         </a>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
