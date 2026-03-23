@@ -243,6 +243,13 @@ func TestHandleGetGrantedAddress_ExpiredGrant(t *testing.T) {
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected status %d, got %d", http.StatusNotFound, w.Code)
 	}
+	body := w.Body.String()
+	if !bytes.Contains(w.Body.Bytes(), []byte("grant or address not found")) {
+		t.Errorf("expected opaque not found message, got %s", body)
+	}
+	if bytes.Contains(w.Body.Bytes(), []byte("expired")) {
+		t.Errorf("response must not leak expiry details, got %s", body)
+	}
 }
 
 func TestHandleGetGrantedAddress_RevokedGrant(t *testing.T) {
@@ -259,6 +266,13 @@ func TestHandleGetGrantedAddress_RevokedGrant(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected status %d, got %d", http.StatusNotFound, w.Code)
+	}
+	body := w.Body.String()
+	if !bytes.Contains(w.Body.Bytes(), []byte("grant or address not found")) {
+		t.Errorf("expected opaque not found message, got %s", body)
+	}
+	if bytes.Contains(w.Body.Bytes(), []byte("revoked")) {
+		t.Errorf("response must not leak revocation details, got %s", body)
 	}
 }
 
@@ -331,6 +345,9 @@ func TestHandleGetGrantedAddressTransactions_ExpiredGrant(t *testing.T) {
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected status %d (opaque denial), got %d", http.StatusNotFound, w.Code)
 	}
+	if bytes.Contains(w.Body.Bytes(), []byte("expired")) {
+		t.Errorf("response must not leak expiry details, got %s", w.Body.String())
+	}
 }
 
 func TestHandleGetGrantedAddressTransactions_RevokedGrant(t *testing.T) {
@@ -347,6 +364,9 @@ func TestHandleGetGrantedAddressTransactions_RevokedGrant(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected status %d (opaque denial), got %d", http.StatusNotFound, w.Code)
+	}
+	if bytes.Contains(w.Body.Bytes(), []byte("revoked")) {
+		t.Errorf("response must not leak revocation details, got %s", w.Body.String())
 	}
 }
 

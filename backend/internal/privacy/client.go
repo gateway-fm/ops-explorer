@@ -449,9 +449,11 @@ func (c *Client) ResolveAddressID(ctx context.Context, grantID, addressID string
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, ErrNotFound
 	}
 	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, fmt.Errorf("privacy proxy request failed with status %d", resp.StatusCode)
 	}
 
