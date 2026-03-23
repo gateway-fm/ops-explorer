@@ -11,14 +11,13 @@ import (
 )
 
 type Client struct {
-	hub           *Hub
-	conn          *websocket.Conn
-	send          chan []byte
-	topics        map[string]bool
-	config        *Config
-	mu            sync.Mutex
-	closed        bool
-	Authenticated bool
+	hub    *Hub
+	conn   *websocket.Conn
+	send   chan []byte
+	topics map[string]bool
+	config *Config
+	mu     sync.Mutex
+	closed bool
 }
 
 type ClientMessage struct {
@@ -116,17 +115,12 @@ func (c *Client) handleMessage(message []byte) {
 	switch msg.Action {
 	case "subscribe":
 		for _, topic := range msg.Topics {
-			if !isValidTopic(topic) {
+			if isValidTopic(topic) {
+				c.hub.Subscribe(c, topic)
+				c.sendSuccess("subscribed", topic)
+			} else {
 				c.sendError("invalid topic: " + topic)
-				continue
 			}
-			// Block unauthenticated clients from subscribing to sensitive topics
-			if !c.Authenticated && c.hub.privacyEnabled && isPrivacyGatedTopic(topic) {
-				c.sendError("authentication required for topic: " + topic)
-				continue
-			}
-			c.hub.Subscribe(c, topic)
-			c.sendSuccess("subscribed", topic)
 		}
 
 	case "unsubscribe":
@@ -197,13 +191,3 @@ func (c *Client) Topics() []string {
 	return topics
 }
 
-// isPrivacyGatedTopic returns true for topics that require authentication when privacy is enabled.
-func isPrivacyGatedTopic(topic string) bool {
-	if topic == "transactions" {
-		return true
-	}
-	if len(topic) > 8 && topic[:8] == "address:" {
-		return true
-	}
-	return false
-}

@@ -71,15 +71,6 @@ func (s *Server) handleGetBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.isPrivacyAuthenticated(r) {
-		stripped := make([]types.Block, len(blocks))
-		for i := range blocks {
-			stripped[i] = stripBlockForPrivacy(&blocks[i])
-		}
-		writeJSON(w, paginate(stripped, limit))
-		return
-	}
-
 	writeJSON(w, paginate(blocks, limit))
 }
 
@@ -91,12 +82,6 @@ func (s *Server) handleGetLatestBlock(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(blocks) == 0 {
 		http.Error(w, "no blocks found", http.StatusNotFound)
-		return
-	}
-
-	if !s.isPrivacyAuthenticated(r) {
-		stripped := stripBlockForPrivacy(&blocks[0])
-		writeJSON(w, stripped)
 		return
 	}
 
@@ -131,22 +116,11 @@ func (s *Server) handleGetBlock(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if !s.isPrivacyAuthenticated(r) {
-		stripped := stripBlockForPrivacy(block)
-		writeJSON(w, map[string]any{
-			"block":        stripped,
-			"transactions": []types.Transaction{},
-		})
-		return
-	}
-
 	txs, err := s.provider.GetTransactionsByBlock(ctx, number)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	txs = s.filterTransactionsForPrivacy(r, txs)
 
 	writeJSON(w, map[string]any{
 		"block":        block,
@@ -191,8 +165,6 @@ func (s *Server) handleGetTransactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	txs = s.filterTransactionsForPrivacy(r, txs)
-
 	writeJSON(w, paginate(txs, limit))
 }
 
@@ -223,8 +195,6 @@ func (s *Server) handleGetTransactionsPaginated(w http.ResponseWriter, r *http.R
 	if txs == nil {
 		txs = []types.Transaction{}
 	}
-
-	txs = s.filterTransactionsForPrivacy(r, txs)
 
 	totalPages := int(total) / pageSize
 	if int(total)%pageSize > 0 {
@@ -271,13 +241,6 @@ func (s *Server) handleGetTransaction(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "transaction not found after indexing", http.StatusInternalServerError)
 			return
 		}
-	}
-
-	// Check if both parties are private — if so, deny access
-	filtered := s.filterTransactionsForPrivacy(r, []types.Transaction{*tx})
-	if len(filtered) == 0 {
-		http.Error(w, "transaction involves private addresses", http.StatusForbidden)
-		return
 	}
 
 	if tx.TxType == types.TxTypeDeposit {

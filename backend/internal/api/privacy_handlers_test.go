@@ -287,17 +287,8 @@ func TestCheckAddressVisibility_NoIdentity(t *testing.T) {
 	req := httptest.NewRequest("GET", "/test", nil)
 
 	result := s.checkAddressVisibility(req, "0x2222222222222222222222222222222222222222")
-	if result == nil {
-		t.Fatal("expected non-nil result for unauthenticated user")
-	}
-	if result.Visible {
-		t.Error("expected hidden visibility for unauthenticated user")
-	}
-	if result.Level != privacy.VisibilityHidden {
-		t.Errorf("expected level %q, got %q", privacy.VisibilityHidden, result.Level)
-	}
-	if result.Reason != privacy.ReasonNoAccess {
-		t.Errorf("expected reason %q, got %q", privacy.ReasonNoAccess, result.Reason)
+	if result != nil {
+		t.Error("expected nil without identity")
 	}
 }
 

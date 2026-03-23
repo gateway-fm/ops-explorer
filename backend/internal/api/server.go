@@ -66,9 +66,6 @@ func New(database APIDatabase, rpcClient *rpc.Client, idx *indexer.Indexer, pric
 	if eventBus != nil {
 		s.wsConfig = ws.DefaultConfig()
 		s.wsHub = ws.NewHub(eventBus, s.wsConfig.MaxConnections)
-		if privacyClient != nil && privacyClient.IsEnabled() {
-			s.wsHub.SetPrivacyEnabled(true)
-		}
 	}
 
 	if cfg != nil && cfg.SolcPath != "" {
@@ -159,71 +156,62 @@ func (s *Server) setupRoutes() {
 }
 
 func (s *Server) setupAPIRoutes(r chi.Router) {
-	// Public routes — no auth required
 	r.Get("/stats", s.handleGetStats)
 	r.Get("/stats/tx-history", s.handleGetTransactionHistory)
 	r.Get("/price", s.handleGetPrice)
 	r.Get("/gas", s.handleGetGasPrices)
 	r.Get("/sync", s.handleGetSyncStatus)
+	r.Get("/search", s.handleSearch)
+	r.Get("/search/suggestions", s.handleSearchSuggestions)
 
-	// Block list/detail — publicly accessible but stripped for unauthenticated users
 	r.Route("/blocks", func(r chi.Router) {
 		r.Get("/", s.handleGetBlocks)
 		r.Get("/latest", s.handleGetLatestBlock)
 		r.Get("/{number}", s.handleGetBlock)
-		// Block internal txs — fully gated
-		r.With(s.privacyAuthGateMiddleware).Get("/{number}/internal", s.handleGetBlockInternalTxs)
+		r.Get("/{number}/internal", s.handleGetBlockInternalTxs)
 	})
 
-	// Gated routes — 403 for unauthenticated when privacy is enabled
-	r.Group(func(r chi.Router) {
-		r.Use(s.privacyAuthGateMiddleware)
+	r.Route("/transactions", func(r chi.Router) {
+		r.Get("/", s.handleGetTransactions)
+		r.Get("/{hash}", s.handleGetTransaction)
+		r.Get("/{hash}/transfers", s.handleGetTransactionTransfers)
+		r.Get("/{hash}/logs", s.handleGetTransactionLogs)
+		r.Get("/{hash}/internal", s.handleGetTransactionInternalTxs)
+	})
 
-		r.Get("/search", s.handleSearch)
-		r.Get("/search/suggestions", s.handleSearchSuggestions)
+	r.Route("/addresses/{address}", func(r chi.Router) {
+		r.Use(s.addressPrivacyMiddleware)
+		r.Get("/", s.handleGetAddress)
+		r.Get("/transactions", s.handleGetAddressTransactions)
+		r.Get("/transfers", s.handleGetAddressTransfers)
+		r.Get("/contract", s.handleGetContract)
+		r.Post("/abi", s.handleUpdateContractABI)
+		r.Get("/internal", s.handleGetAddressInternalTxs)
+		r.Get("/logs", s.handleGetAddressLogs)
+		r.Get("/balances", s.handleGetAddressTokenBalances)
+		r.Get("/sourcify", s.handleFetchSourcify)
+		r.Get("/sourcify/check", s.handleCheckSourcify)
+	})
 
-		r.Route("/transactions", func(r chi.Router) {
-			r.Get("/", s.handleGetTransactions)
-			r.Get("/{hash}", s.handleGetTransaction)
-			r.Get("/{hash}/transfers", s.handleGetTransactionTransfers)
-			r.Get("/{hash}/logs", s.handleGetTransactionLogs)
-			r.Get("/{hash}/internal", s.handleGetTransactionInternalTxs)
-		})
+	r.Route("/verify", func(r chi.Router) {
+		r.Post("/", s.handleVerifyContract)
+		r.Post("/standard-json", s.handleVerifyStandardJSON)
+		r.Get("/compilers", s.handleListCompilers)
+	})
 
-		r.Route("/addresses/{address}", func(r chi.Router) {
+	r.Route("/tokens", func(r chi.Router) {
+		r.Get("/", s.handleGetTokens)
+		r.Route("/{address}", func(r chi.Router) {
 			r.Use(s.addressPrivacyMiddleware)
-			r.Get("/", s.handleGetAddress)
-			r.Get("/transactions", s.handleGetAddressTransactions)
-			r.Get("/transfers", s.handleGetAddressTransfers)
-			r.Get("/contract", s.handleGetContract)
-			r.Post("/abi", s.handleUpdateContractABI)
-			r.Get("/internal", s.handleGetAddressInternalTxs)
-			r.Get("/logs", s.handleGetAddressLogs)
-			r.Get("/balances", s.handleGetAddressTokenBalances)
-			r.Get("/sourcify", s.handleFetchSourcify)
-			r.Get("/sourcify/check", s.handleCheckSourcify)
+			r.Get("/", s.handleGetToken)
+			r.Get("/holders", s.handleGetTokenHolders)
+			r.Get("/transfers", s.handleGetTokenTransfers)
 		})
-
-		r.Route("/verify", func(r chi.Router) {
-			r.Post("/", s.handleVerifyContract)
-			r.Post("/standard-json", s.handleVerifyStandardJSON)
-			r.Get("/compilers", s.handleListCompilers)
-		})
-
-		r.Route("/tokens", func(r chi.Router) {
-			r.Get("/", s.handleGetTokens)
-			r.Route("/{address}", func(r chi.Router) {
-				r.Use(s.addressPrivacyMiddleware)
-				r.Get("/", s.handleGetToken)
-				r.Get("/holders", s.handleGetTokenHolders)
-				r.Get("/transfers", s.handleGetTokenTransfers)
-			})
-		})
-
-		r.Get("/token-transfers", s.handleGetAllTransfers)
-		r.Get("/logs", s.handleGetLogs)
-		r.Get("/accounts", s.handleGetAccounts)
 	})
+
+	r.Get("/token-transfers", s.handleGetAllTransfers)
+	r.Get("/logs", s.handleGetLogs)
+	r.Get("/accounts", s.handleGetAccounts)
 }
 
 func (s *Server) setupAPIV2Routes(r chi.Router) {

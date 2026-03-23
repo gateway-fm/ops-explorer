@@ -18,7 +18,6 @@ type Hub struct {
 	broadcast      chan *BroadcastMessage
 	eventBus       *events.Bus
 	maxConnections int
-	privacyEnabled bool
 	mu             sync.RWMutex
 	done           chan struct{}
 }
@@ -39,11 +38,6 @@ func NewHub(eventBus *events.Bus, maxConnections int) *Hub {
 		maxConnections: maxConnections,
 		done:           make(chan struct{}),
 	}
-}
-
-// SetPrivacyEnabled configures whether the hub enforces privacy restrictions.
-func (h *Hub) SetPrivacyEnabled(enabled bool) {
-	h.privacyEnabled = enabled
 }
 
 func (h *Hub) Run(ctx context.Context) {
@@ -182,17 +176,9 @@ func (h *Hub) handleEvent(event *events.Event) {
 
 	switch event.Type {
 	case events.EventBlockNew:
-		if h.privacyEnabled {
-			h.broadcastBlockEventWithPrivacy(event.Data, msg)
-		} else {
-			h.broadcastToTopic("blocks", msg)
-		}
+		h.broadcastToTopic("blocks", msg)
 	case events.EventTxNew:
-		if h.privacyEnabled {
-			h.broadcastToTopicAuthenticated("transactions", msg)
-		} else {
-			h.broadcastToTopic("transactions", msg)
-		}
+		h.broadcastToTopic("transactions", msg)
 	case events.EventPriceUpdate:
 		h.broadcastToTopic("price", msg)
 	case events.EventSyncStatus:
@@ -202,94 +188,7 @@ func (h *Hub) handleEvent(event *events.Event) {
 			Address string `json:"address"`
 		}
 		if err := json.Unmarshal(event.Data, &data); err == nil {
-			if h.privacyEnabled {
-				h.broadcastToTopicAuthenticated("address:"+data.Address, msg)
-			} else {
-				h.broadcastToTopic("address:"+data.Address, msg)
-			}
-		}
-	}
-}
-
-// broadcastToTopicAuthenticated sends messages only to authenticated clients subscribed to a topic.
-func (h *Hub) broadcastToTopicAuthenticated(topic string, message []byte) {
-	h.mu.RLock()
-	clients, ok := h.topics[topic]
-	if !ok {
-		h.mu.RUnlock()
-		return
-	}
-
-	clientsCopy := make([]*Client, 0, len(clients))
-	for client := range clients {
-		if client.Authenticated {
-			clientsCopy = append(clientsCopy, client)
-		}
-	}
-	h.mu.RUnlock()
-
-	for _, client := range clientsCopy {
-		select {
-		case client.send <- message:
-		default:
-			go h.Unregister(client)
-		}
-	}
-}
-
-// broadcastBlockEventWithPrivacy sends full block data to authenticated clients
-// and stripped block data (number, hash, timestamp only) to unauthenticated clients.
-func (h *Hub) broadcastBlockEventWithPrivacy(eventData json.RawMessage, fullMsg []byte) {
-	h.mu.RLock()
-	clients, ok := h.topics["blocks"]
-	if !ok {
-		h.mu.RUnlock()
-		return
-	}
-
-	var authClients, unauthClients []*Client
-	for client := range clients {
-		if client.Authenticated {
-			authClients = append(authClients, client)
-		} else {
-			unauthClients = append(unauthClients, client)
-		}
-	}
-	h.mu.RUnlock()
-
-	// Send full data to authenticated clients
-	for _, client := range authClients {
-		select {
-		case client.send <- fullMsg:
-		default:
-			go h.Unregister(client)
-		}
-	}
-
-	// Build stripped message for unauthenticated clients
-	if len(unauthClients) > 0 {
-		var blockData struct {
-			Number    uint64 `json:"number"`
-			Hash      string `json:"hash"`
-			Timestamp uint64 `json:"timestamp"`
-		}
-		if err := json.Unmarshal(eventData, &blockData); err != nil {
-			return
-		}
-		strippedMsg, err := json.Marshal(map[string]interface{}{
-			"type":  "event",
-			"topic": "blocks",
-			"data":  blockData,
-		})
-		if err != nil {
-			return
-		}
-		for _, client := range unauthClients {
-			select {
-			case client.send <- strippedMsg:
-			default:
-				go h.Unregister(client)
-			}
+			h.broadcastToTopic("address:"+data.Address, msg)
 		}
 	}
 }
