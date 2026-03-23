@@ -190,3 +190,4 @@ func (c *Client) Topics() []string {
 	}
 	return topics
 }
+

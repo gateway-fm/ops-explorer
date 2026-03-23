@@ -55,3 +55,15 @@ export function formatGas(gas: number): string {
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+
+export function didIdentifier(did: string): string {
+  const lastColon = did.lastIndexOf(':');
+  if (lastColon === -1) return did;
+  return did.slice(lastColon + 1);
+}
+
+export function formatDID(did: string, chars = 6): string {
+  const id = didIdentifier(did);
+  if (id.length <= chars * 2 + 3) return id;
+  return `${id.slice(0, chars)}...${id.slice(-chars)}`;
+}

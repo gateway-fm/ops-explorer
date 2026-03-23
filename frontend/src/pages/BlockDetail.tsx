@@ -1,13 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '../lib/api';
-import type { Block, Transaction, InternalTransaction } from '../lib/api';
-import { formatHash, formatTimestamp, formatGas, formatAddress, formatWei } from '../lib/utils';
+import type { Block, Transaction, InternalTransaction, AddressVisibility } from '../lib/api';
+import { formatHash, formatTimestamp, formatGas, formatWei } from '../lib/utils';
 import { PageHeader } from '../components/PageHeader';
 import { AddressLink } from '../components/AddressLink';
 import { CopyButton } from '../components/CopyButton';
+import { useBatchAddressVisibility } from '../hooks/useAddressVisibility';
 
 type TabId = 'details' | 'transactions' | 'internal';
 
@@ -26,6 +27,25 @@ export function BlockDetail() {
     queryFn: () => api.getBlockInternalTxs(parseInt(number!)),
     enabled: !!number,
   });
+
+  // Collect all addresses for batch visibility check
+  const allAddresses = useMemo(() => {
+    if (!data) return [];
+    const set = new Set<string>();
+    const { block, transactions: txs } = data;
+    if (block.miner && block.miner !== '[PRIVATE]') set.add(block.miner.toLowerCase());
+    for (const tx of txs || []) {
+      if (tx.from && tx.from !== '[PRIVATE]') set.add(tx.from.toLowerCase());
+      if (tx.to && tx.to !== '[PRIVATE]') set.add(tx.to.toLowerCase());
+    }
+    for (const itx of internalTxs || []) {
+      if (itx.from && itx.from !== '[PRIVATE]') set.add(itx.from.toLowerCase());
+      if (itx.to && itx.to !== '[PRIVATE]') set.add(itx.to.toLowerCase());
+    }
+    return Array.from(set);
+  }, [data, internalTxs]);
+
+  const { visibilities } = useBatchAddressVisibility(allAddresses);
 
   if (isLoading) return <div className="text-neutral-400">Loading...</div>;
   if (error || !data) return <div className="text-error-600">Block not found</div>;
@@ -62,7 +82,7 @@ export function BlockDetail() {
 
       {/* Details Tab */}
       {activeTab === 'details' && (
-        <BlockDetailsTab block={block} />
+        <BlockDetailsTab block={block} visibilities={visibilities} />
       )}
 
       {/* Transactions Tab */}
@@ -71,7 +91,7 @@ export function BlockDetail() {
           <div className="card">
             <div className="divide-y divide-neutral-100">
               {transactions.map((tx) => (
-                <TxRow key={tx.hash} tx={tx} />
+                <TxRow key={tx.hash} tx={tx} visibilities={visibilities} />
               ))}
             </div>
           </div>
@@ -88,7 +108,7 @@ export function BlockDetail() {
           <div className="card">
             <div className="divide-y divide-neutral-100">
               {internalTransactions.map((itx) => (
-                <InternalTxRow key={`${itx.txHash}-${itx.traceAddress}`} itx={itx} />
+                <InternalTxRow key={`${itx.txHash}-${itx.traceAddress}`} itx={itx} visibilities={visibilities} />
               ))}
             </div>
           </div>
@@ -102,9 +122,10 @@ export function BlockDetail() {
   );
 }
 
-function BlockDetailsTab({ block }: { block: Block }) {
+function BlockDetailsTab({ block, visibilities }: { block: Block; visibilities: Record<string, AddressVisibility> }) {
   const [showMore, setShowMore] = useState(false);
   const gasPercent = block.gasLimit > 0 ? ((block.gasUsed / block.gasLimit) * 100).toFixed(2) : '0';
+  const minerVis = visibilities[block.miner?.toLowerCase()];
 
   return (
     <div className="card">
@@ -141,7 +162,7 @@ function BlockDetailsTab({ block }: { block: Block }) {
           label="Miner"
           value={
             <span className="flex items-center gap-1">
-              <AddressLink address={block.miner} full className="font-mono text-sm" />
+              <AddressLink address={block.miner} full className="font-mono text-sm" visibility={minerVis} />
               <CopyButton text={block.miner} />
             </span>
           }
@@ -263,7 +284,10 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function TxRow({ tx }: { tx: Transaction }) {
+function TxRow({ tx, visibilities }: { tx: Transaction; visibilities: Record<string, AddressVisibility> }) {
+  const fromVis = visibilities[tx.from?.toLowerCase()];
+  const toVis = tx.to ? visibilities[tx.to.toLowerCase()] : undefined;
+
   return (
     <div className="px-4 py-3 flex items-center justify-between hover:bg-primary-50/50 transition-colors">
       <div>
@@ -271,15 +295,11 @@ function TxRow({ tx }: { tx: Transaction }) {
           {formatHash(tx.hash, 12)}
         </Link>
         <div className="text-sm text-neutral-500">
-          {tx.from.startsWith('0x')
-            ? <Link to={`/address/${tx.from}`} className="hover:text-neutral-700 transition-colors">{formatAddress(tx.from, 6)}</Link>
-            : <span className="text-neutral-400 italic">{tx.from}</span>}
+          <AddressLink address={tx.from} chars={6} className="text-neutral-500 hover:text-neutral-700" visibility={fromVis} />
           {tx.to && (
             <>
               {' → '}
-              {tx.to.startsWith('0x')
-                ? <Link to={`/address/${tx.to}`} className="hover:text-neutral-700 transition-colors">{formatAddress(tx.to, 6)}</Link>
-                : <span className="text-neutral-400 italic">{tx.to}</span>}
+              <AddressLink address={tx.to} chars={6} className="text-neutral-500 hover:text-neutral-700" visibility={toVis} />
             </>
           )}
         </div>
@@ -298,7 +318,10 @@ function TxRow({ tx }: { tx: Transaction }) {
   );
 }
 
-function InternalTxRow({ itx }: { itx: InternalTransaction }) {
+function InternalTxRow({ itx, visibilities }: { itx: InternalTransaction; visibilities: Record<string, AddressVisibility> }) {
+  const fromVis = visibilities[itx.from?.toLowerCase()];
+  const toVis = itx.to ? visibilities[itx.to.toLowerCase()] : undefined;
+
   return (
     <div className="px-4 py-3 flex items-center justify-between hover:bg-primary-50/50 transition-colors">
       <div>
@@ -311,15 +334,11 @@ function InternalTxRow({ itx }: { itx: InternalTransaction }) {
           </span>
         </div>
         <div className="text-sm text-neutral-500">
-          <Link to={`/address/${itx.from}`} className="hover:text-neutral-700 transition-colors">
-            {formatAddress(itx.from, 6)}
-          </Link>
+          <AddressLink address={itx.from} chars={6} className="text-neutral-500 hover:text-neutral-700" visibility={fromVis} />
           {itx.to && (
             <>
               {' → '}
-              <Link to={`/address/${itx.to}`} className="hover:text-neutral-700 transition-colors">
-                {formatAddress(itx.to, 6)}
-              </Link>
+              <AddressLink address={itx.to} chars={6} className="text-neutral-500 hover:text-neutral-700" visibility={toVis} />
             </>
           )}
         </div>

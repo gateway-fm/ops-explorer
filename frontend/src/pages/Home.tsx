@@ -1,21 +1,30 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { useState, useEffect, useRef } from 'react';
-import { Boxes, ArrowLeftRight, Users, Clock, Box, FileCode, FilePlus, Coins, ArrowRightLeft, Shield, LogOut } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Boxes, ArrowLeftRight, Users, Clock, Box, FileCode, FilePlus, Coins, ArrowRightLeft, Shield, LogOut, Copy, Check } from 'lucide-react';
 import { api } from '../lib/api';
-import type { Block, Transaction, TxCategory } from '../lib/api';
-import { formatHash } from '../lib/utils';
+import type { Block, Transaction, TxCategory, AddressVisibility } from '../lib/api';
+import { formatHash, formatDID } from '../lib/utils';
 import { LiveTimeAgo } from '../components/LiveTimeAgo';
 import { AddressLink } from '../components/AddressLink';
 import { TransactionHistoryChart } from '../components/TransactionHistoryChart';
 import { SearchBar } from '../components/SearchBar';
 import { redirectToLogin } from '../lib/login';
 import { useAuth } from '../lib/auth';
+import { useBatchAddressVisibility } from '../hooks/useAddressVisibility';
 
 export function Home() {
   const { isAuthenticated, auth, logout } = useAuth();
   const [showAccountMenu, setShowAccountMenu] = useState(false);
+  const [copied, setCopied] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
+
+  function copyDid() {
+    if (!auth.did) return;
+    navigator.clipboard.writeText(auth.did);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -44,6 +53,19 @@ export function Home() {
     queryFn: () => api.getTransactions(10),
     refetchInterval: 2000,
   });
+
+  // Batch-check address visibility for transaction addresses
+  const txAddresses = useMemo(() => {
+    if (!txs?.data) return [];
+    const set = new Set<string>();
+    for (const tx of txs.data) {
+      if (tx.from && tx.from !== '[PRIVATE]') set.add(tx.from.toLowerCase());
+      if (tx.to && tx.to !== '[PRIVATE]') set.add(tx.to.toLowerCase());
+    }
+    return Array.from(set);
+  }, [txs]);
+
+  const { visibilities } = useBatchAddressVisibility(txAddresses);
 
   // Track seen blocks and transactions for animations
   const seenBlocks = useRef<Set<number>>(new Set());
@@ -124,16 +146,34 @@ export function Home() {
                 <div ref={accountMenuRef} className="relative">
                   <button
                     onClick={() => setShowAccountMenu(!showAccountMenu)}
+                    title={auth.did || undefined}
                     className="flex items-center gap-2 px-4 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 text-sm text-white h-[50px] hover:bg-white/20 transition-colors cursor-pointer"
                   >
                     <Shield className="w-4 h-4 text-green-300" />
-                    <span className="font-mono text-xs truncate max-w-[160px]">
-                      {auth.did ? `${auth.did.slice(0, 20)}...` : 'Authenticated'}
+                    <span className="font-mono text-xs">
+                      {auth.did ? formatDID(auth.did) : 'Authenticated'}
                     </span>
                   </button>
 
                   {showAccountMenu && (
-                    <div className="absolute top-full right-0 mt-2 w-48 card overflow-hidden z-50 shadow-elevated">
+                    <div className="absolute top-full right-0 mt-2 w-64 card overflow-hidden z-50 shadow-elevated">
+                      {auth.did && (
+                        <div className="px-4 py-3 border-b border-neutral-100">
+                          <div className="text-xs text-neutral-400 mb-1">Your DID</div>
+                          <div className="flex items-center gap-1">
+                            <span className="font-mono text-xs text-neutral-700 flex-1 truncate" title={auth.did}>
+                              {auth.did}
+                            </span>
+                            <button
+                              onClick={copyDid}
+                              className="shrink-0 p-1 text-neutral-400 hover:text-neutral-700 transition-colors"
+                              title="Copy DID"
+                            >
+                              {copied ? <Check className="w-3.5 h-3.5 text-success-500" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                       <button
                         onClick={() => { logout(); setShowAccountMenu(false); }}
                         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-primary-50 transition-colors"
@@ -223,6 +263,7 @@ export function Home() {
                 key={tx.hash}
                 tx={tx}
                 isNew={newTxs.has(tx.hash)}
+                visibilities={visibilities}
               />
             ))}
             {!txs?.data?.length && (
@@ -355,8 +396,10 @@ function getTxTypeConfig(categories?: TxCategory[]) {
   return DEFAULT_TX_CONFIG;
 }
 
-function TxRow({ tx, isNew }: { tx: Transaction; isNew: boolean }) {
+function TxRow({ tx, isNew, visibilities }: { tx: Transaction; isNew: boolean; visibilities: Record<string, AddressVisibility> }) {
   const { icon, bgColor, textColor, label } = getTxTypeConfig(tx.txCategories);
+  const fromVis = visibilities[tx.from?.toLowerCase()];
+  const toVis = tx.to ? visibilities[tx.to.toLowerCase()] : undefined;
 
   return (
     <div className={`px-3 sm:px-4 h-[52px] sm:h-[60px] flex items-center gap-3 hover:bg-primary-50/50 transition-colors ${isNew ? 'feed-item-new' : ''}`}>
@@ -373,11 +416,11 @@ function TxRow({ tx, isNew }: { tx: Transaction; isNew: boolean }) {
           )}
         </div>
         <div className="text-xs sm:text-sm text-neutral-500 truncate">
-          <AddressLink address={tx.from} chars={8} className="text-neutral-500 hover:text-neutral-700" />
+          <AddressLink address={tx.from} chars={8} className="text-neutral-500 hover:text-neutral-700" visibility={fromVis} />
           {tx.to && (
             <>
               {' → '}
-              <AddressLink address={tx.to} chars={8} className="text-neutral-500 hover:text-neutral-700" />
+              <AddressLink address={tx.to} chars={8} className="text-neutral-500 hover:text-neutral-700" visibility={toVis} />
             </>
           )}
         </div>

@@ -84,6 +84,7 @@ func (s *Server) handleGetLatestBlock(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no blocks found", http.StatusNotFound)
 		return
 	}
+
 	writeJSON(w, blocks[0])
 }
 
