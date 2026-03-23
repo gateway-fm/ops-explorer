@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -84,7 +85,11 @@ func TestResolveAddressID_500_ReturnsGenericError(t *testing.T) {
 	if errors.Is(err, ErrNotFound) {
 		t.Error("500 should not return ErrNotFound")
 	}
-	if err.Error() != "privacy proxy request failed with status 500" {
-		t.Errorf("expected generic error without response body, got: %v", err)
+	errStr := err.Error()
+	if !strings.Contains(errStr, "status 500") {
+		t.Errorf("expected error to mention status 500, got: %v", err)
+	}
+	if strings.Contains(errStr, "database connection failed") {
+		t.Errorf("error must not contain proxy response body, got: %v", err)
 	}
 }

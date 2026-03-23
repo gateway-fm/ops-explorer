@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,7 +13,7 @@ import (
 	"time"
 )
 
-var ErrNotFound = fmt.Errorf("not found")
+var ErrNotFound = errors.New("privacy: grant or address not found")
 
 type Client struct {
 	baseURL    string
@@ -450,11 +451,11 @@ func (c *Client) ResolveAddressID(ctx context.Context, grantID, addressID string
 
 	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
 		_, _ = io.Copy(io.Discard, resp.Body)
-		return nil, ErrNotFound
+		return nil, fmt.Errorf("grant=%s address=%s: %w", grantID, addressID, ErrNotFound)
 	}
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body)
-		return nil, fmt.Errorf("privacy proxy request failed with status %d", resp.StatusCode)
+		return nil, fmt.Errorf("grant=%s address=%s: privacy proxy status %d", grantID, addressID, resp.StatusCode)
 	}
 
 	var result ResolveAddressResponse
