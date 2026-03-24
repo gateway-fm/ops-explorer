@@ -51,8 +51,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await api.auth.logout();
     } finally {
-      queryClient.clear();
       setAuth({ authenticated: false, did: null, expiresAt: null });
+      // Invalidate all queries so mounted components refetch with the new
+      // (unauthenticated) auth state.  clear() only removes queries from
+      // the cache without triggering refetches, so components keep showing
+      // stale authenticated data until a manual page refresh.
+      await queryClient.invalidateQueries();
     }
   }, [queryClient]);
 

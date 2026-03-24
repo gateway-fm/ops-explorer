@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../lib/api';
-import type { TokenTransfer, Log, TxCategory } from '../lib/api';
+import type { TokenTransfer, Log, TxCategory, AddressVisibility } from '../lib/api';
 import { formatWei, formatGas, formatTimestamp } from '../lib/utils';
 import { AddressLink, TokenAddressLink } from '../components/AddressLink';
 import { AddressLabel } from '../components/AddressLabel';
@@ -67,8 +67,22 @@ export function TransactionDetail() {
     enabled: !!hash,
   });
 
-  // Collect from/to addresses for visibility labels
-  const txAddresses = tx ? [tx.from, tx.to, tx.contractAddress].filter((a): a is string => !!a && a !== '[PRIVATE]') : [];
+  // Collect from/to addresses for visibility labels (including token transfer addresses)
+  const txAddresses = useMemo(() => {
+    const set = new Set<string>();
+    if (tx) {
+      if (tx.from && tx.from !== '[PRIVATE]') set.add(tx.from.toLowerCase());
+      if (tx.to && tx.to !== '[PRIVATE]') set.add(tx.to.toLowerCase());
+      if (tx.contractAddress && tx.contractAddress !== '[PRIVATE]') set.add(tx.contractAddress.toLowerCase());
+    }
+    if (transfers) {
+      for (const t of transfers) {
+        if (t.from && t.from !== '[PRIVATE]') set.add(t.from.toLowerCase());
+        if (t.to && t.to !== '[PRIVATE]') set.add(t.to.toLowerCase());
+      }
+    }
+    return Array.from(set);
+  }, [tx, transfers]);
   const { visibilities } = useBatchAddressVisibility(txAddresses);
 
   if (isLoading) return <div className="text-neutral-400">Loading...</div>;
@@ -206,7 +220,7 @@ export function TransactionDetail() {
                 </div>
                 <div className="flex flex-col gap-2">
                   {transfers.map((transfer) => (
-                    <TokenTransferRow key={`${transfer.txHash}-${transfer.logIndex}`} transfer={transfer} />
+                    <TokenTransferRow key={`${transfer.txHash}-${transfer.logIndex}`} transfer={transfer} visibilities={visibilities} />
                   ))}
                 </div>
               </div>
@@ -326,15 +340,19 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function TokenTransferRow({ transfer }: { transfer: TokenTransfer }) {
+function TokenTransferRow({ transfer, visibilities }: { transfer: TokenTransfer; visibilities: Record<string, AddressVisibility> }) {
   const formattedValue = formatTokenValue(transfer.value);
+  const fromVis = visibilities[transfer.from?.toLowerCase()];
+  const toVis = visibilities[transfer.to?.toLowerCase()];
 
   return (
     <div className="flex items-center gap-1.5 flex-wrap text-sm">
       <span className="text-neutral-500">From</span>
-      <AddressLink address={transfer.from} />
+      <AddressLink address={transfer.from} visibility={fromVis} />
+      <AddressLabel reason={fromVis?.reason} />
       <span className="text-neutral-500">To</span>
-      <AddressLink address={transfer.to} />
+      <AddressLink address={transfer.to} visibility={toVis} />
+      <AddressLabel reason={toVis?.reason} />
       <span className="text-neutral-500">For</span>
       <span className="font-mono text-success-600 font-medium">{formattedValue}</span>
       <TokenAddressLink address={transfer.tokenAddress} />
