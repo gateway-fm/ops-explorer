@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -39,7 +41,8 @@ func (s *Server) handleGetViewableAddresses(w http.ResponseWriter, r *http.Reque
 
 	result, err := s.privacyClient.GetViewableAddressesWithIdentity(r.Context(), viewer)
 	if err != nil {
-		http.Error(w, "failed to get viewable addresses: "+err.Error(), http.StatusInternalServerError)
+		slog.Warn("failed to get viewable addresses", "error", err)
+		http.Error(w, "failed to get viewable addresses", http.StatusInternalServerError)
 		return
 	}
 
@@ -72,7 +75,8 @@ func (s *Server) handleCheckAddressVisibility(w http.ResponseWriter, r *http.Req
 
 	result, err := s.privacyClient.CheckAddressWithIdentity(r.Context(), viewer, address)
 	if err != nil {
-		http.Error(w, "failed to check address visibility: "+err.Error(), http.StatusInternalServerError)
+		slog.Warn("failed to check address visibility", "address", address, "error", err)
+		http.Error(w, "failed to check address visibility", http.StatusInternalServerError)
 		return
 	}
 
@@ -197,16 +201,12 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 
 	resolved, err := s.privacyClient.ResolveAddressID(r.Context(), grantID, addressID)
 	if err != nil {
-		errStr := err.Error()
-		if strings.Contains(errStr, "not found") {
+		if errors.Is(err, privacy.ErrNotFound) {
 			http.Error(w, "grant or address not found", http.StatusNotFound)
 			return
 		}
-		if strings.Contains(errStr, "access denied") || strings.Contains(errStr, "revoked") || strings.Contains(errStr, "expired") {
-			http.Error(w, errStr, http.StatusForbidden)
-			return
-		}
-		http.Error(w, "failed to resolve address: "+err.Error(), http.StatusInternalServerError)
+		slog.Warn("failed to resolve address", "grant_id", grantID, "address_id", addressID, "error", err)
+		http.Error(w, "failed to resolve address", http.StatusInternalServerError)
 		return
 	}
 
@@ -214,19 +214,22 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 
 	stats, err := s.provider.GetAddressStats(ctx, resolved.RealAddress)
 	if err != nil {
-		http.Error(w, "failed to get address stats: "+err.Error(), http.StatusInternalServerError)
+		slog.Warn("failed to get address stats", "address", resolved.RealAddress, "error", err)
+		http.Error(w, "failed to get address stats", http.StatusInternalServerError)
 		return
 	}
 
 	balance, err := s.provider.GetBalance(ctx, resolved.RealAddress)
 	if err != nil {
-		http.Error(w, "failed to get balance: "+err.Error(), http.StatusInternalServerError)
+		slog.Warn("failed to get balance", "address", resolved.RealAddress, "error", err)
+		http.Error(w, "failed to get balance", http.StatusInternalServerError)
 		return
 	}
 
 	code, err := s.provider.GetCode(ctx, resolved.RealAddress)
 	if err != nil {
-		http.Error(w, "failed to check contract status: "+err.Error(), http.StatusInternalServerError)
+		slog.Warn("failed to check contract status", "address", resolved.RealAddress, "error", err)
+		http.Error(w, "failed to check contract status", http.StatusInternalServerError)
 		return
 	}
 
@@ -305,16 +308,12 @@ func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *h
 
 	resolved, err := s.privacyClient.ResolveAddressID(r.Context(), grantID, addressID)
 	if err != nil {
-		errStr := err.Error()
-		if strings.Contains(errStr, "not found") {
+		if errors.Is(err, privacy.ErrNotFound) {
 			http.Error(w, "grant or address not found", http.StatusNotFound)
 			return
 		}
-		if strings.Contains(errStr, "access denied") || strings.Contains(errStr, "revoked") || strings.Contains(errStr, "expired") {
-			http.Error(w, errStr, http.StatusForbidden)
-			return
-		}
-		http.Error(w, "failed to resolve address: "+err.Error(), http.StatusInternalServerError)
+		slog.Warn("failed to resolve address for transactions", "grant_id", grantID, "address_id", addressID, "error", err)
+		http.Error(w, "failed to resolve address", http.StatusInternalServerError)
 		return
 	}
 
@@ -337,7 +336,8 @@ func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *h
 
 	txs, err := s.provider.GetTransactionsByAddress(ctx, normalizedAddress, limit+1, beforeBlock)
 	if err != nil {
-		http.Error(w, "failed to get transactions: "+err.Error(), http.StatusInternalServerError)
+		slog.Warn("failed to get transactions", "address", normalizedAddress, "error", err)
+		http.Error(w, "failed to get transactions", http.StatusInternalServerError)
 		return
 	}
 
