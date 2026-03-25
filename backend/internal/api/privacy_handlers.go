@@ -276,6 +276,14 @@ func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *h
 		return
 	}
 
+	// Require authenticated viewer to prevent unauthorized access (IDOR).
+	// Grant IDs are UUIDs but could be leaked via browser history or logs.
+	viewer := s.getViewerIdentity(r)
+	if viewer.DID == "" {
+		http.Error(w, "authentication required", http.StatusUnauthorized)
+		return
+	}
+
 	if !s.privacyClient.IsEnabled() {
 		http.Error(w, "privacy service not enabled", http.StatusServiceUnavailable)
 		return

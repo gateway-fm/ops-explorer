@@ -237,6 +237,7 @@ func TestHandleGetGrantedAddress_ExpiredGrant(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/api/privacy/grant/expired-grant/addr-456", nil)
 	req.AddCookie(mockAuthCookie())
+	req.AddCookie(mockAuthCookie())
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -260,6 +261,7 @@ func TestHandleGetGrantedAddress_RevokedGrant(t *testing.T) {
 	router := setupPrivacyTestServerWithMock(client)
 
 	req := httptest.NewRequest("GET", "/api/privacy/grant/revoked-grant/addr-456", nil)
+	req.AddCookie(mockAuthCookie())
 	req.AddCookie(mockAuthCookie())
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -314,6 +316,22 @@ func TestCheckAddressVisibility_NoIdentity(t *testing.T) {
 // the proxy's response status and body as-is.
 // ============================================================================
 
+func TestHandleGetGrantedAddressTransactions_NoAuth(t *testing.T) {
+	client := mockPrivacyServer(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("proxy should not be called without auth")
+	})
+	router := setupPrivacyTestServerWithMock(client)
+
+	req := httptest.NewRequest("GET", "/api/privacy/grant/grant-123/addr-456/transactions", nil)
+	// No auth cookie — should be rejected
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected status %d, got %d", http.StatusUnauthorized, w.Code)
+	}
+}
+
 func TestHandleGetGrantedAddressTransactions_NotFound(t *testing.T) {
 	client := mockPrivacyServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -322,6 +340,7 @@ func TestHandleGetGrantedAddressTransactions_NotFound(t *testing.T) {
 	router := setupPrivacyTestServerWithMock(client)
 
 	req := httptest.NewRequest("GET", "/api/privacy/grant/missing-grant/addr-456/transactions", nil)
+	req.AddCookie(mockAuthCookie())
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -338,6 +357,7 @@ func TestHandleGetGrantedAddressTransactions_ExpiredGrant(t *testing.T) {
 	router := setupPrivacyTestServerWithMock(client)
 
 	req := httptest.NewRequest("GET", "/api/privacy/grant/expired-grant/addr-456/transactions", nil)
+	req.AddCookie(mockAuthCookie())
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -355,6 +375,7 @@ func TestHandleGetGrantedAddressTransactions_RevokedGrant(t *testing.T) {
 	router := setupPrivacyTestServerWithMock(client)
 
 	req := httptest.NewRequest("GET", "/api/privacy/grant/revoked-grant/addr-456/transactions", nil)
+	req.AddCookie(mockAuthCookie())
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -384,6 +405,7 @@ func TestHandleGetGrantedAddressTransactions_ProxiesToPrivacyProxy(t *testing.T)
 	router := setupPrivacyTestServerWithMock(client)
 
 	req := httptest.NewRequest("GET", "/api/privacy/grant/grant-123/addr-456/transactions", nil)
+	req.AddCookie(mockAuthCookie())
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -402,6 +424,7 @@ func TestHandleGetGrantedAddressTransactions_ProxyErrorForwarded(t *testing.T) {
 	router := setupPrivacyTestServerWithMock(client)
 
 	req := httptest.NewRequest("GET", "/api/privacy/grant/bad-grant/addr-456/transactions", nil)
+	req.AddCookie(mockAuthCookie())
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
