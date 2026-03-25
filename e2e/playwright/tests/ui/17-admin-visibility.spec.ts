@@ -213,7 +213,7 @@ test.describe('Admin vs Regular User Visibility', () => {
   // 4. Anonymous user cannot access org-owned contract address page
   // -------------------------------------------------------------------------
 
-  test('anonymous user sees Authentication Required on org-owned address', async ({
+  test('anonymous user sees Address Restricted on org-owned address', async ({
     page,
     context,
   }) => {
@@ -222,10 +222,10 @@ test.describe('Admin vs Regular User Visibility', () => {
     await page.goto(`/address/${contractAddress}`);
     await page.waitForLoadState('networkidle');
 
-    // Should show "Authentication Required"
-    const authRequiredHeading = page.getByRole('heading', {
-      name: /Authentication Required/i,
+    // Should show "Address Restricted" (not "Authentication Required")
+    const restrictedHeading = page.getByRole('heading', {
+      name: /Address Restricted/i,
     });
-    await expect(authRequiredHeading).toBeVisible({ timeout: 15000 });
+    await expect(restrictedHeading).toBeVisible({ timeout: 15000 });
   });
 });

@@ -91,18 +91,17 @@ export async function getBlockNumber(): Promise<number> {
 
 /**
  * Wait for the block-explorer indexer to reach a target block number.
- * Polls GET /api/v1/sync every 1s, up to 30s timeout.
+ * Checks if the target block exists via the blocks API endpoint.
+ * The sync status endpoint only updates every 10 blocks in realtime mode,
+ * so checking the actual block is more reliable.
  */
 export async function waitForIndexer(targetBlock: number, timeoutSeconds = 60): Promise<void> {
   const maxAttempts = timeoutSeconds;
   for (let i = 0; i < maxAttempts; i++) {
     try {
-      const response = await fetch(`${EXPLORER_API_URL}/api/v1/sync`);
+      const response = await fetch(`${EXPLORER_API_URL}/api/v1/blocks/${targetBlock}`);
       if (response.ok) {
-        const data = (await response.json()) as { lastIndexedBlock: number; isSyncing?: boolean };
-        if (data.lastIndexedBlock >= targetBlock) {
-          return;
-        }
+        return;
       }
     } catch {
       // Network error, retry
