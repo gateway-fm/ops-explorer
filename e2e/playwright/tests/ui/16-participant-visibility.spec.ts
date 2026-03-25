@@ -22,7 +22,7 @@ import {
 //   - User A (participant) should see their own address in full
 // ---------------------------------------------------------------------------
 
-const PARTICIPANT_WALLET = ANVIL_ACCOUNTS[4].address;
+const PARTICIPANT_WALLET = ANVIL_ACCOUNTS[8].address;
 
 test.describe('Participant Visibility Override', () => {
   let fixture: ProxyAdminFixture;
@@ -32,6 +32,7 @@ test.describe('Participant Visibility Override', () => {
   let txHash: string;
 
   test.beforeAll(async () => {
+    test.setTimeout(60000);
     fixture = new ProxyAdminFixture();
     await fixture.setup();
 

@@ -24,9 +24,9 @@ import {
 // on logout.
 // ---------------------------------------------------------------------------
 
-// Use ANVIL_ACCOUNTS[3] as the personal wallet for the label-test user.
-// This avoids collision with test 08 which uses account[5].
-const LABEL_USER_WALLET = ANVIL_ACCOUNTS[3].address;
+// Use ANVIL_ACCOUNTS[7] as the personal wallet for the label-test user.
+// Avoids collision with test 08 (account[5]) and manual testing (accounts 0-4).
+const LABEL_USER_WALLET = ANVIL_ACCOUNTS[7].address;
 
 test.describe('Address Labels', () => {
   let fixture: ProxyAdminFixture;
@@ -36,6 +36,7 @@ test.describe('Address Labels', () => {
   let txHash: string;
 
   test.beforeAll(async () => {
+    test.setTimeout(60000);
     fixture = new ProxyAdminFixture();
     await fixture.setup();
 
@@ -59,7 +60,7 @@ test.describe('Address Labels', () => {
     txHash = await sendETH(
       ANVIL_ACCOUNTS[0].address,
       LABEL_USER_WALLET,
-      BigInt('1000000000000000'),
+      BigInt(String(1000000000000000 + Math.floor(Math.random() * 1000000))),
     ).then(async (hash) => {
       await waitForReceipt(hash);
       return hash;

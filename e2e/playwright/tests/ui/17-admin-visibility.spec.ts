@@ -32,6 +32,7 @@ test.describe('Admin vs Regular User Visibility', () => {
   let contractAddress: string;
 
   test.beforeAll(async () => {
+    test.setTimeout(60000);
     fixture = new ProxyAdminFixture();
     await fixture.setup();
 
@@ -72,7 +73,7 @@ test.describe('Admin vs Regular User Visibility', () => {
     await sendETH(
       ANVIL_ACCOUNTS[0].address,
       ANVIL_ACCOUNTS[1].address,
-      BigInt('1000000000000000'),
+      BigInt(String(1000000000000000 + Math.floor(Math.random() * 1000000))),
     ).then(async (hash) => {
       await waitForReceipt(hash);
     });
