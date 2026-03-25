@@ -25,6 +25,7 @@ import {
 const PARTICIPANT_WALLET = ANVIL_ACCOUNTS[8].address;
 
 test.describe('Participant Visibility Override', () => {
+  test.slow(); // beforeAll setup creates org, users, sends tx, waits for indexer
   let fixture: ProxyAdminFixture;
   let userADid: string;
   let userAToken: string;
@@ -32,7 +33,6 @@ test.describe('Participant Visibility Override', () => {
   let txHash: string;
 
   test.beforeAll(async () => {
-    test.setTimeout(60000);
     fixture = new ProxyAdminFixture();
     await fixture.setup();
 

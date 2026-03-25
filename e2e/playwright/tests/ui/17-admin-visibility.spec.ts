@@ -25,6 +25,7 @@ import {
 // ---------------------------------------------------------------------------
 
 test.describe('Admin vs Regular User Visibility', () => {
+  test.slow(); // beforeAll setup creates org, users, sends tx, waits for indexer
   let fixture: ProxyAdminFixture;
   let adminDid: string;
   let regularDid: string;
@@ -32,7 +33,6 @@ test.describe('Admin vs Regular User Visibility', () => {
   let contractAddress: string;
 
   test.beforeAll(async () => {
-    test.setTimeout(60000);
     fixture = new ProxyAdminFixture();
     await fixture.setup();
 

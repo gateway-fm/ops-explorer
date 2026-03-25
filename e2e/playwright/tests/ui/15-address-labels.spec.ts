@@ -29,6 +29,7 @@ import {
 const LABEL_USER_WALLET = ANVIL_ACCOUNTS[7].address;
 
 test.describe('Address Labels', () => {
+  test.slow(); // beforeAll setup creates org, users, sends tx, waits for indexer
   let fixture: ProxyAdminFixture;
   let labelUserDid: string;
   let labelUserToken: string;
@@ -36,7 +37,6 @@ test.describe('Address Labels', () => {
   let txHash: string;
 
   test.beforeAll(async () => {
-    test.setTimeout(60000);
     fixture = new ProxyAdminFixture();
     await fixture.setup();
 
