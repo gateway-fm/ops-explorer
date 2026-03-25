@@ -237,8 +237,9 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%d", s.port),
-		Handler: s.router,
+		Addr:              fmt.Sprintf(":%d", s.port),
+		Handler:           s.router,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	go func() {

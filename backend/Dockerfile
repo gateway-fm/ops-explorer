@@ -13,7 +13,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /api ./cmd/api
 RUN CGO_ENABLED=0 GOOS=linux go build -o /indexer ./cmd/indexer
 
-FROM alpine:3.19
+FROM alpine:3.21
 
 RUN apk update --no-cache && apk upgrade --no-cache
 RUN apk --no-cache add ca-certificates libc6-compat
@@ -26,7 +26,11 @@ RUN mkdir -p /opt/solc && \
         chmod +x /opt/solc/solc-${version}; \
     done
 
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
 COPY --from=builder /api /api
 COPY --from=builder /indexer /indexer
+
+USER appuser:appgroup
 
 ENTRYPOINT ["/api"]
