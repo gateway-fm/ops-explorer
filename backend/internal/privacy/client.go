@@ -465,3 +465,36 @@ func (c *Client) ResolveAddressID(ctx context.Context, grantID, addressID string
 
 	return &result, nil
 }
+
+// GetGrantTransactions fetches pseudonymized transactions for a disclosure grant
+// directly from the privacy proxy. The proxy handles all pseudonymization —
+// the explorer just forwards the response as raw JSON.
+func (c *Client) GetGrantTransactions(ctx context.Context, grantID, addressID string, limit int, beforeBlock *uint64) ([]byte, int, error) {
+	endpoint := fmt.Sprintf("/api/v1/explorer/grant/%s/%s/transactions?limit=%d", grantID, addressID, limit)
+	if beforeBlock != nil {
+		endpoint += fmt.Sprintf("&before=%d", *beforeBlock)
+	}
+
+	u, err := url.Parse(c.baseURL + endpoint)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to parse URL: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	return body, resp.StatusCode, nil
+}
