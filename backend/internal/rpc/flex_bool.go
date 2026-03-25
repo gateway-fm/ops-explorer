@@ -23,10 +23,10 @@ func (fb *FlexBool) UnmarshalJSON(data []byte) error {
 	var s string
 	if err := json.Unmarshal(data, &s); err == nil {
 		switch strings.ToLower(s) {
-		case "true", "1":
+		case "true", "1", "0x1", "0x01":
 			*fb = true
 			return nil
-		case "false", "0", "":
+		case "false", "0", "", "0x0", "0x00":
 			*fb = false
 			return nil
 		}
