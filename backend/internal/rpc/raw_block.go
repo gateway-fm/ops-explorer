@@ -32,7 +32,7 @@ type RawTransaction struct {
 
 	SourceHash  *common.Hash `json:"sourceHash,omitempty"`
 	Mint        *hexutil.Big `json:"mint,omitempty"`
-	IsSystemTx  *bool        `json:"isSystemTx,omitempty"`
+	IsSystemTx  *FlexBool    `json:"isSystemTx,omitempty"`
 
 	DepositNonce          *hexutil.Uint64 `json:"depositNonce,omitempty"`
 	DepositReceiptVersion *hexutil.Uint64 `json:"depositReceiptVersion,omitempty"`
