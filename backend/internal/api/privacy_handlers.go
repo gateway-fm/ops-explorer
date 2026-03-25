@@ -1,8 +1,6 @@
 package api
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -10,7 +8,6 @@ import (
 	"strings"
 
 	"explorer/internal/privacy"
-	"explorer/internal/types"
 	"explorer/pkg/eth/common"
 	"github.com/go-chi/chi/v5"
 )
@@ -264,27 +261,12 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 
 // SECURITY: All addresses are replaced with pseudonyms - the real addresses are never exposed.
 // TxHash is hidden for non-full disclosures to prevent lookup on other explorers.
-type PseudonymizedTransaction struct {
-	TxHash         *string          `json:"tx_hash,omitempty"`
-	BlockNumber    uint64           `json:"block_number"`
-	BlockTimestamp uint64           `json:"block_timestamp"`
-	From           string           `json:"from"`
-	To             *string          `json:"to"`
-	Value          types.JSONString `json:"value"`
-	GasUsed        uint64           `json:"gas_used"`
-	Status         int              `json:"status"`
-	Direction string `json:"direction"`
-}
+// PseudonymizedTransactionsResponse is now generated entirely by the privacy proxy.
+// The explorer just forwards the proxy's JSON response as-is.
 
-type PseudonymizedTransactionsResponse struct {
-	Transactions    []PseudonymizedTransaction `json:"transactions"`
-	DisclosureLevel string                     `json:"disclosure_level"`
-	AddressLabels map[string]string `json:"address_labels"`
-	HasMore       bool              `json:"has_more"`
-}
-
-// SECURITY: Addresses are pseudonymized based on disclosure_level before being sent to the frontend.
-// For non-full disclosures, tx hashes are hidden to prevent lookup on other explorers.
+// handleGetGrantedAddressTransactions proxies the request to the privacy proxy's
+// grant transactions endpoint. The proxy handles all pseudonymization — the
+// explorer never sees real addresses for non-full disclosures.
 func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *http.Request) {
 	grantID := chi.URLParam(r, "grantId")
 	addressID := chi.URLParam(r, "addressId")
@@ -294,147 +276,26 @@ func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *h
 		return
 	}
 
-	// Require authenticated viewer to prevent unauthorized access (IDOR)
-	viewer := s.getViewerIdentity(r)
-	if viewer.DID == "" {
-		http.Error(w, "authentication required (sign in via Privado SSO)", http.StatusUnauthorized)
-		return
-	}
-
 	if !s.privacyClient.IsEnabled() {
 		http.Error(w, "privacy service not enabled", http.StatusServiceUnavailable)
 		return
 	}
 
-	resolved, err := s.privacyClient.ResolveAddressID(r.Context(), grantID, addressID)
-	if err != nil {
-		if errors.Is(err, privacy.ErrNotFound) {
-			http.Error(w, "grant or address not found", http.StatusNotFound)
-			return
-		}
-		slog.Warn("failed to resolve address for transactions", "grant_id", grantID, "address_id", addressID, "error", err)
-		http.Error(w, "failed to resolve address", http.StatusInternalServerError)
-		return
-	}
-
-	if resolved.DisclosureLevel == "redacted" {
-		writeJSON(w, PseudonymizedTransactionsResponse{
-			Transactions:    []PseudonymizedTransaction{},
-			DisclosureLevel: "redacted",
-			AddressLabels:   map[string]string{},
-			HasMore:         false,
-		})
-		return
-	}
-
-	ctx := r.Context()
-
 	limit := parseLimit(r)
 	beforeBlock := parseBeforeBlock(r)
 
-	normalizedAddress := common.HexToAddress(resolved.RealAddress).Hex()
-
-	txs, err := s.provider.GetTransactionsByAddress(ctx, normalizedAddress, limit+1, beforeBlock)
+	body, statusCode, err := s.privacyClient.GetGrantTransactions(r.Context(), grantID, addressID, limit, beforeBlock)
 	if err != nil {
-		slog.Warn("failed to get transactions", "address", normalizedAddress, "error", err)
+		slog.Warn("failed to get grant transactions", "grant_id", grantID, "address_id", addressID, "error", err)
 		http.Error(w, "failed to get transactions", http.StatusInternalServerError)
 		return
 	}
 
-	hasMore := len(txs) > limit
-	if hasMore {
-		txs = txs[:limit]
-	}
-
-	disclosedPseudonym := resolved.RealAddress
-	if resolved.DisclosureLevel == "pseudonymous" {
-		disclosedPseudonym = resolved.Pseudonym
-		if disclosedPseudonym == "" {
-			disclosedPseudonym = "Address-Unknown"
-		}
-	}
-
-	externalPseudonyms := make(map[string]string)
-	externalCounter := 1
-	addressLabels := map[string]string{
-		disclosedPseudonym: "This Address",
-	}
-
-	getExternalPseudonym := func(addr string) string {
-		if resolved.DisclosureLevel == "full" {
-			return addr
-		}
-		normalizedAddr := strings.ToLower(addr)
-		if pseudo, exists := externalPseudonyms[normalizedAddr]; exists {
-			return pseudo
-		}
-		pseudo := generateExternalPseudonym(addr, grantID, externalCounter)
-		externalPseudonyms[normalizedAddr] = pseudo
-		addressLabels[pseudo] = "External Address"
-		externalCounter++
-		return pseudo
-	}
-
-	normalizedDisclosed := strings.ToLower(resolved.RealAddress)
-	pseudoTxs := make([]PseudonymizedTransaction, 0, len(txs))
-
-	for _, tx := range txs {
-		pseudoTx := PseudonymizedTransaction{
-			BlockNumber:    tx.BlockNumber,
-			BlockTimestamp: tx.BlockTimestamp,
-			Value:          tx.Value,
-			GasUsed:        tx.GasUsed,
-			Status:         tx.Status,
-		}
-
-		if resolved.DisclosureLevel == "full" {
-			pseudoTx.TxHash = &tx.Hash
-		}
-
-		if strings.ToLower(tx.From) == normalizedDisclosed {
-			pseudoTx.From = disclosedPseudonym
-		} else {
-			pseudoTx.From = getExternalPseudonym(tx.From)
-		}
-
-		if tx.To != nil {
-			if strings.ToLower(*tx.To) == normalizedDisclosed {
-				to := disclosedPseudonym
-				pseudoTx.To = &to
-			} else {
-				to := getExternalPseudonym(*tx.To)
-				pseudoTx.To = &to
-			}
-		}
-
-		fromIsDisclosed := strings.ToLower(tx.From) == normalizedDisclosed
-		toIsDisclosed := tx.To != nil && strings.ToLower(*tx.To) == normalizedDisclosed
-		if fromIsDisclosed && toIsDisclosed {
-			pseudoTx.Direction = "self"
-		} else if fromIsDisclosed {
-			pseudoTx.Direction = "out"
-		} else {
-			pseudoTx.Direction = "in"
-		}
-
-		pseudoTxs = append(pseudoTxs, pseudoTx)
-	}
-
-	writeJSON(w, PseudonymizedTransactionsResponse{
-		Transactions:    pseudoTxs,
-		DisclosureLevel: resolved.DisclosureLevel,
-		AddressLabels:   addressLabels,
-		HasMore:         hasMore,
-	})
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	w.Write(body)
 }
 
 // generateExternalPseudonym creates a consistent pseudonym derived from address + grantID,
-// ensuring the same address always maps to the same pseudonym within a grant.
-func generateExternalPseudonym(address, grantID string, counter int) string {
-	h := sha256.New()
-	h.Write([]byte(strings.ToLower(address)))
-	h.Write([]byte(":"))
-	h.Write([]byte(grantID))
-	hash := hex.EncodeToString(h.Sum(nil))[:4]
-	return "External-" + strings.ToUpper(hash)
-}
+// generateExternalPseudonym was removed — pseudonymization is now handled
+// entirely by the privacy proxy (see GetGrantTransactions).
