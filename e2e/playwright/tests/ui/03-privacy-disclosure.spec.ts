@@ -105,6 +105,33 @@ test.describe('Disclosure Flow', () => {
     }
   });
 
+  test('G17: grant does NOT leak into regular explorer check-address', async ({ page, context }) => {
+    // G17 regression test: even though userB has a disclosure grant for userA,
+    // the check-address API must NOT return "disclosure_grant" visibility.
+    // Grants are only accessible via grant-specific endpoints (/grant/:id/...),
+    // not regular explorer views. This prevents address enumeration via grants.
+    test.skip(!grantId, 'No grant ID from previous test');
+
+    // Link a wallet to userA so we have an ETH address to check
+    const userAWallet = '0x' + 'aa'.repeat(20); // deterministic test address
+    await fixture.linkUserWallet(userAToken, userAWallet);
+
+    // Log in as userB (the grant recipient)
+    await loginViaCookie(context, userBDid);
+
+    // Call check-address API for userA's wallet — should NOT return disclosure_grant
+    const resp = await page.request.get(`/api/privacy/check-address/${userAWallet}`);
+
+    // The endpoint may return 200 or 4xx depending on auth/privacy state.
+    if (resp.ok()) {
+      const body = await resp.json();
+      expect(body.reason).not.toBe('disclosure_grant');
+      // Must be either "no_access" (hidden) or "public_address" (oracle-masked)
+      // — but never "disclosure_grant"
+    }
+    // If not 200 (auth required, forbidden), that's also fine — no leak
+  });
+
   test('revoked grant shows Access Denied', async ({ page, context }) => {
     // This test depends on grantId from the previous test
     test.skip(!grantId, 'No grant ID from previous test');
