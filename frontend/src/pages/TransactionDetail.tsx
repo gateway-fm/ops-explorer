@@ -185,7 +185,7 @@ export function TransactionDetail() {
               value={
                 <span className="flex items-center gap-1">
                   <AddressLink address={tx.from} full className="text-sm" />
-                  <AddressLabel reason={fromVis?.reason} />
+                  <AddressLabel reason={fromVis?.reason} visibility={fromVis} />
                   <CopyButton text={tx.from} />
                 </span>
               }
@@ -196,7 +196,7 @@ export function TransactionDetail() {
                 tx.to ? (
                   <span className="flex items-center gap-1">
                     <AddressLink address={tx.to} full className="text-sm" />
-                    <AddressLabel reason={toVis?.reason} />
+                    <AddressLabel reason={toVis?.reason} visibility={toVis} />
                     {tx.to !== '[PRIVATE]' && <CopyButton text={tx.to} />}
                   </span>
                 ) : tx.contractAddress ? (
@@ -350,10 +350,10 @@ function TokenTransferRow({ transfer, visibilities }: { transfer: TokenTransfer;
     <div className="flex items-center gap-1.5 flex-wrap text-sm">
       <span className="text-neutral-500">From</span>
       <AddressLink address={transfer.from} visibility={fromVis} />
-      <AddressLabel reason={fromVis?.reason} />
+      <AddressLabel reason={fromVis?.reason} visibility={fromVis} />
       <span className="text-neutral-500">To</span>
       <AddressLink address={transfer.to} visibility={toVis} />
-      <AddressLabel reason={toVis?.reason} />
+      <AddressLabel reason={toVis?.reason} visibility={toVis} />
       <span className="text-neutral-500">For</span>
       <span className="font-mono text-success-600 font-medium">{formattedValue}</span>
       <TokenAddressLink address={transfer.tokenAddress} />

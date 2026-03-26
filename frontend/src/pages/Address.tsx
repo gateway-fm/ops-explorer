@@ -748,7 +748,7 @@ function TxTableRow({ tx, currentAddress, visibilities }: { tx: Transaction; cur
           ) : (
             <AddressLink address={tx.from} chars={8} />
           )}
-          <AddressLabel reason={fromVis?.reason} />
+          <AddressLabel reason={fromVis?.reason} visibility={fromVis} />
         </span>
       </td>
 
@@ -779,7 +779,7 @@ function TxTableRow({ tx, currentAddress, visibilities }: { tx: Transaction; cur
             ) : (
               <AddressLink address={tx.to} chars={8} />
             )}
-            <AddressLabel reason={toVis?.reason} />
+            <AddressLabel reason={toVis?.reason} visibility={toVis} />
           </span>
         ) : (
           <span className="text-primary italic">Contract Creation</span>

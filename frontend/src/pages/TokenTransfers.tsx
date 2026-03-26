@@ -133,7 +133,7 @@ export default function TokenTransfers() {
                       <td>
                         <span className="inline-flex items-center gap-1">
                           <AddressLink address={transfer.from} chars={6} visibility={fromVis} />
-                          <AddressLabel reason={fromVis?.reason} />
+                          <AddressLabel reason={fromVis?.reason} visibility={fromVis} />
                         </span>
                       </td>
                       <td className="text-center">
@@ -142,7 +142,7 @@ export default function TokenTransfers() {
                       <td>
                         <span className="inline-flex items-center gap-1">
                           <AddressLink address={transfer.to} chars={6} visibility={toVis} />
-                          <AddressLabel reason={toVis?.reason} />
+                          <AddressLabel reason={toVis?.reason} visibility={toVis} />
                         </span>
                       </td>
                       <td>

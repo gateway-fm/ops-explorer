@@ -220,7 +220,7 @@ export default function TokenDetail() {
                       <td>
                         <div className="flex items-center gap-2">
                           <AddressLink address={holder.address} visibility={holderVis} />
-                          <AddressLabel reason={holderVis?.reason} />
+                          <AddressLabel reason={holderVis?.reason} visibility={holderVis} />
                           {holder.isContract && (
                             <span className="badge badge-neutral text-xs">
                               Contract
@@ -270,13 +270,13 @@ export default function TokenDetail() {
                       <td>
                         <span className="inline-flex items-center gap-1">
                           <AddressLink address={transfer.from} visibility={fromVis} />
-                          <AddressLabel reason={fromVis?.reason} />
+                          <AddressLabel reason={fromVis?.reason} visibility={fromVis} />
                         </span>
                       </td>
                       <td>
                         <span className="inline-flex items-center gap-1">
                           <AddressLink address={transfer.to} visibility={toVis} />
-                          <AddressLabel reason={toVis?.reason} />
+                          <AddressLabel reason={toVis?.reason} visibility={toVis} />
                         </span>
                       </td>
                       <td className="text-neutral-700 font-mono">
