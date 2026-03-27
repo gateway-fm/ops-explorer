@@ -270,9 +270,11 @@ test.describe('Param Constraint: self on indexed parameter', () => {
   let userToken: string;
   let contractAddress: string;
 
-  // Use two different deployers so we get NumberSet events from distinct senders.
-  const USER_WALLET = ANVIL_ACCOUNTS[7].address;   // user's linked wallet
-  const OTHER_WALLET = ANVIL_ACCOUNTS[8].address;   // unrelated sender
+  // Use two different senders so we get NumberSet events from distinct addresses.
+  // Account [9] is not used as a sender in any other test file.
+  // Account [1] is only used as a recipient in other tests — no sender collision.
+  const USER_WALLET = ANVIL_ACCOUNTS[9].address;   // user's linked wallet
+  const OTHER_WALLET = ANVIL_ACCOUNTS[1].address;   // unrelated sender
 
   test.beforeAll(async () => {
     fixture = new ProxyAdminFixture();
@@ -416,8 +418,10 @@ test.describe('Param Constraint: OR semantics across multiple rules', () => {
   let userToken: string;
   let contractAddress: string;
 
-  const USER_WALLET = ANVIL_ACCOUNTS[7].address;
-  const OTHER_WALLET = ANVIL_ACCOUNTS[8].address;
+  // Same accounts as describe block 1 — each describe block deploys its own
+  // contract so there is no state collision between them.
+  const USER_WALLET = ANVIL_ACCOUNTS[9].address;
+  const OTHER_WALLET = ANVIL_ACCOUNTS[1].address;
 
   test.beforeAll(async () => {
     fixture = new ProxyAdminFixture();
@@ -531,7 +535,8 @@ test.describe('Mixed Grants: different groups see different logs', () => {
   let userBToken: string;
   let contractAddress: string;
 
-  const DEPLOYER = ANVIL_ACCOUNTS[7].address;
+  // Account [9] — same as USER_WALLET in other describe blocks (no cross-block collision).
+  const DEPLOYER = ANVIL_ACCOUNTS[9].address;
 
   test.beforeAll(async () => {
     fixture = new ProxyAdminFixture();
@@ -713,8 +718,8 @@ test.describe('Param Constraint: receipt log filtering', () => {
   let userSetTxHash: string;
   let otherSetTxHash: string;
 
-  const USER_WALLET = ANVIL_ACCOUNTS[7].address;
-  const OTHER_WALLET = ANVIL_ACCOUNTS[8].address;
+  const USER_WALLET = ANVIL_ACCOUNTS[9].address;
+  const OTHER_WALLET = ANVIL_ACCOUNTS[1].address;
 
   test.beforeAll(async () => {
     fixture = new ProxyAdminFixture();
