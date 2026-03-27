@@ -49,7 +49,7 @@ export interface Transaction {
 }
 
 // Transaction category types
-export type TxCategory = 'coin_transfer' | 'contract_call' | 'contract_creation' | 'token_transfer';
+export type TxCategory = 'coin_transfer' | 'contract_call' | 'contract_creation' | 'token_transfer' | 'system_transaction';
 
 export interface AddressInfo {
   address: string;

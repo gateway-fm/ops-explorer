@@ -346,6 +346,12 @@ function BlockRow({ block, isNew }: { block: Block; isNew: boolean }) {
 
 // Transaction type display config
 const TX_TYPE_CONFIG: Record<TxCategory, { label: string; icon: React.ReactNode; bgColor: string; textColor: string }> = {
+  system_transaction: {
+    label: 'System',
+    icon: <Shield className="w-5 h-5" />,
+    bgColor: 'bg-neutral-100',
+    textColor: 'text-neutral-400',
+  },
   contract_creation: {
     label: 'Contract Creation',
     icon: <FilePlus className="w-5 h-5" />,
@@ -386,7 +392,7 @@ function getTxTypeConfig(categories?: TxCategory[]) {
   }
 
   // Priority: contract_creation > contract_call > token_transfer > coin_transfer
-  const priority: TxCategory[] = ['contract_creation', 'contract_call', 'token_transfer', 'coin_transfer'];
+  const priority: TxCategory[] = ['system_transaction', 'contract_creation', 'contract_call', 'token_transfer', 'coin_transfer'];
   for (const cat of priority) {
     if (categories.includes(cat)) {
       return TX_TYPE_CONFIG[cat];

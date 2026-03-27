@@ -145,6 +145,7 @@ const CATEGORY_CONFIG: Record<TxCategory, { label: string; className: string }> 
   contract_call: { label: 'Contract Call', className: 'bg-blue-100 text-blue-700' },
   coin_transfer: { label: 'Coin Transfer', className: 'bg-green-100 text-green-700' },
   token_transfer: { label: 'Token Transfer', className: 'bg-orange-100 text-orange-700' },
+  system_transaction: { label: 'System Transaction', className: 'bg-neutral-100 text-neutral-500' },
 };
 
 function TxCategoryBadge({ category }: { category: TxCategory }) {

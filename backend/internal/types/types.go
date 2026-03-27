@@ -298,6 +298,7 @@ const (
 	TxCategoryContractCall      = "contract_call"
 	TxCategoryContractCreation  = "contract_creation"
 	TxCategoryTokenTransfer     = "token_transfer"
+	TxCategorySystemTransaction = "system_transaction"
 )
 
 const (
