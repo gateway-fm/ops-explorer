@@ -1,0 +1,34 @@
+# Full branding override — customises every branding option with a blue theme.
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml -f examples/branding/docker-compose.full.yml up --build -d
+
+services:
+  frontend:
+    environment:
+      # Identity
+      VITE_BRAND_NAME: "Nebula Explorer"
+      VITE_BRAND_COMPANY: "Nebula Labs"
+      VITE_BRAND_DESCRIPTION: "Nebula Explorer - The official block explorer for the Nebula network"
+
+      # Assets (replace with your own hosted assets or place files in frontend/public/)
+      VITE_BRAND_LOGO: "/logo.svg"
+      VITE_BRAND_ICON: "/mascot.png"
+      VITE_BRAND_FAVICON: "/favicon.ico"
+
+      # Blue theme
+      VITE_BRAND_COLOR_PRIMARY: "#2563EB"
+      VITE_BRAND_COLOR_HERO_BG: "linear-gradient(135deg, #1e3a5f, #1d4ed8, #2563EB)"
+
+      # Company links
+      VITE_BRAND_WEBSITE: "https://nebula.example.com"
+      VITE_BRAND_DOCS: "https://docs.nebula.example.com"
+      VITE_BRAND_LEGAL: "https://nebula.example.com/legal"
+      VITE_BRAND_SECURITY: "https://nebula.example.com/security"
+      VITE_BRAND_TRUST: "https://trust.nebula.example.com"
+
+      # Social media
+      VITE_BRAND_TWITTER: "https://x.com/nebula"
+      VITE_BRAND_LINKEDIN: "https://linkedin.com/company/nebula"
+      VITE_BRAND_DISCORD: "https://discord.gg/nebula"
+      VITE_BRAND_TELEGRAM: "https://t.me/nebula"

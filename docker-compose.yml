@@ -69,6 +69,27 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  public-api:
+    platform: linux/amd64
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.public-api
+    ports:
+      - "${PUBLIC_API_PORT:-8082}:8082"
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/explorer?sslmode=disable
+      RPC_URL: ${RPC_URL:-http://privacy-proxy-backend:8080}
+      PUBLIC_API_PORT: "8082"
+      RATE_LIMIT: ${RATE_LIMIT:-100}
+      RATE_LIMIT_WINDOW: ${RATE_LIMIT_WINDOW:-1m}
+    networks:
+      - default
+      - privacy-proxy
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   frontend:
     image: node:22-alpine
     working_dir: /app
@@ -79,9 +100,11 @@ services:
       - "${FRONTEND_PORT:-3001}:3001"
     environment:
       VITE_API_URL: /api
+      VITE_PUBLIC_API_URL: http://localhost:${PUBLIC_API_PORT:-8082}
     command: sh -c "npm install --legacy-peer-deps && npm run dev -- --host 0.0.0.0 --port 3001"
     depends_on:
       - api
+      - public-api
     restart: unless-stopped
 
 networks:

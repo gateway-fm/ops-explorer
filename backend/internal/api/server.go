@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"explorer/internal/auth"
+	"explorer/internal/chaininfo"
 	"explorer/internal/events"
 	"explorer/internal/gas"
 	"explorer/internal/indexer"
@@ -30,6 +32,7 @@ type Server struct {
 	eventBus      *events.Bus
 	verifier      *verifier.Verifier
 	gasTracker    *gas.Tracker
+	chainInfo     *chaininfo.Service
 	metrics       *Metrics
 	wsHub         *ws.Hub
 	wsConfig      *ws.Config
@@ -37,6 +40,7 @@ type Server struct {
 	ssoClient     *auth.SSOClient
 	port          int
 	router        *chi.Mux
+	etherscanResults sync.Map // guid -> *etherscanVerifyResult
 }
 
 type ServerConfig struct {
@@ -76,6 +80,7 @@ func New(database APIDatabase, rpcClient *rpc.Client, idx *indexer.Indexer, pric
 	}
 
 	s.gasTracker = gas.NewTracker(database, nil)
+	s.chainInfo = chaininfo.NewService(rpcClient, 10*time.Minute)
 
 	s.setupRoutes()
 	return s
@@ -156,7 +161,13 @@ func (s *Server) setupRoutes() {
 }
 
 func (s *Server) setupAPIRoutes(r chi.Router) {
+	// Etherscan-compatible RPC API (hardhat verify, forge verify-contract).
+	// Handles POST/GET to /api (or /api/v1) with ?module=contract&action=...
+	// Falls through to 404 if module param is absent.
+	r.HandleFunc("/", s.handleEtherscanRPC)
+
 	r.Get("/stats", s.handleGetStats)
+	r.Get("/chain-info", s.handleGetChainInfo)
 	r.Get("/stats/tx-history", s.handleGetTransactionHistory)
 	r.Get("/price", s.handleGetPrice)
 	r.Get("/gas", s.handleGetGasPrices)
@@ -212,6 +223,12 @@ func (s *Server) setupAPIRoutes(r chi.Router) {
 	r.Get("/token-transfers", s.handleGetAllTransfers)
 	r.Get("/logs", s.handleGetLogs)
 	r.Get("/accounts", s.handleGetAccounts)
+
+	r.Route("/charts", func(r chi.Router) {
+		r.Get("/counters", s.handleGetChartCounters)
+		r.Get("/lines", s.handleGetChartLines)
+		r.Get("/lines/{id}", s.handleGetChartLine)
+	})
 }
 
 func (s *Server) setupAPIV2Routes(r chi.Router) {
@@ -234,6 +251,10 @@ func (s *Server) authContextMiddleware(next http.Handler) http.Handler {
 func (s *Server) Start(ctx context.Context) error {
 	if s.wsHub != nil {
 		go s.wsHub.Run(ctx)
+	}
+
+	if s.chainInfo != nil {
+		go s.chainInfo.Start(ctx)
 	}
 
 	srv := &http.Server{

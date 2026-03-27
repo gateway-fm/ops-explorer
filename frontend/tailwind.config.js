@@ -21,32 +21,33 @@ export default {
         '2xl': '24px',
       },
       colors: {
-        // Gateway Primary Purple
+        // Primary brand color — default Gateway Purple, overridable via VITE_BRAND_COLOR_PRIMARY
+        // Uses rgb() with CSS variable so Tailwind opacity modifiers (e.g. /20) work
         primary: {
           50: '#F5F3FF',
           100: '#EDE9FE',
           200: '#C4A8FD',
           300: '#A478FC',
-          400: '#8950FA',
-          500: '#8950FA',
+          400: 'rgb(var(--primary-rgb))',
+          500: 'rgb(var(--primary-rgb))',
           600: '#6B3DD4',
           700: '#5B32B0',
           800: '#4C2889',
           900: '#3D1F6D',
-          DEFAULT: '#8950FA',
+          DEFAULT: 'rgb(var(--primary-rgb))',
         },
-        // Neutrals for light theme
+        // Neutrals — use CSS variables so the palette auto-flips in dark mode
         neutral: {
-          50: '#FFFFFF',
-          100: '#F1F5F9',
-          200: '#E2E8F0',
-          300: '#CBD5E1',
-          400: '#94A3B8',
-          500: '#6B7280',
-          600: '#475569',
-          700: '#374151',
-          800: '#1A1A1A',
-          900: '#0F0F0F',
+          50: 'var(--neutral-50)',
+          100: 'var(--neutral-100)',
+          200: 'var(--neutral-200)',
+          300: 'var(--neutral-300)',
+          400: 'var(--neutral-400)',
+          500: 'var(--neutral-500)',
+          600: 'var(--neutral-600)',
+          700: 'var(--neutral-700)',
+          800: 'var(--neutral-800)',
+          900: 'var(--neutral-900)',
         },
         // Status colors
         success: {
@@ -75,8 +76,8 @@ export default {
         'card': '0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.1)',
         'card-hover': '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
         'elevated': '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
-        'primary': '0 0 20px rgba(137, 80, 250, 0.3)',
-        'primary-lg': '0 0 30px rgba(137, 80, 250, 0.4)',
+        'primary': '0 0 20px rgba(var(--primary-rgb), 0.3)',
+        'primary-lg': '0 0 30px rgba(var(--primary-rgb), 0.4)',
       },
       animation: {
         'fade-in': 'fade-in 0.3s ease-out',
