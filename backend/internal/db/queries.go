@@ -339,7 +339,7 @@ func (d *DB) GetTransactionWithCategories(ctx context.Context, hash string) (*ty
 		return nil, err
 	}
 	tx.Value = types.JSONString(valueStr)
-	tx.TxCategories = buildCategories(isCoinTransfer, isContractCall, isContractCreation, tokenTransferCount)
+	tx.TxCategories = buildCategories(tx.TxType, isCoinTransfer, isContractCall, isContractCreation, tokenTransferCount)
 	tx.TokenTransferCount = tokenTransferCount
 
 	return &tx, nil
@@ -360,7 +360,7 @@ func scanTransactionsWithCategories(rows pgx.Rows) ([]types.Transaction, error) 
 			return nil, err
 		}
 		tx.Value = types.JSONString(valueStr)
-		tx.TxCategories = buildCategories(isCoinTransfer, isContractCall, isContractCreation, tokenTransferCount)
+		tx.TxCategories = buildCategories(tx.TxType, isCoinTransfer, isContractCall, isContractCreation, tokenTransferCount)
 		tx.TokenTransferCount = tokenTransferCount
 
 		txs = append(txs, tx)
@@ -368,7 +368,10 @@ func scanTransactionsWithCategories(rows pgx.Rows) ([]types.Transaction, error) 
 	return txs, rows.Err()
 }
 
-func buildCategories(isCoinTransfer, isContractCall, isContractCreation bool, tokenTransferCount int) []string {
+func buildCategories(txType int, isCoinTransfer, isContractCall, isContractCreation bool, tokenTransferCount int) []string {
+	if txType == types.TxTypeDeposit {
+		return []string{types.TxCategorySystemTransaction}
+	}
 	var categories []string
 	if isContractCreation {
 		categories = append(categories, types.TxCategoryContractCreation)
