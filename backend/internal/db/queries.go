@@ -144,7 +144,7 @@ func (d *DB) GetTransactions(ctx context.Context, limit int, beforeBlock *uint64
 				t.tx_type, t.input_data, t.status, t.error, t.revert_reason, t.created_at
 			FROM transactions t
 			JOIN blocks b ON t.block_number = b.number
-			WHERE t.block_number < $1 ORDER BY t.block_number DESC, t.tx_index DESC LIMIT $2`, *beforeBlock, limit)
+			WHERE NOT (t.tx_type = ANY($1::int[])) AND t.block_number < $2 ORDER BY t.block_number DESC, t.tx_index DESC LIMIT $3`, d.HiddenTxTypes, *beforeBlock, limit)
 	} else {
 		rows, err = d.pool.Query(ctx, `
 			SELECT t.hash, t.block_number, b.timestamp, t.tx_index, t.from_address, t.to_address, t.value::text,
@@ -152,7 +152,7 @@ func (d *DB) GetTransactions(ctx context.Context, limit int, beforeBlock *uint64
 				t.tx_type, t.input_data, t.status, t.error, t.revert_reason, t.created_at
 			FROM transactions t
 			JOIN blocks b ON t.block_number = b.number
-			ORDER BY t.block_number DESC, t.tx_index DESC LIMIT $1`, limit)
+			WHERE NOT (t.tx_type = ANY($1::int[])) ORDER BY t.block_number DESC, t.tx_index DESC LIMIT $2`, d.HiddenTxTypes, limit)
 	}
 	if err != nil {
 		return nil, err
@@ -164,7 +164,7 @@ func (d *DB) GetTransactions(ctx context.Context, limit int, beforeBlock *uint64
 
 func (d *DB) GetTransactionsPaginated(ctx context.Context, page, pageSize int) ([]types.Transaction, int64, error) {
 	var total int64
-	err := d.pool.QueryRow(ctx, `SELECT COUNT(*) FROM transactions`).Scan(&total)
+	err := d.pool.QueryRow(ctx, `SELECT COUNT(*) FROM transactions WHERE NOT (tx_type = ANY($1::int[]))`, d.HiddenTxTypes).Scan(&total)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -176,8 +176,9 @@ func (d *DB) GetTransactionsPaginated(ctx context.Context, page, pageSize int) (
 			t.tx_type, t.input_data, t.status, t.error, t.revert_reason, t.created_at
 		FROM transactions t
 		JOIN blocks b ON t.block_number = b.number
+		WHERE NOT (t.tx_type = ANY($1::int[]))
 		ORDER BY t.block_number DESC, t.tx_index DESC
-		LIMIT $1 OFFSET $2`, pageSize, offset)
+		LIMIT $2 OFFSET $3`, d.HiddenTxTypes, pageSize, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -265,11 +266,11 @@ func (d *DB) GetTransactionsWithCategories(ctx context.Context, limit int, befor
 		JOIN blocks b ON t.block_number = b.number`
 
 	if beforeBlock != nil {
-		query += ` WHERE t.block_number < $1 ORDER BY t.block_number DESC, t.tx_index DESC LIMIT $2`
-		rows, err = d.pool.Query(ctx, query, *beforeBlock, limit)
+		query += ` WHERE NOT (t.tx_type = ANY($1::int[])) AND t.block_number < $2 ORDER BY t.block_number DESC, t.tx_index DESC LIMIT $3`
+		rows, err = d.pool.Query(ctx, query, d.HiddenTxTypes, *beforeBlock, limit)
 	} else {
-		query += ` ORDER BY t.block_number DESC, t.tx_index DESC LIMIT $1`
-		rows, err = d.pool.Query(ctx, query, limit)
+		query += ` WHERE NOT (t.tx_type = ANY($1::int[])) ORDER BY t.block_number DESC, t.tx_index DESC LIMIT $2`
+		rows, err = d.pool.Query(ctx, query, d.HiddenTxTypes, limit)
 	}
 	if err != nil {
 		return nil, err
@@ -281,7 +282,7 @@ func (d *DB) GetTransactionsWithCategories(ctx context.Context, limit int, befor
 
 func (d *DB) GetTransactionsPaginatedWithCategories(ctx context.Context, page, pageSize int) ([]types.Transaction, int64, error) {
 	var total int64
-	err := d.pool.QueryRow(ctx, `SELECT COUNT(*) FROM transactions`).Scan(&total)
+	err := d.pool.QueryRow(ctx, `SELECT COUNT(*) FROM transactions WHERE NOT (tx_type = ANY($1::int[]))`, d.HiddenTxTypes).Scan(&total)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -298,8 +299,9 @@ func (d *DB) GetTransactionsPaginatedWithCategories(ctx context.Context, page, p
 			(SELECT COUNT(*) FROM token_transfers tt WHERE tt.tx_hash = t.hash) as token_transfer_count
 		FROM transactions t
 		JOIN blocks b ON t.block_number = b.number
+		WHERE NOT (t.tx_type = ANY($1::int[]))
 		ORDER BY t.block_number DESC, t.tx_index DESC
-		LIMIT $1 OFFSET $2`, pageSize, offset)
+		LIMIT $2 OFFSET $3`, d.HiddenTxTypes, pageSize, offset)
 	if err != nil {
 		return nil, 0, err
 	}
