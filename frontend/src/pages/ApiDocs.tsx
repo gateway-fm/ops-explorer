@@ -498,25 +498,48 @@ const endpointGroups: EndpointGroup[] = [
 function JsonSyntax({ data }: { data: unknown }) {
   const json = JSON.stringify(data, null, 2);
 
-  const highlighted = json.replace(
-    /("(?:\\.|[^"\\])*")\s*:/g,
-    '<span class="text-purple-600">$1</span>:',
-  ).replace(
-    /:\s*("(?:\\.|[^"\\])*")/g,
-    ': <span class="text-green-600">$1</span>',
-  ).replace(
-    /:\s*(\d+(?:\.\d+)?)/g,
-    ': <span class="text-blue-600">$1</span>',
-  ).replace(
-    /:\s*(true|false|null)/g,
-    ': <span class="text-amber-600">$1</span>',
-  );
+  // Tokenize JSON into spans without dangerouslySetInnerHTML
+  const tokens: { text: string; className?: string }[] = [];
+  const re = /("(?:\\.|[^"\\])*")\s*:|:\s*("(?:\\.|[^"\\])*")|:\s*(\d+(?:\.\d+)?)|:\s*(true|false|null)|[^":]+|./g;
+  let match: RegExpExecArray | null;
+  let lastIndex = 0;
+
+  while ((match = re.exec(json)) !== null) {
+    // Add any skipped text as plain
+    if (match.index > lastIndex) {
+      tokens.push({ text: json.slice(lastIndex, match.index) });
+    }
+    if (match[1]) {
+      // Key
+      tokens.push({ text: match[1], className: 'text-purple-600' });
+      tokens.push({ text: ':' });
+    } else if (match[2]) {
+      // String value
+      tokens.push({ text: ': ' });
+      tokens.push({ text: match[2], className: 'text-green-600' });
+    } else if (match[3]) {
+      // Number value
+      tokens.push({ text: ': ' });
+      tokens.push({ text: match[3], className: 'text-blue-600' });
+    } else if (match[4]) {
+      // Boolean/null
+      tokens.push({ text: ': ' });
+      tokens.push({ text: match[4], className: 'text-amber-600' });
+    } else {
+      tokens.push({ text: match[0] });
+    }
+    lastIndex = re.lastIndex;
+  }
+  if (lastIndex < json.length) {
+    tokens.push({ text: json.slice(lastIndex) });
+  }
 
   return (
-    <pre
-      className="text-xs leading-relaxed overflow-x-auto"
-      dangerouslySetInnerHTML={{ __html: highlighted }}
-    />
+    <pre className="text-xs leading-relaxed overflow-x-auto">
+      {tokens.map((t, i) =>
+        t.className ? <span key={i} className={t.className}>{t.text}</span> : t.text
+      )}
+    </pre>
   );
 }
 
