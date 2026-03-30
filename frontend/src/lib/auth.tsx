@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
 
 interface AuthState {
@@ -25,6 +26,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     expiresAt: null,
   });
 
+  const queryClient = useQueryClient();
+
   const checkStatus = useCallback(async () => {
     try {
       const status = await api.auth.status();
@@ -49,8 +52,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await api.auth.logout();
     } finally {
       setAuth({ authenticated: false, did: null, expiresAt: null });
+      // Invalidate all queries so mounted components refetch with the new
+      // (unauthenticated) auth state.  clear() only removes queries from
+      // the cache without triggering refetches, so components keep showing
+      // stale authenticated data until a manual page refresh.
+      await queryClient.invalidateQueries();
     }
-  }, []);
+  }, [queryClient]);
 
   return (
     <AuthContext.Provider

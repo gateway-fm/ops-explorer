@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '../lib/api';
@@ -9,17 +9,46 @@ import { PageHeader } from '../components/PageHeader';
 import { AddressLink } from '../components/AddressLink';
 import { AddressLabel } from '../components/AddressLabel';
 import { useBatchAddressVisibility } from '../hooks/useAddressVisibility';
+import { NewItemsNotice } from '../components/NewItemsNotice';
 
 export function Transactions() {
   const [searchParams, setSearchParams] = useSearchParams();
   const page = parseInt(searchParams.get('page') || '1', 10);
   const pageSize = 25;
+  const queryClient = useQueryClient();
 
+  // Main transactions query — no auto-refetch
   const { data, isLoading, error } = useQuery({
     queryKey: ['transactions', page, pageSize],
     queryFn: () => api.getTransactionsPaginated(page, pageSize),
-    refetchInterval: page === 1 ? 5000 : false, // Only auto-refresh on first page
   });
+
+  // Track the total at the time of last load
+  const [snapshotTotal, setSnapshotTotal] = useState<number | null>(null);
+  useEffect(() => {
+    if (data && snapshotTotal === null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time snapshot on initial data load
+      setSnapshotTotal(data.total);
+    }
+  }, [data, snapshotTotal]);
+
+  // Lightweight poll for updated total (only on page 1)
+  const { data: stats } = useQuery({
+    queryKey: ['stats'],
+    queryFn: api.getStats,
+    refetchInterval: page === 1 ? 3000 : false,
+    enabled: page === 1,
+  });
+
+  // Calculate how many new transactions since snapshot
+  const newTxCount = (page === 1 && snapshotTotal !== null && stats)
+    ? Math.max(0, stats.totalTransactions - snapshotTotal)
+    : 0;
+
+  const handleLoadNew = useCallback(() => {
+    setSnapshotTotal(null);
+    queryClient.invalidateQueries({ queryKey: ['transactions', page, pageSize] });
+  }, [queryClient, page, pageSize]);
 
   const uniqueAddresses = useMemo(() => {
     if (!data?.data) return [];
@@ -34,6 +63,7 @@ export function Transactions() {
   const { visibilities } = useBatchAddressVisibility(uniqueAddresses);
 
   const goToPage = (newPage: number) => {
+    setSnapshotTotal(null);
     setSearchParams({ page: String(newPage) });
   };
 
@@ -50,6 +80,14 @@ export function Transactions() {
       </PageHeader>
 
       <div className="card overflow-hidden">
+        {page === 1 && (
+          <NewItemsNotice
+            count={newTxCount}
+            type="transaction"
+            onClick={handleLoadNew}
+          />
+        )}
+
         <div className="overflow-x-auto">
           <table className="table">
             <thead>
@@ -145,6 +183,7 @@ const CATEGORY_CONFIG: Record<TxCategory, { label: string; className: string }> 
   contract_call: { label: 'Contract Call', className: 'bg-blue-100 text-blue-700' },
   coin_transfer: { label: 'Coin Transfer', className: 'bg-green-100 text-green-700' },
   token_transfer: { label: 'Token Transfer', className: 'bg-orange-100 text-orange-700' },
+  system_transaction: { label: 'System Transaction', className: 'bg-neutral-100 text-neutral-500' },
 };
 
 function TxCategoryBadge({ category }: { category: TxCategory }) {
@@ -198,14 +237,14 @@ function TxTableRow({ tx, visibilities }: { tx: Transaction; visibilities: Recor
       </td>
       <td className="text-sm">
         <span className="inline-flex items-center gap-1">
-          <AddressLink address={tx.from} chars={6} />
+          <AddressLink address={tx.from} chars={6} visibility={fromVis} />
           <AddressLabel reason={fromVis?.reason} />
         </span>
       </td>
       <td className="text-sm">
         {tx.to ? (
           <span className="inline-flex items-center gap-1">
-            <AddressLink address={tx.to} chars={6} />
+            <AddressLink address={tx.to} chars={6} visibility={toVis} />
             <AddressLabel reason={toVis?.reason} />
           </span>
         ) : (

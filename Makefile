@@ -5,7 +5,7 @@ IMAGE_PREFIX ?= block-explorer
 
 .PHONY: dev dev-stop dev-destroy dev-logs dev-rebuild-backend
 .PHONY: run run-privacy stop destroy logs rebuild-backend
-.PHONY: version docker-build docker-build-api docker-build-indexer docker-build-frontend docker-build-dry-run
+.PHONY: version docker-build docker-build-api docker-build-indexer docker-build-public-api docker-build-frontend docker-build-dry-run
 .PHONY: lint test build clean clean-build
 
 # Default RPC URL (use host.docker.internal to reach host from Docker)
@@ -17,8 +17,15 @@ API_PORT ?= 8081
 FRONTEND_PORT ?= 3001
 POSTGRES_PORT ?= 5433
 ANVIL_PORT ?= 8546
+PUBLIC_API_PORT ?= 8082
 
-export API_PORT FRONTEND_PORT POSTGRES_PORT ANVIL_PORT
+# Branding override file (optional)
+# Usage: make run BRAND=examples/branding/docker-compose.full.yml
+#        make dev BRAND=examples/branding/docker-compose.minimal.yml
+BRAND ?=
+BRAND_FLAG := $(if $(BRAND),-f $(BRAND),)
+
+export API_PORT FRONTEND_PORT POSTGRES_PORT ANVIL_PORT PUBLIC_API_PORT
 
 # =============================================================================
 # Dev Environment (Anvil local testnet)
@@ -27,8 +34,8 @@ export API_PORT FRONTEND_PORT POSTGRES_PORT ANVIL_PORT
 dev:
 	@echo "Starting Block Explorer (dev mode with Anvil)..."
 	@echo ""
-	docker compose -f docker-compose.dev.yml build
-	docker compose -f docker-compose.dev.yml up -d
+	docker compose -f docker-compose.dev.yml $(BRAND_FLAG) build
+	docker compose -f docker-compose.dev.yml $(BRAND_FLAG) up -d
 	@echo ""
 	@echo "Waiting for services..."
 	@for i in 1 2 3 4 5 6 7 8 9 10; do \
@@ -40,9 +47,10 @@ dev:
 	@echo ""
 	@echo "Block Explorer (dev) is ready!"
 	@echo ""
-	@echo "  Explorer:  http://localhost:$(FRONTEND_PORT)"
-	@echo "  API:       http://localhost:$(API_PORT)"
-	@echo "  Anvil RPC: http://localhost:$(ANVIL_PORT)"
+	@echo "  Explorer:   http://localhost:$(FRONTEND_PORT)"
+	@echo "  API:        http://localhost:$(API_PORT)"
+	@echo "  Public API: http://localhost:$(PUBLIC_API_PORT)"
+	@echo "  Anvil RPC:  http://localhost:$(ANVIL_PORT)"
 	@echo ""
 	@echo "Test accounts (each with 10000 ETH):"
 	@echo "  0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
@@ -73,8 +81,8 @@ run:
 	@echo "Starting Block Explorer..."
 	@echo "RPC URL: $(RPC_URL)"
 	@echo ""
-	docker compose build
-	RPC_URL=$(RPC_URL) START_BLOCK=$(START_BLOCK) docker compose up -d
+	docker compose -f docker-compose.yml $(BRAND_FLAG) build
+	RPC_URL=$(RPC_URL) START_BLOCK=$(START_BLOCK) docker compose -f docker-compose.yml $(BRAND_FLAG) up -d
 	@echo ""
 	@echo "Waiting for services..."
 	@for i in 1 2 3 4 5 6 7 8 9 10; do \
@@ -86,8 +94,9 @@ run:
 	@echo ""
 	@echo "Block Explorer is ready!"
 	@echo ""
-	@echo "  Explorer:  http://localhost:$(FRONTEND_PORT)"
-	@echo "  API:       http://localhost:$(API_PORT)"
+	@echo "  Explorer:   http://localhost:$(FRONTEND_PORT)"
+	@echo "  API:        http://localhost:$(API_PORT)"
+	@echo "  Public API: http://localhost:$(PUBLIC_API_PORT)"
 	@echo ""
 
 run-privacy:
@@ -95,8 +104,8 @@ run-privacy:
 	@echo "  API  RPC: privacy-proxy-backend:8080 (proxy)"
 	@echo "  Indexer RPC: privacy-proxy-anvil:8545 (direct, for indexing)"
 	@echo ""
-	docker compose build
-	START_BLOCK=$(START_BLOCK) docker compose up -d
+	docker compose -f docker-compose.yml $(BRAND_FLAG) build
+	START_BLOCK=$(START_BLOCK) docker compose -f docker-compose.yml $(BRAND_FLAG) up -d
 	@echo ""
 	@echo "Waiting for services..."
 	@for i in 1 2 3 4 5 6 7 8 9 10; do \
@@ -114,19 +123,19 @@ run-privacy:
 
 stop:
 	@echo "Stopping Block Explorer..."
-	docker compose down -v --remove-orphans
+	docker compose -f docker-compose.yml down -v --remove-orphans
 	@echo "Done"
 
 destroy:
 	@echo "Destroying Block Explorer (containers, volumes, and images)..."
-	docker compose down -v --remove-orphans --rmi local
+	docker compose -f docker-compose.yml down -v --remove-orphans --rmi local
 	@echo "Done"
 
 logs:
-	docker compose logs -f
+	docker compose -f docker-compose.yml logs -f
 
 rebuild-backend:
-	docker compose build --no-cache api indexer && docker compose up -d api indexer
+	docker compose -f docker-compose.yml build --no-cache api indexer && docker compose -f docker-compose.yml up -d api indexer
 
 # Clean Docker environment (stop services, remove volumes)
 clean:
@@ -175,7 +184,7 @@ build:
 # Docker Builds
 # =============================================================================
 
-docker-build: docker-build-api docker-build-indexer docker-build-frontend
+docker-build: docker-build-api docker-build-indexer docker-build-public-api docker-build-frontend
 
 docker-build-api:
 	@echo "Building $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-api:$(VERSION)"
@@ -184,6 +193,10 @@ docker-build-api:
 docker-build-indexer:
 	@echo "Building $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-indexer:$(VERSION)"
 	docker build -f backend/Dockerfile.indexer -t $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-indexer:$(VERSION) backend/
+
+docker-build-public-api:
+	@echo "Building $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-public-api:$(VERSION)"
+	docker build -f backend/Dockerfile.public-api -t $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-public-api:$(VERSION) backend/
 
 docker-build-frontend:
 	@echo "Building $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-frontend:$(VERSION)"
@@ -195,6 +208,8 @@ docker-build-dry-run:
 	@$(MAKE) docker-build-api
 	@echo ""
 	@$(MAKE) docker-build-indexer
+	@echo ""
+	@$(MAKE) docker-build-public-api
 	@echo ""
 	@$(MAKE) docker-build-frontend
 	@echo ""

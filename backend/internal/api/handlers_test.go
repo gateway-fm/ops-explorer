@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"explorer/internal/db"
 	"explorer/internal/types"
@@ -253,6 +254,16 @@ func (m *MockAPIDatabase) GetGasPercentiles(ctx context.Context, numBlocks int, 
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*db.GasPercentiles), args.Error(1)
+}
+
+func (m *MockAPIDatabase) GetDailyStats(ctx context.Context, from, to time.Time) ([]types.DailyStats, error) {
+	args := m.Called(ctx, from, to)
+	return args.Get(0).([]types.DailyStats), args.Error(1)
+}
+
+func (m *MockAPIDatabase) BackfillDailyStats(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
 }
 
 func TestHandleGetStats(t *testing.T) {

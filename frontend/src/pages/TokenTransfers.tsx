@@ -1,9 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { TokenTransfer } from '../lib/api';
 import { AddressLink } from '../components/AddressLink';
+import { AddressLabel } from '../components/AddressLabel';
 import { PageHeader } from '../components/PageHeader';
+import { useBatchAddressVisibility } from '../hooks/useAddressVisibility';
 import { ArrowRight } from 'lucide-react';
 
 function formatTokenValue(value: string | number, decimals = 18): string {
@@ -37,6 +40,18 @@ export default function TokenTransfers() {
     queryKey: ['allTokenTransfers', page],
     queryFn: () => api.getAllTokenTransfers(page, 25),
   });
+
+  const uniqueAddresses = useMemo(() => {
+    if (!data?.data) return [];
+    const set = new Set<string>();
+    for (const t of data.data) {
+      if (t.from && t.from !== '[PRIVATE]') set.add(t.from.toLowerCase());
+      if (t.to && t.to !== '[PRIVATE]') set.add(t.to.toLowerCase());
+    }
+    return Array.from(set);
+  }, [data]);
+
+  const { visibilities } = useBatchAddressVisibility(uniqueAddresses);
 
   const handlePageChange = (newPage: number) => {
     const params = new URLSearchParams(searchParams);
@@ -94,7 +109,10 @@ export default function TokenTransfers() {
                   </tr>
                 </thead>
                 <tbody>
-                  {transfers.map((transfer: TokenTransfer) => (
+                  {transfers.map((transfer: TokenTransfer) => {
+                    const fromVis = visibilities[transfer.from?.toLowerCase()];
+                    const toVis = visibilities[transfer.to?.toLowerCase()];
+                    return (
                     <tr key={`${transfer.txHash}-${transfer.logIndex}`}>
                       <td>
                         <Link
@@ -113,13 +131,19 @@ export default function TokenTransfers() {
                         </Link>
                       </td>
                       <td>
-                        <AddressLink address={transfer.from} chars={6} />
+                        <span className="inline-flex items-center gap-1">
+                          <AddressLink address={transfer.from} chars={6} visibility={fromVis} />
+                          <AddressLabel reason={fromVis?.reason} />
+                        </span>
                       </td>
                       <td className="text-center">
                         <ArrowRight className="w-4 h-4 text-neutral-400 inline-block" />
                       </td>
                       <td>
-                        <AddressLink address={transfer.to} chars={6} />
+                        <span className="inline-flex items-center gap-1">
+                          <AddressLink address={transfer.to} chars={6} visibility={toVis} />
+                          <AddressLabel reason={toVis?.reason} />
+                        </span>
                       </td>
                       <td>
                         <div className="flex items-center gap-2">
@@ -144,7 +168,8 @@ export default function TokenTransfers() {
                           : formatTokenValue(transfer.value)}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

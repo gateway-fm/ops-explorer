@@ -3,17 +3,16 @@ package indexer
 import (
 	"context"
 	"math/big"
+	"time"
 
 	"explorer/internal/db"
 	"explorer/internal/rpc"
 	"explorer/internal/types"
 
-	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/common"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"explorer/pkg/eth/common"
+	"explorer/pkg/eth/rpclient"
 )
 
-// Database defines the subset of db.DB methods used by the indexer
 type Database interface {
 	GetLatestBlockNumber(ctx context.Context) (uint64, error)
 	GetBlockCount(ctx context.Context) (int64, error)
@@ -24,10 +23,10 @@ type Database interface {
 	UpdateSyncStatus(ctx context.Context, lastIndexed uint64, isSyncing bool) error
 	HasBlock(ctx context.Context, number uint64) (bool, error)
 	DeleteMissingRangeByBlock(ctx context.Context, blockNum uint64) error
+	RequeueMissingBlock(ctx context.Context, blockNum uint64) error
 	GetMissingRangesBatch(ctx context.Context, batchSize int) ([]db.BlockRange, error)
 	RebuildAddressStats(ctx context.Context) error
 
-	// Additional methods
 	InsertTransaction(ctx context.Context, tx *types.Transaction) error
 	InsertContract(ctx context.Context, c *types.Contract) error
 	UpsertAddressStats(ctx context.Context, address string, blockNumber uint64, isContract bool) error
@@ -39,7 +38,6 @@ type Database interface {
 	GetToken(ctx context.Context, address string) (*types.Token, error)
 	InsertToken(ctx context.Context, t *types.Token) error
 
-	// MissingRangeCollector specifically
 	GetMinMaxIndexedBlocks(ctx context.Context) (uint64, uint64, error)
 	GetTotalMissingBlocks(ctx context.Context) (int64, error)
 	GetIndexerProgress(ctx context.Context) (*db.IndexerProgress, error)
@@ -47,27 +45,27 @@ type Database interface {
 	FindMissingBlocksInRange(ctx context.Context, fromBlock, toBlock uint64) ([]db.BlockRange, error)
 	SaveMissingRanges(ctx context.Context, ranges []db.BlockRange) error
 
-	// Added for TokenCache/BalanceWorker
 	GetAllTokenAddresses(ctx context.Context) ([]string, error)
 	InsertBalancesBatch(ctx context.Context, balances []*types.Balance) error
+
+	ComputeDailyStats(ctx context.Context, date time.Time) (*types.DailyStats, error)
+	UpsertDailyStats(ctx context.Context, stats *types.DailyStats) error
+	BackfillDailyStats(ctx context.Context) error
 }
 
-// RPCClient defines the subset of rpc.Client methods used by the indexer
 type RPCClient interface {
 	BlockNumber(ctx context.Context) (uint64, error)
-	BlockByNumber(ctx context.Context, number *big.Int) (*ethtypes.Block, error)
 	RawBlockByNumber(ctx context.Context, number uint64) (*rpc.RawBlock, error)
 	RawBlockHash(ctx context.Context, number uint64) (string, error)
-	FetchReceiptsBatch(ctx context.Context, txHashes []common.Hash, workers int, rateLimit int) (map[common.Hash]*ethtypes.Receipt, error)
+	FetchReceiptsBatch(ctx context.Context, txHashes []common.Hash, workers int, rateLimit int) (map[common.Hash]*rpclient.Receipt, error)
 	GetTotalDifficulty(ctx context.Context, blockNumber uint64) string
 	CheckTracingSupport(ctx context.Context) (bool, error)
-	SubscribeNewHead(ctx context.Context, ch chan<- *ethtypes.Header) (ethereum.Subscription, error)
+	SubscribeNewHead(ctx context.Context, ch chan<- *rpclient.Header) (rpclient.Subscription, error)
 	CallContract(ctx context.Context, to common.Address, data []byte) ([]byte, error)
 
-	// Additional methods
 	GetCode(ctx context.Context, address common.Address) ([]byte, error)
 	FetchTracesBatch(ctx context.Context, txHashes []common.Hash, startBlock, endBlock uint64, workers, rateLimit int) ([]*types.InternalTransaction, error)
 	FetchTokenMetadataBatch(ctx context.Context, addresses []common.Address, workers int, rateLimit int) (map[common.Address]*rpc.TokenMetadataResult, error)
 	ChainID(ctx context.Context) (*big.Int, error)
-	TransactionReceipt(ctx context.Context, txHash common.Hash) (*ethtypes.Receipt, error)
+	TransactionReceipt(ctx context.Context, txHash common.Hash) (*rpclient.Receipt, error)
 }

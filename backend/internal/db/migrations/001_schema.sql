@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS tokens (
     icon_url TEXT,
     l1_address TEXT,
     block_number BIGINT NOT NULL,
-    creation_tx TEXT REFERENCES transactions(hash),
+    creation_tx TEXT REFERENCES transactions(hash) ON DELETE CASCADE,
     off_chain_updated_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW()
 );
@@ -135,7 +135,7 @@ CREATE TABLE IF NOT EXISTS contracts (
     bytecode TEXT NOT NULL,
     bytecode_hash TEXT,
     creator TEXT NOT NULL,
-    creation_tx TEXT NOT NULL REFERENCES transactions(hash),
+    creation_tx TEXT NOT NULL REFERENCES transactions(hash) ON DELETE CASCADE,
     block_number BIGINT NOT NULL,
     is_verified BOOLEAN DEFAULT false,
     contract_name TEXT,
@@ -214,7 +214,8 @@ CREATE TABLE IF NOT EXISTS missing_block_ranges (
     from_number BIGINT NOT NULL,
     to_number BIGINT NOT NULL,
     created_at TIMESTAMP DEFAULT NOW(),
-    CONSTRAINT valid_range CHECK (from_number <= to_number)
+    CONSTRAINT valid_range CHECK (from_number <= to_number),
+    CONSTRAINT unique_range UNIQUE (from_number, to_number)
 );
 CREATE INDEX IF NOT EXISTS idx_missing_ranges_from ON missing_block_ranges(from_number);
 CREATE INDEX IF NOT EXISTS idx_missing_ranges_to ON missing_block_ranges(to_number);

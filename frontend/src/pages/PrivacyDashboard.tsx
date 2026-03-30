@@ -16,6 +16,7 @@ import { PageHeader } from '../components/PageHeader';
 import { LinkedAddresses } from '../components/LinkedAddresses';
 import { redirectToLogin } from '../lib/login';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
+import { formatDID } from '../lib/utils';
 
 type TabType = 'own' | 'disclosed';
 
@@ -86,8 +87,7 @@ function truncateAddress(address: string): string {
 
 function truncateDID(did: string): string {
   if (!did) return '';
-  if (did.length <= 24) return did;
-  return `${did.slice(0, 12)}...${did.slice(-8)}`;
+  return formatDID(did);
 }
 
 function formatExpiration(expiresAt?: string): string {

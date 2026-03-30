@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../lib/api';
-import type { TokenTransfer, Log, TxCategory } from '../lib/api';
+import type { TokenTransfer, Log, TxCategory, AddressVisibility } from '../lib/api';
 import { formatWei, formatGas, formatTimestamp } from '../lib/utils';
 import { AddressLink, TokenAddressLink } from '../components/AddressLink';
+import { AddressLabel } from '../components/AddressLabel';
+import { useBatchAddressVisibility } from '../hooks/useAddressVisibility';
 import { PageHeader } from '../components/PageHeader';
 import { CopyButton } from '../components/CopyButton';
 import { decodeEvent, getMethodId, fetchEventSignature, decodeEventWithSignature, KNOWN_EVENTS } from '../lib/eventDecoder';
@@ -17,6 +19,7 @@ const CATEGORY_CONFIG: Record<TxCategory, { label: string; className: string }> 
   contract_call: { label: 'Contract Call', className: 'bg-blue-100 text-blue-700' },
   coin_transfer: { label: 'Coin Transfer', className: 'bg-green-100 text-green-700' },
   token_transfer: { label: 'Token Transfer', className: 'bg-orange-100 text-orange-700' },
+  system_transaction: { label: 'System Transaction', className: 'bg-neutral-100 text-neutral-500' },
 };
 
 function TxCategoryBadges({ categories }: { categories?: TxCategory[] }) {
@@ -65,8 +68,47 @@ export function TransactionDetail() {
     enabled: !!hash,
   });
 
+  // Collect from/to addresses for visibility labels (including token transfer addresses)
+  const txAddresses = useMemo(() => {
+    const set = new Set<string>();
+    if (tx) {
+      if (tx.from && tx.from !== '[PRIVATE]') set.add(tx.from.toLowerCase());
+      if (tx.to && tx.to !== '[PRIVATE]') set.add(tx.to.toLowerCase());
+      if (tx.contractAddress && tx.contractAddress !== '[PRIVATE]') set.add(tx.contractAddress.toLowerCase());
+    }
+    if (transfers) {
+      for (const t of transfers) {
+        if (t.from && t.from !== '[PRIVATE]') set.add(t.from.toLowerCase());
+        if (t.to && t.to !== '[PRIVATE]') set.add(t.to.toLowerCase());
+      }
+    }
+    return Array.from(set);
+  }, [tx, transfers]);
+  const { visibilities } = useBatchAddressVisibility(txAddresses);
+
   if (isLoading) return <div className="text-neutral-400">Loading...</div>;
+  if (error && error instanceof Error && (error.message.includes('403') || error.message.includes('500'))) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Transaction" />
+        <div className="card">
+          <div className="flex flex-col items-center justify-center py-16 space-y-4">
+            <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center border border-neutral-200">
+              <svg className="w-8 h-8 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v.01M12 12a1.5 1.5 0 001.5-1.5c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5M19.5 12c0 4.14-3.36 7.5-7.5 7.5S4.5 16.14 4.5 12 7.86 4.5 12 4.5s7.5 3.36 7.5 7.5z" /></svg>
+            </div>
+            <h2 className="text-xl font-semibold text-neutral-900">Transaction Restricted</h2>
+            <p className="text-neutral-500 text-center max-w-md text-sm">
+              This transaction involves private addresses. Sign in to view it if you are a participant.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (error || !tx) return <div className="text-error-600">Transaction not found</div>;
+
+  const fromVis = visibilities[tx.from?.toLowerCase()];
+  const toVis = tx.to ? visibilities[tx.to.toLowerCase()] : undefined;
 
   const hasLogs = logs && logs.length > 0;
 
@@ -143,6 +185,7 @@ export function TransactionDetail() {
               value={
                 <span className="flex items-center gap-1">
                   <AddressLink address={tx.from} full className="text-sm" />
+                  <AddressLabel reason={fromVis?.reason} />
                   <CopyButton text={tx.from} />
                 </span>
               }
@@ -153,7 +196,8 @@ export function TransactionDetail() {
                 tx.to ? (
                   <span className="flex items-center gap-1">
                     <AddressLink address={tx.to} full className="text-sm" />
-                    <CopyButton text={tx.to} />
+                    <AddressLabel reason={toVis?.reason} />
+                    {tx.to !== '[PRIVATE]' && <CopyButton text={tx.to} />}
                   </span>
                 ) : tx.contractAddress ? (
                   <span className="flex items-center gap-1 text-sm">
@@ -177,13 +221,20 @@ export function TransactionDetail() {
                 </div>
                 <div className="flex flex-col gap-2">
                   {transfers.map((transfer) => (
-                    <TokenTransferRow key={`${transfer.txHash}-${transfer.logIndex}`} transfer={transfer} />
+                    <TokenTransferRow key={`${transfer.txHash}-${transfer.logIndex}`} transfer={transfer} visibilities={visibilities} />
                   ))}
                 </div>
               </div>
             )}
 
-            <InfoRow label="Value" value={`${formatWei(tx.value)} ETH`} />
+            <InfoRow
+              label="Value"
+              value={
+                tx.value === '' || tx.value == null
+                  ? <span className="text-neutral-400 italic">hidden</span>
+                  : `${formatWei(tx.value)} ETH`
+              }
+            />
             <InfoRow
               label="Transaction Fee"
               value={`${formatWei((BigInt(tx.gasUsed) * BigInt(tx.gasPrice)).toString())} ETH`}
@@ -218,14 +269,18 @@ export function TransactionDetail() {
                     {tx.txType === 0 ? '0 (Legacy)' :
                      tx.txType === 1 ? '1 (Access List)' :
                      tx.txType === 2 ? '2 (EIP-1559)' :
-                     tx.txType === 126 ? '126 (OP Deposit)' :
+                     tx.txType === 126 ? '126 (System Deposit)' :
                      tx.txType ?? '-'}
                   </span>
                 }
               />
               <InfoRow
                 label="Nonce"
-                value={<span className="font-mono text-sm">{tx.nonce ?? '-'}</span>}
+                value={
+                  tx.nonce == null
+                    ? <span className="text-neutral-400 italic">hidden</span>
+                    : <span className="font-mono text-sm">{tx.nonce}</span>
+                }
               />
               <InfoRow
                 label="Position in Block"
@@ -286,15 +341,19 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function TokenTransferRow({ transfer }: { transfer: TokenTransfer }) {
+function TokenTransferRow({ transfer, visibilities }: { transfer: TokenTransfer; visibilities: Record<string, AddressVisibility> }) {
   const formattedValue = formatTokenValue(transfer.value);
+  const fromVis = visibilities[transfer.from?.toLowerCase()];
+  const toVis = visibilities[transfer.to?.toLowerCase()];
 
   return (
     <div className="flex items-center gap-1.5 flex-wrap text-sm">
       <span className="text-neutral-500">From</span>
-      <AddressLink address={transfer.from} />
+      <AddressLink address={transfer.from} visibility={fromVis} />
+      <AddressLabel reason={fromVis?.reason} />
       <span className="text-neutral-500">To</span>
-      <AddressLink address={transfer.to} />
+      <AddressLink address={transfer.to} visibility={toVis} />
+      <AddressLabel reason={toVis?.reason} />
       <span className="text-neutral-500">For</span>
       <span className="font-mono text-success-600 font-medium">{formattedValue}</span>
       <TokenAddressLink address={transfer.tokenAddress} />

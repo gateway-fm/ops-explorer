@@ -4,8 +4,8 @@ import (
 	"encoding/hex"
 	"strings"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
+	"explorer/pkg/eth/common"
+	"explorer/pkg/eth/crypto"
 )
 
 type BytecodeComparison struct {

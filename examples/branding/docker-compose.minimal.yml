@@ -1,0 +1,18 @@
+# Minimal branding override — rename the explorer with a teal theme.
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml -f examples/branding/docker-compose.minimal.yml up --build -d
+
+services:
+  frontend:
+    environment:
+      VITE_BRAND_NAME: "Acme Explorer"
+      VITE_BRAND_COMPANY: "Acme Inc."
+
+      # Logos
+      VITE_BRAND_LOGO: "/logo.svg"
+      VITE_BRAND_ICON: "/mascot.png"
+
+      # Teal theme
+      VITE_BRAND_COLOR_PRIMARY: "#0D9488"
+      VITE_BRAND_COLOR_HERO_BG: "linear-gradient(135deg, #134e4a, #0f766e, #0D9488)"

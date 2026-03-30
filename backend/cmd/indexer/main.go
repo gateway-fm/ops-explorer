@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"explorer/internal/config"
@@ -17,6 +19,15 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatal("failed to load config", "error", err)
+	}
+
+	switch strings.ToLower(cfg.LogLevel) {
+	case "debug":
+		log.SetLevel(slog.LevelDebug)
+	case "warn":
+		log.SetLevel(slog.LevelWarn)
+	case "error":
+		log.SetLevel(slog.LevelError)
 	}
 
 	database, err := db.New(cfg.DatabaseURL)

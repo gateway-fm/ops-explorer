@@ -10,7 +10,7 @@ import (
 	"explorer/internal/log"
 	"explorer/internal/types"
 
-	"github.com/ethereum/go-ethereum/common"
+	"explorer/pkg/eth/common"
 )
 
 type BalanceWork struct {

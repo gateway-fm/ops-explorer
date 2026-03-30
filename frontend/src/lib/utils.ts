@@ -3,11 +3,12 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 export function formatAddress(address: string, chars = 6): string {
+  if (!address.startsWith('0x')) return address; // don't truncate [PRIVATE] or other placeholders
   return `${address.slice(0, chars + 2)}...${address.slice(-chars)}`;
 }
 
-export function formatHash(hash: string, chars = 8): string {
-  return `${hash.slice(0, chars + 2)}...${hash.slice(-chars)}`;
+export function formatHash(hash: string, chars = 10): string {
+  return `${hash.slice(0, chars + 2)}...`;
 }
 
 export function formatTimestamp(timestamp: number): string {
@@ -53,4 +54,16 @@ export function formatGas(gas: number): string {
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+export function didIdentifier(did: string): string {
+  const lastColon = did.lastIndexOf(':');
+  if (lastColon === -1) return did;
+  return did.slice(lastColon + 1);
+}
+
+export function formatDID(did: string, chars = 6): string {
+  const id = didIdentifier(did);
+  if (id.length <= chars * 2 + 3) return id;
+  return `${id.slice(0, chars)}...${id.slice(-chars)}`;
 }

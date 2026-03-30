@@ -5,13 +5,10 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
+	"explorer/pkg/eth/common"
+	"explorer/pkg/eth/hexutil"
 )
 
-// RawTransaction represents a transaction from the JSON-RPC eth_getBlockByNumber response.
-// This is used instead of go-ethereum's types.Transaction to handle OP Stack deposit
-// transactions (type 0x7E/126) which go-ethereum does not support.
 type RawTransaction struct {
 	Hash             common.Hash    `json:"hash"`
 	BlockHash        common.Hash    `json:"blockHash"`
@@ -26,21 +23,17 @@ type RawTransaction struct {
 	Nonce            *hexutil.Uint64 `json:"nonce"`
 	Type             hexutil.Uint64 `json:"type"`
 
-	// EIP-1559 fields
 	MaxFeePerGas         *hexutil.Big `json:"maxFeePerGas,omitempty"`
 	MaxPriorityFeePerGas *hexutil.Big `json:"maxPriorityFeePerGas,omitempty"`
 
-	// Signature fields (absent for deposit transactions)
 	V *hexutil.Big `json:"v,omitempty"`
 	R *hexutil.Big `json:"r,omitempty"`
 	S *hexutil.Big `json:"s,omitempty"`
 
-	// OP Stack deposit transaction fields (type 0x7E)
 	SourceHash  *common.Hash `json:"sourceHash,omitempty"`
 	Mint        *hexutil.Big `json:"mint,omitempty"`
-	IsSystemTx  *bool        `json:"isSystemTx,omitempty"`
+	IsSystemTx  *FlexBool    `json:"isSystemTx,omitempty"`
 
-	// OP Stack deposit receipt fields
 	DepositNonce          *hexutil.Uint64 `json:"depositNonce,omitempty"`
 	DepositReceiptVersion *hexutil.Uint64 `json:"depositReceiptVersion,omitempty"`
 }
@@ -102,8 +95,6 @@ func (b *RawBlock) BaseFeeU64() *uint64 {
 	return &v
 }
 
-// RawBlockByNumber bypasses go-ethereum's tx unmarshalling which fails on OP Stack
-// deposit transactions (type 0x7E).
 func (c *Client) RawBlockByNumber(ctx context.Context, number uint64) (*RawBlock, error) {
 	var raw RawBlock
 	err := c.raw.CallContext(ctx, &raw, "eth_getBlockByNumber", toHex(number), true)
@@ -116,7 +107,6 @@ func (c *Client) RawBlockByNumber(ctx context.Context, number uint64) (*RawBlock
 	return &raw, nil
 }
 
-// RawBlockHash fetches only the block hash for lightweight reorg detection.
 func (c *Client) RawBlockHash(ctx context.Context, number uint64) (string, error) {
 	var raw struct {
 		Hash common.Hash `json:"hash"`

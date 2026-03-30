@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"time"
 )
+
+var ErrNotFound = errors.New("privacy: grant or address not found")
 
 type Client struct {
 	baseURL    string
@@ -89,8 +92,9 @@ type BatchCheckAddressesResponse struct {
 }
 
 type ViewerIdentity struct {
-	Wallet string // Wallet address (optional if DID is provided)
-	DID    string // DID from SSO (optional, takes precedence over wallet)
+	Wallet   string // Wallet address (used for DB-verified DID lookup)
+	DID      string // DID extracted locally (for display only, NOT sent to proxy)
+	JWTToken string // Raw JWT token forwarded to privacy-proxy for authenticated requests
 }
 
 func (c *Client) GetViewableAddresses(ctx context.Context, wallet string) (*ViewableAddressesResponse, error) {
@@ -107,14 +111,14 @@ func (c *Client) GetViewableAddressesWithIdentity(ctx context.Context, viewer Vi
 	if viewer.Wallet != "" {
 		q.Set("wallet", viewer.Wallet)
 	}
-	if viewer.DID != "" {
-		q.Set("did", viewer.DID)
-	}
 	u.RawQuery = q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	if viewer.JWTToken != "" {
+		req.Header.Set("Authorization", "Bearer "+viewer.JWTToken)
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -151,14 +155,14 @@ func (c *Client) CheckAddressWithIdentity(ctx context.Context, viewer ViewerIden
 	if viewer.Wallet != "" {
 		q.Set("wallet", viewer.Wallet)
 	}
-	if viewer.DID != "" {
-		q.Set("did", viewer.DID)
-	}
 	u.RawQuery = q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	if viewer.JWTToken != "" {
+		req.Header.Set("Authorization", "Bearer "+viewer.JWTToken)
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -197,9 +201,6 @@ func (c *Client) CheckAddressesWithIdentity(ctx context.Context, viewer ViewerId
 	u.RawQuery = q.Encode()
 
 	reqBody := map[string]interface{}{"addresses": addresses}
-	if viewer.DID != "" {
-		reqBody["did"] = viewer.DID
-	}
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request body: %w", err)
@@ -210,6 +211,9 @@ func (c *Client) CheckAddressesWithIdentity(ctx context.Context, viewer ViewerId
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if viewer.JWTToken != "" {
+		req.Header.Set("Authorization", "Bearer "+viewer.JWTToken)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -445,16 +449,13 @@ func (c *Client) ResolveAddressID(ctx context.Context, grantID, addressID string
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("grant or address not found")
-	}
-	if resp.StatusCode == http.StatusForbidden {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("access denied: %s", string(body))
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil, fmt.Errorf("grant=%s address=%s: %w", grantID, addressID, ErrNotFound)
 	}
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil, fmt.Errorf("grant=%s address=%s: privacy proxy status %d", grantID, addressID, resp.StatusCode)
 	}
 
 	var result ResolveAddressResponse
@@ -463,4 +464,37 @@ func (c *Client) ResolveAddressID(ctx context.Context, grantID, addressID string
 	}
 
 	return &result, nil
+}
+
+// GetGrantTransactions fetches pseudonymized transactions for a disclosure grant
+// directly from the privacy proxy. The proxy handles all pseudonymization —
+// the explorer just forwards the response as raw JSON.
+func (c *Client) GetGrantTransactions(ctx context.Context, grantID, addressID string, limit int, beforeBlock *uint64) ([]byte, int, error) {
+	endpoint := fmt.Sprintf("/api/v1/explorer/grant/%s/%s/transactions?limit=%d", grantID, addressID, limit)
+	if beforeBlock != nil {
+		endpoint += fmt.Sprintf("&before=%d", *beforeBlock)
+	}
+
+	u, err := url.Parse(c.baseURL + endpoint)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to parse URL: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	return body, resp.StatusCode, nil
 }
