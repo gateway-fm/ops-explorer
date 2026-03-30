@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"time"
+
 	"explorer/internal/db"
 	"explorer/internal/types"
 )
@@ -51,4 +53,7 @@ type APIDatabase interface {
 	GetOPDeposit(ctx context.Context, txHash string) (*types.OPDeposit, error)
 	IsContract(ctx context.Context, address string) (bool, error)
 	GetGasPercentiles(ctx context.Context, numBlocks int, slowPct, avgPct, fastPct float64) (*db.GasPercentiles, error)
+
+	GetDailyStats(ctx context.Context, from, to time.Time) ([]types.DailyStats, error)
+	BackfillDailyStats(ctx context.Context) error
 }

@@ -202,6 +202,20 @@ export interface TokenHolder {
   isContract: boolean;
 }
 
+export interface ChainInfo {
+  chainId: string;
+  chainIdDecimal: number;
+  networkId: string;
+  clientVersion: string;
+  protocolVersion: string;
+  latestBlock: number;
+  gasPrice: string;
+  peerCount: number;
+  isSyncing: boolean;
+  genesisHash: string;
+  updatedAt: string;
+}
+
 export interface SyncStatus {
   syncStatus: {
     id: number;
@@ -326,6 +340,32 @@ export interface PseudonymizedTransactionsResponse {
   has_more: boolean;
 }
 
+export interface ChartLineInfo {
+  id: string;
+  title: string;
+  description: string;
+  units?: string;
+  section: string;
+}
+
+export interface ChartDataPoint {
+  date: string;
+  value: number;
+}
+
+export interface ChartLineResponse {
+  info: ChartLineInfo;
+  chart: ChartDataPoint[];
+}
+
+export interface ChartCounter {
+  id: string;
+  title: string;
+  value: string;
+  units?: string;
+  description: string;
+}
+
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${endpoint}`, {
     credentials: 'include',
@@ -340,6 +380,17 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
 
 export const api = {
   getStats: () => fetchAPI<ChainStats>('/stats'),
+
+  // Chart endpoints
+  getChartLines: () => fetchAPI<ChartLineInfo[]>('/charts/lines'),
+  getChartLine: (id: string, from?: string, to?: string) => {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const qs = params.toString();
+    return fetchAPI<ChartLineResponse>(`/charts/lines/${id}${qs ? '?' + qs : ''}`);
+  },
+  getChartCounters: () => fetchAPI<ChartCounter[]>('/charts/counters'),
 
   getBlocks: (limit = 25, before?: number) => {
     const params = new URLSearchParams({ limit: String(limit) });
@@ -421,6 +472,9 @@ export const api = {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     return fetchAPI<OffsetPaginatedResponse<TokenTransfer>>(`/token-transfers?${params}`);
   },
+
+  // Chain info
+  getChainInfo: () => fetchAPI<ChainInfo>('/chain-info'),
 
   // Sync status
   getSyncStatus: () => fetchAPI<SyncStatus>('/sync'),
@@ -539,7 +593,9 @@ export const api = {
   // Contract verification
   verifyContract: async (data: {
     address: string;
-    sourceCode: string;
+    sourceCode?: string;
+    sourceFiles?: Record<string, string>;
+    mainContractFile?: string;
     contractName: string;
     compilerVersion: string;
     evmVersion?: string;

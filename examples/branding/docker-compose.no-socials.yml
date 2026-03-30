@@ -1,0 +1,34 @@
+# Branding override with no social links or company links — green theme.
+# Useful for private/internal deployments where you just want a clean explorer
+# without footer links to external services.
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml -f examples/branding/docker-compose.no-socials.yml up --build -d
+
+services:
+  frontend:
+    environment:
+      # Identity
+      VITE_BRAND_NAME: "Internal Explorer"
+      VITE_BRAND_COMPANY: "My Org"
+
+      # Logos
+      VITE_BRAND_LOGO: "/logo.svg"
+      VITE_BRAND_ICON: "/mascot.png"
+
+      # Green theme
+      VITE_BRAND_COLOR_PRIMARY: "#16A34A"
+      VITE_BRAND_COLOR_HERO_BG: "linear-gradient(135deg, #14532d, #15803d, #16A34A)"
+
+      # Hide all company links
+      VITE_BRAND_WEBSITE: ""
+      VITE_BRAND_DOCS: ""
+      VITE_BRAND_LEGAL: ""
+      VITE_BRAND_SECURITY: ""
+      VITE_BRAND_TRUST: ""
+
+      # Hide all social links
+      VITE_BRAND_TWITTER: ""
+      VITE_BRAND_LINKEDIN: ""
+      VITE_BRAND_DISCORD: ""
+      VITE_BRAND_TELEGRAM: ""

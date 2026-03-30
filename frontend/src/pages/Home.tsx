@@ -12,6 +12,7 @@ import { SearchBar } from '../components/SearchBar';
 import { redirectToLogin } from '../lib/login';
 import { useAuth } from '../lib/auth';
 import { useBatchAddressVisibility } from '../hooks/useAddressVisibility';
+import { branding } from '../lib/branding';
 
 export function Home() {
   const { isAuthenticated, auth, logout } = useAuth();
@@ -124,7 +125,10 @@ export function Home() {
   return (
     <div className="space-y-4 sm:space-y-8">
       {/* Hero Section */}
-      <div className="relative overflow-visible rounded-xl bg-gradient-to-br from-primary-900 via-primary-700 to-primary p-5 sm:p-8 shadow-card">
+      <div
+        className={`relative overflow-visible rounded-xl p-5 sm:p-8 shadow-card ${branding.colorHeroBg ? '' : 'bg-gradient-to-br from-primary-900 via-primary-700 to-primary'}`}
+        style={branding.colorHeroBg ? { background: branding.colorHeroBg } : undefined}
+      >
         {/* Background decoration */}
         <div className="absolute inset-0 opacity-[0.07] overflow-hidden rounded-xl">
           <div className="absolute top-0 left-0 w-72 h-72 bg-white rounded-full -translate-x-1/2 -translate-y-1/2" />
@@ -133,7 +137,7 @@ export function Home() {
 
         <div className="relative z-10">
           <h1 className="text-2xl sm:text-3xl font-bold text-white mb-4">
-            Gateway Block Explorer
+            {branding.name}
           </h1>
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
@@ -187,7 +191,7 @@ export function Home() {
               ) : (
                 <button
                   onClick={() => redirectToLogin()}
-                  className="inline-flex items-center gap-2 px-6 h-[50px] rounded-xl bg-white text-primary font-medium text-sm hover:bg-neutral-100 transition-colors shadow-card whitespace-nowrap border border-neutral-200"
+                  className="inline-flex items-center gap-2 px-6 h-[50px] rounded-xl bg-neutral-50 text-primary font-medium text-sm hover:bg-neutral-100 transition-colors shadow-card whitespace-nowrap border border-neutral-200"
                 >
                   <Shield className="w-4 h-4" />
                   Sign in with Privado
@@ -277,10 +281,10 @@ export function Home() {
 }
 
 const colorStyles = {
-  blue: 'bg-blue-50 text-blue-600 border border-blue-200',
-  green: 'bg-success-50 text-success-600 border border-success-100',
-  purple: 'bg-primary-50 text-primary border border-primary-200',
-  amber: 'bg-warning-50 text-warning-600 border border-warning-100',
+  blue: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800',
+  green: 'bg-success-50 dark:bg-success-500/10 text-success-600 dark:text-success-500 border border-success-100 dark:border-success-500/20',
+  purple: 'bg-primary-50 dark:bg-primary-900/20 text-primary dark:text-primary-400 border border-primary-200 dark:border-primary-800',
+  amber: 'bg-warning-50 dark:bg-warning-500/10 text-warning-600 dark:text-warning-500 border border-warning-100 dark:border-warning-500/20',
 };
 
 function StatCard({ label, value, icon, color }: { label: string; value: string; icon: React.ReactNode; color: keyof typeof colorStyles }) {
@@ -312,8 +316,8 @@ function BlockRow({ block, isNew }: { block: Block; isNew: boolean }) {
   const gasPercent = block.gasLimit > 0 ? (block.gasUsed / block.gasLimit) * 100 : 0;
 
   return (
-    <div className={`px-3 sm:px-4 h-[52px] sm:h-[60px] flex items-center gap-3 hover:bg-primary-50/50 transition-colors ${isNew ? 'feed-item-new' : ''}`}>
-      <div className="p-2 rounded-lg bg-blue-50 text-blue-600 shrink-0">
+    <div className={`px-3 sm:px-4 h-[52px] sm:h-[60px] flex items-center gap-3 hover:bg-primary-50/50 dark:hover:bg-primary-900/10 transition-colors ${isNew ? 'feed-item-new' : ''}`}>
+      <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 shrink-0">
         <Box className="w-5 h-5" />
       </div>
       <div className="flex-1 min-w-0">
@@ -355,26 +359,26 @@ const TX_TYPE_CONFIG: Record<TxCategory, { label: string; icon: React.ReactNode;
   contract_creation: {
     label: 'Contract Creation',
     icon: <FilePlus className="w-5 h-5" />,
-    bgColor: 'bg-purple-50',
-    textColor: 'text-purple-600',
+    bgColor: 'bg-purple-50 dark:bg-purple-900/20',
+    textColor: 'text-purple-600 dark:text-purple-400',
   },
   contract_call: {
     label: 'Contract Call',
     icon: <FileCode className="w-5 h-5" />,
-    bgColor: 'bg-blue-50',
-    textColor: 'text-blue-600',
+    bgColor: 'bg-blue-50 dark:bg-blue-900/20',
+    textColor: 'text-blue-600 dark:text-blue-400',
   },
   token_transfer: {
     label: 'Token Transfer',
     icon: <Coins className="w-5 h-5" />,
-    bgColor: 'bg-orange-50',
-    textColor: 'text-orange-600',
+    bgColor: 'bg-orange-50 dark:bg-orange-900/20',
+    textColor: 'text-orange-600 dark:text-orange-400',
   },
   coin_transfer: {
     label: 'Coin Transfer',
     icon: <ArrowRightLeft className="w-5 h-5" />,
-    bgColor: 'bg-green-50',
-    textColor: 'text-green-600',
+    bgColor: 'bg-green-50 dark:bg-green-900/20',
+    textColor: 'text-green-600 dark:text-green-400',
   },
 };
 
@@ -408,7 +412,7 @@ function TxRow({ tx, isNew, visibilities }: { tx: Transaction; isNew: boolean; v
   const toVis = tx.to ? visibilities[tx.to.toLowerCase()] : undefined;
 
   return (
-    <div className={`px-3 sm:px-4 h-[52px] sm:h-[60px] flex items-center gap-3 hover:bg-primary-50/50 transition-colors ${isNew ? 'feed-item-new' : ''}`}>
+    <div className={`px-3 sm:px-4 h-[52px] sm:h-[60px] flex items-center gap-3 hover:bg-primary-50/50 dark:hover:bg-primary-900/10 transition-colors ${isNew ? 'feed-item-new' : ''}`}>
       <div className={`p-2 rounded-lg ${bgColor} ${textColor} shrink-0`}>
         {icon}
       </div>
