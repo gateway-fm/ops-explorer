@@ -318,10 +318,11 @@ export function PrivacyDashboard() {
                         ? disclosed.address
                         : truncateAddress(disclosed.address);
 
-                      const isFull = disclosed.disclosure_level === 'full';
-                      const viewLink = isFull
-                        ? `/address/${disclosed.address}`
-                        : `/grant/${disclosed.grantId}/${disclosed.addressId}`;
+                      // Always use the grant page — disclosure context is only
+                      // applied there. The regular /address page doesn't know
+                      // about disclosure grants (G17: grants don't leak into
+                      // regular explorer views).
+                      const viewLink = `/grant/${disclosed.grantId}/${disclosed.addressId}`;
 
                       return (
                         <tr key={disclosed.grantId + disclosed.addressId}>
