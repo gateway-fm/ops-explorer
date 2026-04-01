@@ -1,0 +1,22 @@
+FROM golang:1.25-alpine AS builder
+
+# Upgrade system packages
+RUN apk update --no-cache && apk upgrade --no-cache
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+RUN CGO_ENABLED=0 GOOS=linux go build -o /public-api ./cmd/public-api
+
+FROM alpine:3.19
+
+RUN apk update --no-cache && apk upgrade --no-cache
+RUN apk --no-cache add ca-certificates libc6-compat
+
+COPY --from=builder /public-api /public-api
+
+ENTRYPOINT ["/public-api"]

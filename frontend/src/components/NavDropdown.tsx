@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, Boxes, ArrowLeftRight, Users, ShieldCheck, Coins, ArrowRightLeft, Fuel, LogIn, Shield, LogOut, Copy, Check } from 'lucide-react';
+import { ChevronDown, Boxes, ArrowLeftRight, Users, ShieldCheck, Coins, ArrowRightLeft, Fuel, Info, Settings, Sun, Moon, LogIn, Shield, LogOut, Copy, Check } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { redirectToLogin } from '../lib/login';
 import { usePrivacyEnabled } from '../hooks/usePrivacyEnabled';
 import { MetaMaskFox } from './MetaMask';
 import { addNetworkToMetaMask } from '../lib/metamask';
+import { useTheme } from '../hooks/useTheme';
 import { formatDID } from '../lib/utils';
 
 const blockchainItems = [
@@ -14,6 +15,7 @@ const blockchainItems = [
   { to: '/accounts', label: 'Top Accounts', icon: Users },
   { to: '/gas-tracker', label: 'Gas Tracker', icon: Fuel },
   { to: '/verify', label: 'Verify Contract', icon: ShieldCheck },
+  { to: '/chain-info', label: 'Chain Info', icon: Info },
 ];
 
 const tokenItems = [
@@ -72,6 +74,68 @@ function Dropdown({ label, items }: DropdownProps) {
     </div>
   );
 }
+
+const themeOptions = [
+  { value: 'light' as const, label: 'Light', icon: Sun },
+  { value: 'dark' as const, label: 'Dark', icon: Moon },
+];
+
+function SettingsDropdown() {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const { theme, setTheme } = useTheme();
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div ref={dropdownRef} className="relative">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center justify-center w-9 h-9 text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors"
+        title="Settings"
+      >
+        <Settings className="w-4 h-4" />
+      </button>
+
+      {isOpen && (
+        <div className="absolute top-full right-0 mt-2 w-48 card overflow-hidden z-50 shadow-elevated">
+          <div className="px-4 py-2 border-b border-neutral-100">
+            <span className="text-xs font-medium text-neutral-400 uppercase tracking-wider">Theme</span>
+          </div>
+          {themeOptions.map((opt) => {
+            const Icon = opt.icon;
+            const active = theme === opt.value;
+            return (
+              <button
+                key={opt.value}
+                onClick={() => setTheme(opt.value)}
+                className={`w-full flex items-center gap-3 px-4 py-3 transition-colors ${
+                  active
+                    ? 'bg-primary-50 dark:bg-primary-900/20 text-primary dark:text-primary-400'
+                    : 'hover:bg-neutral-50 text-neutral-700'
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                <span className="text-sm">{opt.label}</span>
+                {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 function AuthButton() {
   const privacyEnabled = usePrivacyEnabled();
@@ -161,11 +225,10 @@ function AuthButton() {
       className="flex items-center gap-1.5 px-3 py-2 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors text-sm font-medium"
     >
       <LogIn className="w-4 h-4" />
-      Sign in
+      Sign In
     </button>
   );
 }
-
 
 const TARGET_CHAIN_ID = '0x' + Number(import.meta.env.VITE_CHAIN_ID || '1001').toString(16);
 
@@ -194,7 +257,7 @@ export function NavDropdown() {
       {!networkAdded && (
         <button
           onClick={addNetworkToMetaMask}
-          className="flex items-center gap-1.5 px-3 py-2 text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors text-sm font-medium"
+          className="flex items-center gap-1.5 px-3 py-2 text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors text-sm font-medium dark:text-amber-300 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 dark:border-amber-700"
         >
           <MetaMaskFox className="w-4 h-4" />
           Add Network
@@ -202,6 +265,19 @@ export function NavDropdown() {
       )}
       <Dropdown label="Blockchain" items={blockchainItems} />
       <Dropdown label="Tokens" items={tokenItems} />
+      <Link
+        to="/stats"
+        className="flex items-center gap-1.5 px-3 py-2 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors text-sm font-medium"
+      >
+        Charts
+      </Link>
+      <Link
+        to="/api-docs"
+        className="flex items-center gap-1.5 px-3 py-2 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors text-sm font-medium"
+      >
+        API
+      </Link>
+      <SettingsDropdown />
       <AuthButton />
     </div>
   );

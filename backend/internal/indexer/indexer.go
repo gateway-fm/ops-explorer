@@ -207,6 +207,16 @@ func (i *Indexer) Start(ctx context.Context) error {
 		"has_gaps", hasGaps,
 		"blocks_behind", blocksToSync)
 
+	// Backfill daily stats in background
+	go func() {
+		log.Info("starting daily stats backfill")
+		if err := i.db.BackfillDailyStats(ctx); err != nil {
+			log.Warn("daily stats backfill failed", "error", err)
+		} else {
+			log.Info("daily stats backfill completed")
+		}
+	}()
+
 	i.db.UpdateSyncStatus(ctx, lastIndexed, true)
 	catchupThreshold := uint64(100)
 	useCatchup := i.config.CatchupEnabled && (hasGaps || blocksToSync > catchupThreshold)
@@ -652,6 +662,8 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 
 		if receipt != nil && rawTx.To == nil && receipt.ContractAddress != (common.Address{}) {
 			contractAddr := receipt.ContractAddress.Hex()
+			// Set the contract address on the transaction so it shows in the UI
+			blockData.Transactions[len(blockData.Transactions)-1].ContractAddress = &contractAddr
 			code, err := i.rpc.GetCode(ctx, receipt.ContractAddress)
 			if err == nil && len(code) > 0 {
 				bytecodeHash := common.BytesToHash(common.FromHex(common.Bytes2Hex(code))).Hex()
@@ -849,6 +861,11 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 			"elapsed", elapsed)
 	}
 
+	// Update daily stats every 100 blocks
+	if blockNumber%100 == 0 {
+		go i.updateDailyStatsForDate(ctx, blockTimestamp)
+	}
+
 	return nil
 }
 
@@ -866,6 +883,18 @@ func (i *Indexer) updateAddressStatsDelta(stats map[string]*db.AddressStatsDelta
 			IsContract:   isContract,
 			BlockNumber:  blockNumber,
 		}
+	}
+}
+
+func (i *Indexer) updateDailyStatsForDate(ctx context.Context, blockTimestamp uint64) {
+	date := time.Unix(int64(blockTimestamp), 0).UTC().Truncate(24 * time.Hour)
+	stats, err := i.db.ComputeDailyStats(ctx, date)
+	if err != nil {
+		log.Warn("failed to compute daily stats", "date", date.Format("2006-01-02"), "error", err)
+		return
+	}
+	if err := i.db.UpsertDailyStats(ctx, stats); err != nil {
+		log.Warn("failed to upsert daily stats", "date", date.Format("2006-01-02"), "error", err)
 	}
 }
 

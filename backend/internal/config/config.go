@@ -52,6 +52,10 @@ type Config struct {
 
 	LogLevel              string        `mapstructure:"log_level"`
 
+	// HiddenTxTypes is a comma-separated list of transaction type numbers to
+	// exclude from the default transaction listings (e.g. "126" for OP deposit TXs).
+	HiddenTxTypes         string        `mapstructure:"hidden_tx_types"`
+
 	EnableOPDeposits      bool          `mapstructure:"enable_op_deposits"`
 	L1RPCURL              string        `mapstructure:"l1_rpc_url"`
 	OptimismPortalAddress string        `mapstructure:"optimism_portal_address"`
@@ -97,6 +101,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("sso_redirect_uri", "http://localhost:8080/api/auth/callback")
 
 	v.SetDefault("log_level", "info")
+
+	v.SetDefault("hidden_tx_types", "126") // OP deposit system transactions hidden by default
 
 	v.SetDefault("enable_op_deposits", false)
 	v.SetDefault("l1_rpc_url", "")

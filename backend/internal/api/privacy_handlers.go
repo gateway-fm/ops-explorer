@@ -1,14 +1,12 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"explorer/internal/privacy"
-	"explorer/pkg/eth/common"
+	"explorer/internal/types"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -46,131 +44,16 @@ func (s *Server) handleGetViewableAddresses(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, result)
 }
 
-func (s *Server) handleCheckAddressVisibility(w http.ResponseWriter, r *http.Request) {
-	viewer := s.getViewerIdentity(r)
-
-	if viewer.DID == "" {
-		http.Error(w, "authentication required (sign in via Privado SSO)", http.StatusBadRequest)
-		return
-	}
-
-	address := chi.URLParam(r, "address")
-	if address == "" {
-		http.Error(w, "address parameter required", http.StatusBadRequest)
-		return
-	}
-
-	if !s.privacyClient.IsEnabled() {
-		writeJSON(w, privacy.AddressVisibility{
-			Address: strings.ToLower(address),
-			Visible: true,
-			Level:   privacy.VisibilityFull,
-			Reason:  privacy.ReasonPublicAddress,
-		})
-		return
-	}
-
-	result, err := s.privacyClient.CheckAddressWithIdentity(r.Context(), viewer, address)
-	if err != nil {
-		slog.Warn("failed to check address visibility", "address", address, "error", err)
-		http.Error(w, "failed to check address visibility", http.StatusInternalServerError)
-		return
-	}
-
-	writeJSON(w, result)
-}
-
-func (s *Server) handleBatchCheckAddresses(w http.ResponseWriter, r *http.Request) {
-	viewer := s.getViewerIdentity(r)
-
-	if viewer.DID == "" {
-		http.Error(w, "authentication required (sign in via Privado SSO)", http.StatusBadRequest)
-		return
-	}
-
-	var req struct {
-		Addresses []string `json:"addresses"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	if len(req.Addresses) == 0 {
-		http.Error(w, "addresses array is required", http.StatusBadRequest)
-		return
-	}
-
-	if len(req.Addresses) > 100 {
-		http.Error(w, "maximum 100 addresses allowed per request", http.StatusBadRequest)
-		return
-	}
-
-	for _, addr := range req.Addresses {
-		if !common.IsHexAddress(addr) {
-			http.Error(w, "invalid address format", http.StatusBadRequest)
-			return
-		}
-	}
-
-	if !s.privacyClient.IsEnabled() {
-		results := make(map[string]*privacy.AddressVisibility)
-		for _, addr := range req.Addresses {
-			results[strings.ToLower(addr)] = &privacy.AddressVisibility{
-				Address: strings.ToLower(addr),
-				Visible: true,
-				Level:   privacy.VisibilityFull,
-				Reason:  privacy.ReasonPublicAddress,
-			}
-		}
-		writeJSON(w, map[string]any{"results": results})
-		return
-	}
-
-	results, err := s.privacyClient.CheckAddressesWithIdentity(r.Context(), viewer, req.Addresses)
-	if err != nil {
-		http.Error(w, "failed to check address visibility", http.StatusInternalServerError)
-		return
-	}
-
-	writeJSON(w, map[string]any{"results": results})
-}
-
-// checkAddressVisibility returns nil if privacy is not enabled (no gating needed).
-// Fails closed: on error returns HIDDEN to prevent leaking private data.
-func (s *Server) checkAddressVisibility(r *http.Request, address string) *privacy.AddressVisibility {
-	if !s.privacyClient.IsEnabled() {
-		return nil
-	}
-
-	viewer := s.getViewerIdentity(r)
-	if viewer.DID == "" {
-		return nil
-	}
-
-	vis, err := s.privacyClient.CheckAddressWithIdentity(r.Context(), viewer, address)
-	if err != nil {
-		// Fail closed - return HIDDEN on error
-		return &privacy.AddressVisibility{
-			Address: strings.ToLower(address),
-			Visible: false,
-			Level:   privacy.VisibilityHidden,
-			Reason:  privacy.ReasonNoAccess,
-		}
-	}
-
-	return vis
-}
-
 
 // SECURITY: Addresses are redacted based on disclosure_level before being sent to the frontend.
 type GrantedAddressResponse struct {
-	DisplayAddress  string `json:"display_address"`
-	DisclosureLevel string `json:"disclosure_level"`
-	GrantID         string `json:"grant_id"`
-	Balance    string `json:"balance"`
-	TxCount    int64  `json:"tx_count"`
-	IsContract bool   `json:"is_contract"`
+	DisplayAddress  string   `json:"display_address"`
+	DisclosureLevel string   `json:"disclosure_level"`
+	GrantID         string   `json:"grant_id"`
+	Balance         string   `json:"balance"`
+	TxCount         int64    `json:"tx_count"`
+	IsContract      bool     `json:"is_contract"`
+	ScopeMethods    []string `json:"scope_methods,omitempty"` // Grant scope methods (e.g. "transaction_history", "activity_logs")
 }
 
 // SECURITY: This endpoint uses opaque address_id - the real address is never exposed to the frontend
@@ -209,25 +92,14 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 
 	ctx := r.Context()
 
-	stats, err := s.provider.GetAddressStats(ctx, resolved.RealAddress)
-	if err != nil {
-		slog.Warn("failed to get address stats", "address", resolved.RealAddress, "error", err)
-		http.Error(w, "failed to get address stats", http.StatusInternalServerError)
-		return
-	}
-
-	balance, err := s.provider.GetBalance(ctx, resolved.RealAddress)
-	if err != nil {
-		slog.Warn("failed to get balance", "address", resolved.RealAddress, "error", err)
-		http.Error(w, "failed to get balance", http.StatusInternalServerError)
-		return
-	}
-
-	code, err := s.provider.GetCode(ctx, resolved.RealAddress)
-	if err != nil {
-		slog.Warn("failed to check contract status", "address", resolved.RealAddress, "error", err)
-		http.Error(w, "failed to check contract status", http.StatusInternalServerError)
-		return
+	// Stats/balance/code may not exist for EOAs or pseudonymous/redacted addresses — that's OK
+	var stats *types.AddressStats
+	var balance *types.JSONString
+	var code []byte
+	if resolved.RealAddress != "" {
+		stats, _ = s.provider.GetAddressStats(ctx, resolved.RealAddress)
+		balance, _ = s.provider.GetBalance(ctx, resolved.RealAddress)
+		code, _ = s.provider.GetCode(ctx, resolved.RealAddress)
 	}
 
 	// SECURITY: Never expose real address for non-full disclosures
@@ -247,13 +119,23 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 		displayAddress = "[REDACTED]"
 	}
 
+	var txCount int64
+	if stats != nil {
+		txCount = int64(stats.TxCount)
+	}
+	var balanceStr string
+	if balance != nil {
+		balanceStr = string(*balance)
+	}
+
 	response := GrantedAddressResponse{
 		DisplayAddress:  displayAddress,
 		DisclosureLevel: resolved.DisclosureLevel,
 		GrantID:         resolved.GrantID,
-		Balance:         string(*balance),
-		TxCount:         int64(stats.TxCount),
+		Balance:         balanceStr,
+		TxCount:         txCount,
 		IsContract:      len(code) > 0,
+		ScopeMethods:    resolved.ScopeMethods,
 	}
 
 	writeJSON(w, response)
@@ -296,6 +178,41 @@ func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *h
 	if err != nil {
 		slog.Warn("failed to get grant transactions", "grant_id", grantID, "address_id", addressID, "error", err)
 		http.Error(w, "failed to get transactions", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	w.Write(body)
+}
+
+// handleGetGrantActivityLogs proxies grant activity log requests to the privacy proxy.
+// The viewer's JWT is forwarded so the proxy can verify grant holder identity.
+func (s *Server) handleGetGrantActivityLogs(w http.ResponseWriter, r *http.Request) {
+	grantID := chi.URLParam(r, "grantId")
+	if grantID == "" {
+		http.Error(w, "grant_id is required", http.StatusBadRequest)
+		return
+	}
+
+	viewer := s.getViewerIdentity(r)
+	if viewer.DID == "" {
+		http.Error(w, "authentication required", http.StatusUnauthorized)
+		return
+	}
+
+	if !s.privacyClient.IsEnabled() {
+		http.Error(w, "privacy service not enabled", http.StatusServiceUnavailable)
+		return
+	}
+
+	limit := parseLimit(r)
+	offset := parseOffset(r)
+
+	body, statusCode, err := s.privacyClient.GetGrantActivityLogs(r.Context(), grantID, viewer.JWTToken, limit, offset)
+	if err != nil {
+		slog.Warn("failed to get grant activity logs", "grant_id", grantID, "error", err)
+		http.Error(w, "failed to get activity logs", http.StatusInternalServerError)
 		return
 	}
 

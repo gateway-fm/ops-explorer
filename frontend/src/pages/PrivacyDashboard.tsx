@@ -140,7 +140,7 @@ export function PrivacyDashboard() {
         </div>
         <h2 className="text-xl font-semibold text-neutral-900">Privacy Dashboard</h2>
         <p className="text-neutral-500 text-center max-w-md">
-          Sign in with Privado ID to view your addresses and privacy disclosures.
+          Sign in to view your addresses and privacy disclosures.
         </p>
         <div className="mt-4">
           <button
@@ -148,7 +148,7 @@ export function PrivacyDashboard() {
             className="btn-primary flex items-center gap-2"
           >
             <Fingerprint className="w-4 h-4" />
-            Sign in with Privado
+            Sign In
           </button>
         </div>
       </div>
@@ -319,9 +319,10 @@ export function PrivacyDashboard() {
                         : truncateAddress(disclosed.address);
 
                       const isFull = disclosed.disclosure_level === 'full';
-                      const viewLink = isFull
-                        ? `/address/${disclosed.address}`
-                        : `/grant/${disclosed.grantId}/${disclosed.addressId}`;
+                      // Always use the grant page — it has scope-aware tabs
+                      // (Activity Logs, Transactions). The regular /address page
+                      // doesn't know about disclosure grants or scopes.
+                      const viewLink = `/grant/${disclosed.grantId}/${disclosed.addressId}`;
 
                       return (
                         <tr key={disclosed.grantId + disclosed.addressId}>

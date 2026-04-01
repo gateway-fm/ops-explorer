@@ -1,28 +1,24 @@
 import { useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
+
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../lib/api';
-import type { Transaction, AddressVisibility } from '../lib/api';
+import type { Transaction } from '../lib/api';
 import { formatWei, formatHash, formatAddress, formatTimeAgo } from '../lib/utils';
 import { AddressLink } from '../components/AddressLink';
 import { AddressLabel } from '../components/AddressLabel';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { ContractInteraction } from '../components/ContractInteraction';
-import { FileCode2, BookOpen, Loader2, PenLine, Unlock, ShieldCheck, Wallet, X, ShieldOff } from 'lucide-react';
+import { FileCode2, BookOpen, Loader2, PenLine, ShieldCheck, Wallet, X, ShieldOff } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { useAuth } from '../lib/auth';
-import { useAddressVisibility, useBatchAddressVisibility } from '../hooks/useAddressVisibility';
-import { usePrivacyEnabled } from '../hooks/usePrivacyEnabled';
+
+
 
 type TabType = 'transactions' | 'code' | 'read' | 'write';
 type CodeSubTab = 'source' | 'abi' | 'bytecode' | 'compiler';
 
-function formatExpirationDate(expiresAt?: string): string {
-  if (!expiresAt) return 'Never';
-  const date = new Date(expiresAt);
-  return date.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
-}
+
 
 export function Address() {
   const { address } = useParams<{ address: string }>();
@@ -149,9 +145,7 @@ export function Address() {
   }, []);
 
   const before = searchParams.get('before');
-  const privacyEnabled = usePrivacyEnabled();
   const { isAuthenticated } = useAuth();
-  const { visibility } = useAddressVisibility(address);
 
   const { data: info, isLoading: infoLoading, error } = useQuery({
     queryKey: ['address', address, isAuthenticated],
@@ -164,19 +158,10 @@ export function Address() {
     queryKey: ['addressTxs', address, before],
     queryFn: () => api.getAddressTransactions(address!, 25, before ? parseInt(before) : undefined),
     enabled: !!address && activeTab === 'transactions',
+    retry: false,
   });
 
-  const txAddresses = useMemo(() => {
-    if (!txs?.data) return [];
-    const set = new Set<string>();
-    for (const tx of txs.data) {
-      if (tx.from && tx.from !== '[PRIVATE]') set.add(tx.from.toLowerCase());
-      if (tx.to && tx.to !== '[PRIVATE]') set.add(tx.to.toLowerCase());
-    }
-    return Array.from(set);
-  }, [txs]);
-
-  const { visibilities: txVisibilities } = useBatchAddressVisibility(txAddresses);
+  // Batch-check removed since visibility metadata is fetched directly within tx payload
 
   const { data: contract, isLoading: contractLoading } = useQuery({
     queryKey: ['contract', address],
@@ -255,66 +240,14 @@ export function Address() {
         )}
       </PageHeader>
 
-      {/* Disclosed Address Banner */}
-      {privacyEnabled && visibility?.reason === 'disclosure_grant' && (
-        <div className="card p-4 border-primary-200 bg-primary-50">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary-100 flex items-center justify-center shrink-0">
-              <Unlock className="w-5 h-5 text-primary" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <h3 className="font-medium text-primary-900">Disclosed Address</h3>
-                {visibility.level && visibility.level !== 'full' && (
-                  <span className={`badge text-xs ${
-                    visibility.level === 'pseudonymous'
-                      ? 'bg-amber-100 text-amber-700 border-amber-200'
-                      : 'bg-red-100 text-red-700 border-red-200'
-                  }`}>
-                    {visibility.level === 'pseudonymous' ? 'Pseudonymous' : 'Redacted'}
-                  </span>
-                )}
-              </div>
-              <p className="text-sm text-primary-700 mt-0.5">
-                This address was shared with you
-                {visibility.level === 'pseudonymous' && visibility.pseudonym && (
-                  <span className="font-mono text-xs ml-1">
-                    as <span className="font-semibold">{visibility.pseudonym}</span>
-                  </span>
-                )}
-                {visibility.grant_id && (
-                  <span className="font-mono text-xs ml-1">
-                    (Grant: {visibility.grant_id.slice(0, 8)}...)
-                  </span>
-                )}
-              </p>
-              {visibility.expires_at && (
-                <p className="text-xs text-primary-600 mt-1">
-                  Expires: {formatExpirationDate(visibility.expires_at)}
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+
 
       {/* Address Info Card */}
       <div className="card">
         <div className="divide-y divide-neutral-100">
           <InfoRow
             label="Address"
-            value={
-              privacyEnabled && visibility?.level === 'pseudonymous' && visibility.pseudonym ? (
-                <div>
-                  <span className="font-mono text-sm break-all text-neutral-900">{visibility.pseudonym}</span>
-                  <span className="text-xs text-neutral-400 ml-2">(pseudonymous view)</span>
-                </div>
-              ) : privacyEnabled && visibility?.level === 'redacted' ? (
-                <span className="text-neutral-400 italic">Address hidden (redacted disclosure)</span>
-              ) : (
-                <span className="font-mono text-sm break-all text-neutral-900">{info.address}</span>
-              )
-            }
+            value={<span className="font-mono text-sm break-all text-neutral-900">{info.address}</span>}
           />
           <InfoRow label="Type" value={info.isContract ? 'Contract' : 'EOA (Externally Owned Account)'} />
           <InfoRow label="Balance" value={`${formatWei(info.balance)} ETH`} />
@@ -384,7 +317,7 @@ export function Address() {
                 </thead>
                 <tbody>
                   {txs?.data?.map((tx) => (
-                    <TxTableRow key={tx.hash} tx={tx} currentAddress={info.address} visibilities={txVisibilities} />
+                    <TxTableRow key={tx.hash} tx={tx} currentAddress={info.address} />
                   ))}
                 </tbody>
               </table>
@@ -706,11 +639,11 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function TxTableRow({ tx, currentAddress, visibilities }: { tx: Transaction; currentAddress: string; visibilities: Record<string, AddressVisibility> }) {
+function TxTableRow({ tx, currentAddress }: { tx: Transaction; currentAddress: string }) {
   const isOutgoing = tx.from.toLowerCase() === currentAddress.toLowerCase();
   const txFee = (BigInt(tx.gasUsed || 0) * BigInt(tx.gasPrice || 0));
-  const fromVis = visibilities[tx.from?.toLowerCase()];
-  const toVis = tx.to ? visibilities[tx.to.toLowerCase()] : undefined;
+  const fromReason = tx.addressMetadata?.[tx.from?.toLowerCase()];
+  const toReason = tx.to ? tx.addressMetadata?.[tx.to.toLowerCase()] : undefined;
 
   return (
     <tr>
@@ -746,9 +679,9 @@ function TxTableRow({ tx, currentAddress, visibilities }: { tx: Transaction; cur
               </TooltipContent>
             </Tooltip>
           ) : (
-            <AddressLink address={tx.from} chars={8} />
+            <AddressLink address={tx.from} chars={8} reason={fromReason} />
           )}
-          <AddressLabel reason={fromVis?.reason} />
+          <AddressLabel reason={fromReason} />
         </span>
       </td>
 
@@ -777,9 +710,9 @@ function TxTableRow({ tx, currentAddress, visibilities }: { tx: Transaction; cur
                 </TooltipContent>
               </Tooltip>
             ) : (
-              <AddressLink address={tx.to} chars={8} />
+              <AddressLink address={tx.to} chars={8} reason={toReason} />
             )}
-            <AddressLabel reason={toVis?.reason} />
+            <AddressLabel reason={toReason} />
           </span>
         ) : (
           <span className="text-primary italic">Contract Creation</span>

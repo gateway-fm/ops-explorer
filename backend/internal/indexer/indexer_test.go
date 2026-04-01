@@ -182,6 +182,24 @@ func (m *MockDatabase) InsertBalancesBatch(ctx context.Context, balances []*type
 	return args.Error(0)
 }
 
+func (m *MockDatabase) ComputeDailyStats(ctx context.Context, date time.Time) (*types.DailyStats, error) {
+	args := m.Called(ctx, date)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*types.DailyStats), args.Error(1)
+}
+
+func (m *MockDatabase) UpsertDailyStats(ctx context.Context, stats *types.DailyStats) error {
+	args := m.Called(ctx, stats)
+	return args.Error(0)
+}
+
+func (m *MockDatabase) BackfillDailyStats(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
 // MockRPCClient is a mock of the RPCClient interface
 type MockRPCClient struct {
 	mock.Mock

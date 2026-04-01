@@ -1,48 +1,50 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { api } from '../lib/api';
 import type { Block } from '../lib/api';
 import { formatHash, formatGas } from '../lib/utils';
 import { LiveTimeAgo } from '../components/LiveTimeAgo';
 import { PageHeader } from '../components/PageHeader';
+import { NewItemsNotice } from '../components/NewItemsNotice';
 
 export function Blocks() {
   const [searchParams, setSearchParams] = useSearchParams();
   const before = searchParams.get('before');
+  const queryClient = useQueryClient();
 
+  // Main blocks query — no auto-refetch on page 1
   const { data, isLoading } = useQuery({
     queryKey: ['blocks', 25, before],
     queryFn: () => api.getBlocks(25, before ? parseInt(before) : undefined),
-    refetchInterval: before ? false : 2000,
   });
 
-  // Track seen blocks for animations
-  const seenBlocks = useRef<Set<number>>(new Set());
-  const [newBlocks, setNewBlocks] = useState<Set<number>>(new Set());
-  const isFirstRender = useRef(true);
-
+  // Track what the top block was when the user last loaded/refreshed
+  const [snapshotTopBlock, setSnapshotTopBlock] = useState<number | null>(null);
   useEffect(() => {
-    if (!data?.data) return;
-
-    if (isFirstRender.current) {
-      data.data.forEach(b => seenBlocks.current.add(b.number));
-      isFirstRender.current = false;
-    } else {
-      const newOnes = new Set<number>();
-      data.data.forEach(b => {
-        if (!seenBlocks.current.has(b.number)) {
-          newOnes.add(b.number);
-          seenBlocks.current.add(b.number);
-        }
-      });
-      if (newOnes.size > 0) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- animation tracking for new blocks
-        setNewBlocks(newOnes);
-        setTimeout(() => setNewBlocks(new Set()), 2000);
-      }
+    if (data?.data?.length && snapshotTopBlock === null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time snapshot on initial data load
+      setSnapshotTopBlock(data.data[0].number);
     }
-  }, [data?.data]);
+  }, [data, snapshotTopBlock]);
+
+  // Lightweight poll for the latest block number (only on first page)
+  const { data: latestBlock } = useQuery({
+    queryKey: ['latestBlock'],
+    queryFn: api.getLatestBlock,
+    refetchInterval: !before ? 2000 : false,
+    enabled: !before,
+  });
+
+  // Calculate how many new blocks have come in since the snapshot
+  const newBlockCount = (!before && snapshotTopBlock !== null && latestBlock)
+    ? Math.max(0, latestBlock.number - snapshotTopBlock)
+    : 0;
+
+  const handleLoadNew = useCallback(() => {
+    setSnapshotTopBlock(null);
+    queryClient.invalidateQueries({ queryKey: ['blocks', 25, before] });
+  }, [queryClient, before]);
 
   const loadMore = () => {
     if (data?.data?.length) {
@@ -56,6 +58,14 @@ export function Blocks() {
       <PageHeader title="Blocks" />
 
       <div className="card overflow-hidden">
+        {!before && (
+          <NewItemsNotice
+            count={newBlockCount}
+            type="block"
+            onClick={handleLoadNew}
+          />
+        )}
+
         <table className="table">
           <thead>
             <tr>
@@ -71,7 +81,6 @@ export function Blocks() {
               <BlockTableRow
                 key={block.number}
                 block={block}
-                isNew={newBlocks.has(block.number)}
               />
             ))}
           </tbody>
@@ -96,11 +105,11 @@ export function Blocks() {
   );
 }
 
-function BlockTableRow({ block, isNew }: { block: Block; isNew: boolean }) {
+function BlockTableRow({ block }: { block: Block }) {
   const gasPercent = ((block.gasUsed / block.gasLimit) * 100).toFixed(1);
 
   return (
-    <tr className={isNew ? 'feed-item-new' : ''}>
+    <tr>
       <td>
         <Link to={`/block/${block.number}`} className="font-mono text-primary hover:text-primary-600 transition-colors">
           {block.number}

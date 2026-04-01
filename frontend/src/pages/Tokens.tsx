@@ -4,19 +4,7 @@ import { api } from '../lib/api';
 import type { Token } from '../lib/api';
 import { AddressLink } from '../components/AddressLink';
 import { PageHeader } from '../components/PageHeader';
-
-function formatTokenValue(value: string | undefined, decimals: number): string {
-  if (!value) return '0';
-  const num = BigInt(value);
-  const divisor = BigInt(10 ** decimals);
-  const wholePart = num / divisor;
-  const fracPart = num % divisor;
-  if (fracPart === BigInt(0)) {
-    return wholePart.toLocaleString();
-  }
-  const fracStr = fracPart.toString().padStart(decimals, '0').slice(0, 4);
-  return `${wholePart.toLocaleString()}.${fracStr}`;
-}
+import { formatTokenValue } from '../lib/formatToken';
 
 export default function Tokens() {
   const [searchParams, setSearchParams] = useSearchParams();

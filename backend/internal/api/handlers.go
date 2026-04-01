@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"explorer/internal/types"
 
@@ -580,19 +582,23 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	if common.IsHexAddress(q) {
 		address := common.HexToAddress(q).Hex()
 
-		// Check privacy visibility before returning address results
-		vis := s.checkAddressVisibility(r, address)
-		if vis != nil && !vis.Visible {
-			http.Error(w, "not found", http.StatusNotFound)
-			return
-		}
-
+		// No separate visibility check needed — in privacy mode the
+		// ProxyDataProvider already filters results through the proxy.
+		// If GetAddressStats returns data, the user is allowed to see it.
 		stats, _ := s.provider.GetAddressStats(ctx, address)
 		writeJSON(w, map[string]any{"type": "address", "data": stats})
 		return
 	}
 
 	http.Error(w, "not found", http.StatusNotFound)
+}
+
+func (s *Server) handleGetChainInfo(w http.ResponseWriter, r *http.Request) {
+	if s.chainInfo == nil {
+		http.Error(w, "chain info not available", http.StatusServiceUnavailable)
+		return
+	}
+	writeJSON(w, s.chainInfo.Get())
 }
 
 func writeJSON(w http.ResponseWriter, data any) {
@@ -607,6 +613,15 @@ func parseLimit(r *http.Request) int {
 		}
 	}
 	return defaultLimit
+}
+
+func parseOffset(r *http.Request) int {
+	if o := r.URL.Query().Get("offset"); o != "" {
+		if offset, err := strconv.Atoi(o); err == nil && offset >= 0 {
+			return offset
+		}
+	}
+	return 0
 }
 
 func parseBeforeBlock(r *http.Request) *uint64 {
@@ -775,7 +790,8 @@ func (s *Server) handleGetTokenHolders(w http.ResponseWriter, r *http.Request) {
 	offset := (page - 1) * pageSize
 	holders, total, err := s.provider.GetTokenHolders(r.Context(), address, pageSize, offset)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Warn("failed to get token holders", "address", address, "error", err)
+		http.Error(w, "failed to get token holders", http.StatusInternalServerError)
 		return
 	}
 
@@ -1088,7 +1104,8 @@ func (s *Server) handleGetAddressTokenBalances(w http.ResponseWriter, r *http.Re
 
 	balances, err := s.provider.GetTokenBalances(r.Context(), address)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Warn("failed to get token balances", "address", address, "error", err)
+		http.Error(w, "failed to get token balances", http.StatusInternalServerError)
 		return
 	}
 
@@ -1490,4 +1507,188 @@ func (s *Server) handleCheckSourcify(w http.ResponseWriter, r *http.Request) {
 		"isVerified": isVerified,
 		"status":     status,
 	})
+}
+
+// --- Charts ---
+
+// GetChartLineDefinitions returns all available chart line definitions.
+func GetChartLineDefinitions() []types.ChartLineInfo {
+	return chartLineDefinitions
+}
+
+// GetChartLineInfoMap returns a map of chart ID to ChartLineInfo.
+func GetChartLineInfoMap() map[string]types.ChartLineInfo {
+	return chartLineInfoMap()
+}
+
+// ExtractChartDataPoints maps daily stats to chart data points for the given chart ID.
+func ExtractChartDataPoints(id string, stats []types.DailyStats) []types.ChartDataPoint {
+	return extractChartDataPoints(id, stats)
+}
+
+var chartLineDefinitions = []types.ChartLineInfo{
+	{ID: "active_accounts", Title: "Active accounts", Description: "Daily number of active addresses", Section: "accounts"},
+	{ID: "new_accounts", Title: "New accounts", Description: "Daily number of new addresses", Section: "accounts"},
+	{ID: "accounts_growth", Title: "Accounts growth", Description: "Cumulative number of addresses", Section: "accounts"},
+	{ID: "new_txns", Title: "New transactions", Description: "Daily number of transactions", Section: "transactions"},
+	{ID: "txns_growth", Title: "Transactions growth", Description: "Cumulative number of transactions", Section: "transactions"},
+	{ID: "avg_txn_fee", Title: "Average transaction fee", Description: "Daily average gas price in Gwei", Units: "Gwei", Section: "transactions"},
+	{ID: "txns_success_rate", Title: "Transaction success rate", Description: "Daily transaction success rate", Units: "%", Section: "transactions"},
+	{ID: "new_blocks", Title: "New blocks", Description: "Daily number of new blocks", Section: "blocks"},
+	{ID: "avg_block_size", Title: "Average block size", Description: "Daily average block size in bytes", Units: "bytes", Section: "blocks"},
+	{ID: "avg_block_time", Title: "Average block time", Description: "Daily average block time in seconds", Units: "s", Section: "blocks"},
+	{ID: "avg_gas_price", Title: "Average gas price", Description: "Daily average gas price in Gwei", Units: "Gwei", Section: "gas"},
+	{ID: "avg_gas_used", Title: "Average gas used per block", Description: "Daily average gas used per block", Section: "gas"},
+	{ID: "gas_used_growth", Title: "Gas used growth", Description: "Cumulative gas used", Section: "gas"},
+	{ID: "new_contracts", Title: "New contracts", Description: "Daily number of new verified contracts", Section: "contracts"},
+	{ID: "contracts_growth", Title: "Contracts growth", Description: "Cumulative number of contracts", Section: "contracts"},
+	{ID: "new_token_transfers", Title: "New token transfers", Description: "Daily number of token transfers", Section: "tokens"},
+}
+
+func chartLineInfoMap() map[string]types.ChartLineInfo {
+	m := make(map[string]types.ChartLineInfo, len(chartLineDefinitions))
+	for _, info := range chartLineDefinitions {
+		m[info.ID] = info
+	}
+	return m
+}
+
+func extractChartDataPoints(id string, stats []types.DailyStats) []types.ChartDataPoint {
+	points := make([]types.ChartDataPoint, 0, len(stats))
+	var cumulativeGas float64
+	for _, s := range stats {
+		var val float64
+		switch id {
+		case "active_accounts":
+			val = float64(s.ActiveAddresses)
+		case "new_accounts":
+			val = float64(s.NewAddresses)
+		case "accounts_growth":
+			val = float64(s.CumulativeAddresses)
+		case "new_txns":
+			val = float64(s.TotalTransactions)
+		case "txns_growth":
+			val = float64(s.CumulativeTransactions)
+		case "avg_txn_fee":
+			val = float64(s.AvgGasPrice) / 1e9
+		case "txns_success_rate":
+			if s.TotalTransactions > 0 {
+				val = float64(s.SuccessfulTxs) / float64(s.TotalTransactions) * 100
+			}
+		case "new_blocks":
+			val = float64(s.TotalBlocks)
+		case "avg_block_size":
+			val = float64(s.AvgBlockSize)
+		case "avg_block_time":
+			val = s.AvgBlockTime
+		case "avg_gas_price":
+			val = float64(s.AvgGasPrice) / 1e9
+		case "avg_gas_used":
+			if s.TotalBlocks > 0 {
+				val = float64(s.TotalGasUsed) / float64(s.TotalBlocks)
+			}
+		case "gas_used_growth":
+			cumulativeGas += float64(s.TotalGasUsed)
+			val = cumulativeGas
+		case "new_contracts":
+			val = float64(s.NewContracts)
+		case "contracts_growth":
+			val = float64(s.CumulativeContracts)
+		case "new_token_transfers":
+			val = float64(s.TokenTransferCount)
+		}
+		points = append(points, types.ChartDataPoint{Date: s.Date, Value: val})
+	}
+	return points
+}
+
+func (s *Server) handleGetChartLines(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, chartLineDefinitions)
+}
+
+func (s *Server) handleGetChartLine(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	infoMap := chartLineInfoMap()
+	info, ok := infoMap[id]
+	if !ok {
+		http.Error(w, "unknown chart id", http.StatusNotFound)
+		return
+	}
+
+	from, to := parseChartDateRange(r)
+
+	stats, err := s.db.GetDailyStats(r.Context(), from, to)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	points := extractChartDataPoints(id, stats)
+
+	writeJSON(w, types.ChartLineResponse{
+		Info:  info,
+		Chart: points,
+	})
+}
+
+func (s *Server) handleGetChartCounters(w http.ResponseWriter, r *http.Request) {
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	yesterday := today.AddDate(0, 0, -1)
+
+	stats, err := s.db.GetDailyStats(r.Context(), yesterday, today)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	counters := map[string]any{
+		"totalTransactions":      int64(0),
+		"totalAddresses":         int64(0),
+		"totalContracts":         int64(0),
+		"todayTransactions":      0,
+		"todayBlocks":            0,
+		"todayTokenTransfers":    0,
+		"averageBlockTime":       0.0,
+	}
+
+	for _, s := range stats {
+		if s.Date == today.Format("2006-01-02") {
+			counters["todayTransactions"] = s.TotalTransactions
+			counters["todayBlocks"] = s.TotalBlocks
+			counters["todayTokenTransfers"] = s.TokenTransferCount
+			counters["averageBlockTime"] = s.AvgBlockTime
+			counters["totalTransactions"] = s.CumulativeTransactions
+			counters["totalAddresses"] = s.CumulativeAddresses
+			counters["totalContracts"] = s.CumulativeContracts
+		} else if s.Date == yesterday.Format("2006-01-02") {
+			// Use yesterday's cumulative as fallback if today not yet computed
+			if counters["totalTransactions"] == int64(0) {
+				counters["totalTransactions"] = s.CumulativeTransactions
+				counters["totalAddresses"] = s.CumulativeAddresses
+				counters["totalContracts"] = s.CumulativeContracts
+			}
+		}
+	}
+
+	writeJSON(w, counters)
+}
+
+func parseChartDateRange(r *http.Request) (time.Time, time.Time) {
+	now := time.Now().UTC()
+	to := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	from := to.AddDate(0, 0, -30)
+
+	if f := r.URL.Query().Get("from"); f != "" {
+		if parsed, err := time.Parse("2006-01-02", f); err == nil {
+			from = parsed
+		}
+	}
+	if t := r.URL.Query().Get("to"); t != "" {
+		if parsed, err := time.Parse("2006-01-02", t); err == nil {
+			to = parsed
+		}
+	}
+	return from, to
 }

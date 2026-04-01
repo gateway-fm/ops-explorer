@@ -70,6 +70,9 @@ type DataProvider interface {
 	IndexBlock(ctx context.Context, number uint64) error
 
 	GetTransactionByHashRPC(ctx context.Context, hash string) (*types.Transaction, *uint64, error)
+
+	GetDailyStats(ctx context.Context, from, to time.Time) ([]types.DailyStats, error)
+	BackfillDailyStats(ctx context.Context) error
 }
 
 type DirectDBProvider struct {
@@ -305,6 +308,14 @@ func (p *DirectDBProvider) GetTransactionByHashRPC(ctx context.Context, hash str
 		blockNumber = &bn
 	}
 	return t, blockNumber, nil
+}
+
+func (p *DirectDBProvider) GetDailyStats(ctx context.Context, from, to time.Time) ([]types.DailyStats, error) {
+	return p.db.GetDailyStats(ctx, from, to)
+}
+
+func (p *DirectDBProvider) BackfillDailyStats(ctx context.Context) error {
+	return p.db.BackfillDailyStats(ctx)
 }
 
 type ProxyDataProvider struct {
@@ -690,4 +701,14 @@ func (p *ProxyDataProvider) GetTransactionByHashRPC(ctx context.Context, hash st
 	}
 	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/transactions/%s/rpc", hash), nil, &res)
 	return res.Transaction, res.BlockNumber, err
+}
+
+func (p *ProxyDataProvider) GetDailyStats(ctx context.Context, from, to time.Time) ([]types.DailyStats, error) {
+	var stats []types.DailyStats
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/charts/lines/new_txns?from=%s&to=%s", from.Format("2006-01-02"), to.Format("2006-01-02")), nil, &stats)
+	return stats, err
+}
+
+func (p *ProxyDataProvider) BackfillDailyStats(ctx context.Context) error {
+	return p.doRequest(ctx, "POST", "/api/v1/explorer/charts/backfill", nil, nil)
 }
