@@ -140,7 +140,7 @@ export function PrivacyDashboard() {
         </div>
         <h2 className="text-xl font-semibold text-neutral-900">Privacy Dashboard</h2>
         <p className="text-neutral-500 text-center max-w-md">
-          Sign in with Privado ID to view your addresses and privacy disclosures.
+          Sign in to view your addresses and privacy disclosures.
         </p>
         <div className="mt-4">
           <button
@@ -148,7 +148,7 @@ export function PrivacyDashboard() {
             className="btn-primary flex items-center gap-2"
           >
             <Fingerprint className="w-4 h-4" />
-            Sign in with Privado
+            Sign In
           </button>
         </div>
       </div>
