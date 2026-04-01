@@ -318,10 +318,11 @@ func (c *Client) UnlinkAddress(ctx context.Context, token string, address string
 }
 
 type ResolveAddressResponse struct {
-	RealAddress     string `json:"real_address"`
-	DisclosureLevel string `json:"disclosure_level"`
-	GrantID         string `json:"grant_id"`
-	Pseudonym       string `json:"pseudonym,omitempty"`
+	RealAddress     string   `json:"real_address"`
+	DisclosureLevel string   `json:"disclosure_level"`
+	GrantID         string   `json:"grant_id"`
+	Pseudonym       string   `json:"pseudonym,omitempty"`
+	ScopeMethods    []string `json:"scope_methods,omitempty"` // Methods from grant scope (e.g. "transaction_history", "activity_logs")
 }
 
 // ResolveAddressID resolves an opaque address_id back to real address information.

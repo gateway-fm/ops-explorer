@@ -324,6 +324,7 @@ export interface GrantedAddressResponse {
   balance: string;
   tx_count: number;
   is_contract: boolean;
+  scope_methods?: string[]; // Grant scope methods (e.g. "transaction_history", "activity_logs")
 }
 
 export interface PseudonymizedTransaction {

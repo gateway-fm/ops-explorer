@@ -46,12 +46,13 @@ func (s *Server) handleGetViewableAddresses(w http.ResponseWriter, r *http.Reque
 
 // SECURITY: Addresses are redacted based on disclosure_level before being sent to the frontend.
 type GrantedAddressResponse struct {
-	DisplayAddress  string `json:"display_address"`
-	DisclosureLevel string `json:"disclosure_level"`
-	GrantID         string `json:"grant_id"`
-	Balance    string `json:"balance"`
-	TxCount    int64  `json:"tx_count"`
-	IsContract bool   `json:"is_contract"`
+	DisplayAddress  string   `json:"display_address"`
+	DisclosureLevel string   `json:"disclosure_level"`
+	GrantID         string   `json:"grant_id"`
+	Balance         string   `json:"balance"`
+	TxCount         int64    `json:"tx_count"`
+	IsContract      bool     `json:"is_contract"`
+	ScopeMethods    []string `json:"scope_methods,omitempty"` // Grant scope methods (e.g. "transaction_history", "activity_logs")
 }
 
 // SECURITY: This endpoint uses opaque address_id - the real address is never exposed to the frontend
@@ -135,6 +136,7 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 		Balance:         string(*balance),
 		TxCount:         int64(stats.TxCount),
 		IsContract:      len(code) > 0,
+		ScopeMethods:    resolved.ScopeMethods,
 	}
 
 	writeJSON(w, response)

@@ -1,12 +1,13 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../lib/api';
-import type { PseudonymizedTransaction } from '../lib/api';
+import type { PseudonymizedTransaction, GrantedAddressResponse } from '../lib/api';
 import { formatWei, formatTimestamp } from '../lib/utils';
 import { useAuth } from '../lib/auth';
 import { redirectToLogin } from '../lib/login';
 import { PageHeader } from '../components/PageHeader';
-import { Fingerprint, Unlock, ShieldAlert, EyeOff, ArrowDownLeft, ArrowUpRight, RotateCcw } from 'lucide-react';
+import { Fingerprint, Unlock, ShieldAlert, EyeOff, ArrowDownLeft, ArrowUpRight, RotateCcw, FileText, Activity } from 'lucide-react';
 
 /**
  * GrantedAddressPage displays address information for disclosed addresses.
@@ -16,10 +17,50 @@ import { Fingerprint, Unlock, ShieldAlert, EyeOff, ArrowDownLeft, ArrowUpRight, 
  * SECURITY: This page receives already-redacted data from the backend.
  * The display_address field contains the pseudonym or "[REDACTED]" for
  * non-full disclosures - the real address is never sent.
+ *
+ * Scope-aware tabs:
+ * - "Transactions" tab shown when scope includes "transaction_history" or "full_disclosure",
+ *   or when no scope_methods are specified (backwards-compatible default).
+ * - "Activity Logs" tab shown when scope includes "activity_logs" or "full_disclosure".
+ * - For activity_logs-only scope, the Transactions tab is NOT shown to avoid 500 errors.
  */
+
+type TabId = 'transactions' | 'activity_logs';
+
+/** Determines which tabs are available based on scope methods. */
+function getAvailableTabs(data: GrantedAddressResponse): TabId[] {
+  const methods = data.scope_methods ?? [];
+  const isRedacted = data.disclosure_level === 'redacted';
+
+  // If no scope methods specified, default to showing transactions
+  // (backwards-compatible with grants created before scope methods were added).
+  if (methods.length === 0) {
+    const tabs: TabId[] = [];
+    if (!isRedacted) tabs.push('transactions');
+    return tabs;
+  }
+
+  const hasFullDisclosure = methods.includes('full_disclosure');
+  const hasTransactionHistory = methods.includes('transaction_history');
+  const hasActivityLogs = methods.includes('activity_logs');
+
+  const tabs: TabId[] = [];
+
+  if ((hasFullDisclosure || hasTransactionHistory) && !isRedacted) {
+    tabs.push('transactions');
+  }
+
+  if (hasFullDisclosure || hasActivityLogs) {
+    tabs.push('activity_logs');
+  }
+
+  return tabs;
+}
+
 export function GrantedAddressPage() {
   const { grantId, addressId } = useParams<{ grantId: string; addressId: string }>();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const [activeTab, setActiveTab] = useState<TabId | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['grantedAddress', grantId, addressId],
@@ -28,11 +69,18 @@ export function GrantedAddressPage() {
     retry: false,
   });
 
-  // Fetch transactions (only for non-redacted disclosures)
+  // Compute available tabs from the data
+  const availableTabs = data ? getAvailableTabs(data) : [];
+  const currentTab = activeTab ?? availableTabs[0] ?? null;
+  const showTransactionsTab = availableTabs.includes('transactions');
+  const showActivityLogsTab = availableTabs.includes('activity_logs');
+
+  // Fetch transactions only when the transactions tab is available and selected
+  const shouldFetchTransactions = showTransactionsTab && currentTab === 'transactions';
   const { data: txData, isLoading: txLoading } = useQuery({
     queryKey: ['grantedAddressTransactions', grantId, addressId],
     queryFn: () => api.getGrantedAddressTransactions(grantId!, addressId!),
-    enabled: !!grantId && !!addressId && isAuthenticated && data?.disclosure_level !== 'redacted',
+    enabled: !!grantId && !!addressId && isAuthenticated && shouldFetchTransactions,
     retry: false,
   });
 
@@ -246,8 +294,42 @@ export function GrantedAddressPage() {
         </div>
       </div>
 
-      {/* Transactions */}
-      {!isRedacted && (
+      {/* Scope-aware tabs */}
+      {availableTabs.length > 1 && (
+        <div className="border-b border-neutral-200">
+          <nav className="flex -mb-px">
+            {showTransactionsTab && (
+              <button
+                onClick={() => setActiveTab('transactions')}
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  currentTab === 'transactions'
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300'
+                }`}
+              >
+                <FileText className="w-4 h-4" />
+                Transactions
+              </button>
+            )}
+            {showActivityLogsTab && (
+              <button
+                onClick={() => setActiveTab('activity_logs')}
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  currentTab === 'activity_logs'
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300'
+                }`}
+              >
+                <Activity className="w-4 h-4" />
+                Activity Logs
+              </button>
+            )}
+          </nav>
+        </div>
+      )}
+
+      {/* Transactions Tab Content */}
+      {currentTab === 'transactions' && !isRedacted && (
         <div className="card">
           <div className="px-4 py-3 border-b border-neutral-100">
             <h3 className="font-medium text-neutral-900">Transactions</h3>
@@ -292,8 +374,30 @@ export function GrantedAddressPage() {
         </div>
       )}
 
-      {/* Redacted notice for transactions */}
-      {isRedacted && (
+      {/* Activity Logs Tab Content */}
+      {currentTab === 'activity_logs' && (
+        <div className="card p-6">
+          <div className="flex flex-col items-center text-center space-y-3">
+            <div className="w-12 h-12 rounded-full bg-neutral-100 flex items-center justify-center">
+              <Activity className="w-6 h-6 text-neutral-400" />
+            </div>
+            <h3 className="font-medium text-neutral-900">Activity Logs</h3>
+            <p className="text-neutral-500 text-sm max-w-md">
+              Activity logs are available via the API. A UI for viewing them is coming soon.
+            </p>
+            <p className="text-neutral-400 text-xs">
+              Use the admin API endpoint{' '}
+              <code className="px-1.5 py-0.5 bg-neutral-100 rounded text-xs font-mono">
+                GET /api/v1/admin/disclosure/grants/{data.grant_id.slice(0, 8)}.../logs
+              </code>{' '}
+              to access activity logs programmatically.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Redacted notice for transactions (when no tabs available) */}
+      {isRedacted && availableTabs.length === 0 && (
         <div className="card p-6 text-center">
           <EyeOff className="w-8 h-8 mx-auto mb-3 text-neutral-300" />
           <p className="text-neutral-500">
