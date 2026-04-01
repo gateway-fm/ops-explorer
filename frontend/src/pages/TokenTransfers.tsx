@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { TokenTransfer } from '../lib/api';
+import { formatHash } from '../lib/utils';
 import { formatTokenValue } from '../lib/formatToken';
 import { useTokenMap } from '../hooks/useTokenMap';
 import { AddressLink } from '../components/AddressLink';
@@ -10,11 +11,6 @@ import { AddressLabel } from '../components/AddressLabel';
 import { PageHeader } from '../components/PageHeader';
 
 import { ArrowRight } from 'lucide-react';
-
-function truncateHash(hash: string, chars = 8): string {
-  if (!hash) return '';
-  return `${hash.slice(0, chars + 2)}...${hash.slice(-chars)}`;
-}
 
 export default function TokenTransfers() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -92,7 +88,7 @@ export default function TokenTransfers() {
                           to={`/tx/${transfer.txHash}`}
                           className="text-primary hover:text-primary-600 font-mono text-sm transition-colors"
                         >
-                          {truncateHash(transfer.txHash)}
+                          {formatHash(transfer.txHash)}
                         </Link>
                       </td>
                       <td>
@@ -124,7 +120,7 @@ export default function TokenTransfers() {
                             to={`/token/${transfer.tokenAddress}`}
                             className="text-primary hover:text-primary-600 transition-colors font-mono text-sm"
                           >
-                            {truncateHash(transfer.tokenAddress, 6)}
+                            {formatHash(transfer.tokenAddress, 6)}
                           </Link>
                           <span className={`badge ${
                             transfer.tokenType === 'ERC721'
