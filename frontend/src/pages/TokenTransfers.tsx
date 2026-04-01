@@ -3,29 +3,13 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { TokenTransfer } from '../lib/api';
+import { formatTokenValue } from '../lib/formatToken';
+import { useTokenMap } from '../hooks/useTokenMap';
 import { AddressLink } from '../components/AddressLink';
 import { AddressLabel } from '../components/AddressLabel';
 import { PageHeader } from '../components/PageHeader';
 
 import { ArrowRight } from 'lucide-react';
-
-function formatTokenValue(value: string | number, decimals = 18): string {
-  const strValue = String(value);
-  if (!strValue || strValue === '0') return '0';
-  try {
-    const num = BigInt(strValue);
-    const divisor = BigInt(10 ** decimals);
-    const wholePart = num / divisor;
-    const fracPart = num % divisor;
-    if (fracPart === BigInt(0)) {
-      return wholePart.toLocaleString();
-    }
-    const fracStr = fracPart.toString().padStart(decimals, '0').slice(0, 4);
-    return `${wholePart.toLocaleString()}.${fracStr}`;
-  } catch {
-    return strValue;
-  }
-}
 
 function truncateHash(hash: string, chars = 8): string {
   if (!hash) return '';
@@ -72,6 +56,7 @@ export default function TokenTransfers() {
   }
 
   const transfers = data?.data || [];
+  const tokenMap = useTokenMap(transfers.map(t => t.tokenAddress));
   const totalPages = data?.totalPages || 1;
 
   return (
@@ -155,7 +140,7 @@ export default function TokenTransfers() {
                       <td className="text-right font-mono text-neutral-700">
                         {transfer.tokenType === 'ERC721' && transfer.tokenId
                           ? `#${transfer.tokenId}`
-                          : formatTokenValue(transfer.value)}
+                          : formatTokenValue(transfer.value, tokenMap[transfer.tokenAddress.toLowerCase()]?.decimals ?? 18)}
                       </td>
                     </tr>
                     );

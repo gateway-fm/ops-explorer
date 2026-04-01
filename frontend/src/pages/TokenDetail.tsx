@@ -6,25 +6,7 @@ import type { TokenHolder, TokenTransfer } from '../lib/api';
 import { AddressLink } from '../components/AddressLink';
 import { AddressLabel } from '../components/AddressLabel';
 import { PageHeader } from '../components/PageHeader';
-
-
-function formatTokenValue(value: string | number, decimals: number): string {
-  const strValue = String(value);
-  if (!strValue || strValue === '0') return '0';
-  try {
-    const num = BigInt(strValue);
-    const divisor = BigInt(10 ** decimals);
-    const wholePart = num / divisor;
-    const fracPart = num % divisor;
-    if (fracPart === BigInt(0)) {
-      return wholePart.toLocaleString();
-    }
-    const fracStr = fracPart.toString().padStart(decimals, '0').slice(0, 6);
-    return `${wholePart.toLocaleString()}.${fracStr}`;
-  } catch {
-    return strValue;
-  }
-}
+import { formatTokenValue } from '../lib/formatToken';
 
 export default function TokenDetail() {
   const { address } = useParams<{ address: string }>();

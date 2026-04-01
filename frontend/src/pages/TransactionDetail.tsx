@@ -5,6 +5,8 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../lib/api';
 import type { TokenTransfer, Log, TxCategory } from '../lib/api';
 import { formatWei, formatGas, formatTimestamp } from '../lib/utils';
+import { formatTokenValue } from '../lib/formatToken';
+import { useTokenMap } from '../hooks/useTokenMap';
 import { AddressLink, TokenAddressLink } from '../components/AddressLink';
 import { AddressLabel } from '../components/AddressLabel';
 
@@ -67,6 +69,8 @@ export function TransactionDetail() {
     queryFn: () => api.getTransactionLogs(hash!),
     enabled: !!hash,
   });
+
+  const tokenMap = useTokenMap((transfers || []).map(t => t.tokenAddress));
 
   // Batch check logic removed; visibility metadata is now attached directly to API responses
 
@@ -204,9 +208,17 @@ export function TransactionDetail() {
                   <span className="text-xs text-neutral-400">({transfers.length})</span>
                 </div>
                 <div className="flex flex-col gap-2">
-                  {transfers.map((transfer) => (
-                    <TokenTransferRow key={`${transfer.txHash}-${transfer.logIndex}`} transfer={transfer} />
-                  ))}
+                  {transfers.map((transfer) => {
+                    const tokenInfo = tokenMap[transfer.tokenAddress.toLowerCase()];
+                    return (
+                      <TokenTransferRow
+                        key={`${transfer.txHash}-${transfer.logIndex}`}
+                        transfer={transfer}
+                        tokenDecimals={tokenInfo?.decimals}
+                        tokenSymbol={tokenInfo?.symbol}
+                      />
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -325,8 +337,8 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function TokenTransferRow({ transfer }: { transfer: TokenTransfer }) {
-  const formattedValue = formatTokenValue(transfer.value);
+function TokenTransferRow({ transfer, tokenDecimals, tokenSymbol }: { transfer: TokenTransfer; tokenDecimals?: number; tokenSymbol?: string }) {
+  const formattedValue = formatTokenValue(transfer.value, tokenDecimals ?? 18);
   const fromReason = transfer.addressMetadata?.[transfer.from?.toLowerCase()];
   const toReason = transfer.addressMetadata?.[transfer.to?.toLowerCase()];
 
@@ -339,35 +351,10 @@ function TokenTransferRow({ transfer }: { transfer: TokenTransfer }) {
       <AddressLink address={transfer.to} reason={toReason} />
       <AddressLabel reason={toReason} />
       <span className="text-neutral-500">For</span>
-      <span className="font-mono text-success-600 font-medium">{formattedValue}</span>
+      <span className="font-mono text-success-600 font-medium">{formattedValue}{tokenSymbol ? ` ${tokenSymbol}` : ''}</span>
       <TokenAddressLink address={transfer.tokenAddress} />
     </div>
   );
-}
-
-function formatTokenValue(value: string | number): string {
-  try {
-    const bigValue = typeof value === 'string' ? BigInt(value) : BigInt(Math.floor(value));
-    // Assuming 18 decimals (standard ERC-20)
-    const divisor = BigInt(10 ** 18);
-    const wholePart = bigValue / divisor;
-    const fractionalPart = bigValue % divisor;
-
-    if (fractionalPart === 0n) {
-      return wholePart.toLocaleString();
-    }
-
-    // Show up to 4 decimal places
-    const fractionalStr = fractionalPart.toString().padStart(18, '0');
-    const decimals = fractionalStr.slice(0, 4).replace(/0+$/, '');
-
-    if (decimals) {
-      return `${wholePart.toLocaleString()}.${decimals}`;
-    }
-    return wholePart.toLocaleString();
-  } catch {
-    return String(value);
-  }
 }
 
 type TopicDecodeFormat = 'hex' | 'address' | 'number' | 'text';
