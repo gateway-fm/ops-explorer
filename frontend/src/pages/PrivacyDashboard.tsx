@@ -318,7 +318,6 @@ export function PrivacyDashboard() {
                         ? disclosed.address
                         : truncateAddress(disclosed.address);
 
-                      const isFull = disclosed.disclosure_level === 'full';
                       // Always use the grant page — disclosure context is only
                       // applied there. The regular /address page doesn't know
                       // about disclosure grants (G17: grants don't leak into
