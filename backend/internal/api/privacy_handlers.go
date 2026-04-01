@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"explorer/internal/privacy"
+	"explorer/internal/types"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -91,25 +92,14 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 
 	ctx := r.Context()
 
-	stats, err := s.provider.GetAddressStats(ctx, resolved.RealAddress)
-	if err != nil {
-		slog.Warn("failed to get address stats", "address", resolved.RealAddress, "error", err)
-		http.Error(w, "failed to get address stats", http.StatusInternalServerError)
-		return
-	}
-
-	balance, err := s.provider.GetBalance(ctx, resolved.RealAddress)
-	if err != nil {
-		slog.Warn("failed to get balance", "address", resolved.RealAddress, "error", err)
-		http.Error(w, "failed to get balance", http.StatusInternalServerError)
-		return
-	}
-
-	code, err := s.provider.GetCode(ctx, resolved.RealAddress)
-	if err != nil {
-		slog.Warn("failed to check contract status", "address", resolved.RealAddress, "error", err)
-		http.Error(w, "failed to check contract status", http.StatusInternalServerError)
-		return
+	// Stats/balance/code may not exist for EOAs or pseudonymous/redacted addresses — that's OK
+	var stats *types.AddressStats
+	var balance *types.JSONString
+	var code []byte
+	if resolved.RealAddress != "" {
+		stats, _ = s.provider.GetAddressStats(ctx, resolved.RealAddress)
+		balance, _ = s.provider.GetBalance(ctx, resolved.RealAddress)
+		code, _ = s.provider.GetCode(ctx, resolved.RealAddress)
 	}
 
 	// SECURITY: Never expose real address for non-full disclosures
@@ -129,12 +119,21 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 		displayAddress = "[REDACTED]"
 	}
 
+	var txCount int64
+	if stats != nil {
+		txCount = int64(stats.TxCount)
+	}
+	var balanceStr string
+	if balance != nil {
+		balanceStr = string(*balance)
+	}
+
 	response := GrantedAddressResponse{
 		DisplayAddress:  displayAddress,
 		DisclosureLevel: resolved.DisclosureLevel,
 		GrantID:         resolved.GrantID,
-		Balance:         string(*balance),
-		TxCount:         int64(stats.TxCount),
+		Balance:         balanceStr,
+		TxCount:         txCount,
 		IsContract:      len(code) > 0,
 		ScopeMethods:    resolved.ScopeMethods,
 	}
