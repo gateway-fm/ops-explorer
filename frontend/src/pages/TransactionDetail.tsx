@@ -56,18 +56,21 @@ export function TransactionDetail() {
     queryKey: ['transaction', hash],
     queryFn: () => api.getTransaction(hash!),
     enabled: !!hash,
+    retry: false,
   });
 
   const { data: transfers } = useQuery({
     queryKey: ['transaction-transfers', hash],
     queryFn: () => api.getTransactionTransfers(hash!),
     enabled: !!hash,
+    retry: false,
   });
 
   const { data: logs } = useQuery({
     queryKey: ['transaction-logs', hash],
     queryFn: () => api.getTransactionLogs(hash!),
     enabled: !!hash,
+    retry: false,
   });
 
   const tokenMap = useTokenMap((transfers || []).map(t => t.tokenAddress));

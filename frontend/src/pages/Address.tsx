@@ -158,6 +158,7 @@ export function Address() {
     queryKey: ['addressTxs', address, before],
     queryFn: () => api.getAddressTransactions(address!, 25, before ? parseInt(before) : undefined),
     enabled: !!address && activeTab === 'transactions',
+    retry: false,
   });
 
   // Batch-check removed since visibility metadata is fetched directly within tx payload
