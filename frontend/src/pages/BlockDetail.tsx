@@ -1,14 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '../lib/api';
-import type { Block, Transaction, InternalTransaction, AddressVisibility } from '../lib/api';
+import type { Block, Transaction, InternalTransaction } from '../lib/api';
 import { formatHash, formatTimestamp, formatGas, formatWei } from '../lib/utils';
 import { PageHeader } from '../components/PageHeader';
 import { AddressLink } from '../components/AddressLink';
 import { CopyButton } from '../components/CopyButton';
-import { useBatchAddressVisibility } from '../hooks/useAddressVisibility';
+
 
 type TabId = 'details' | 'transactions' | 'internal';
 
@@ -28,24 +28,7 @@ export function BlockDetail() {
     enabled: !!number,
   });
 
-  // Collect all addresses for batch visibility check
-  const allAddresses = useMemo(() => {
-    if (!data) return [];
-    const set = new Set<string>();
-    const { block, transactions: txs } = data;
-    if (block.miner && block.miner !== '[PRIVATE]') set.add(block.miner.toLowerCase());
-    for (const tx of txs || []) {
-      if (tx.from && tx.from !== '[PRIVATE]') set.add(tx.from.toLowerCase());
-      if (tx.to && tx.to !== '[PRIVATE]') set.add(tx.to.toLowerCase());
-    }
-    for (const itx of internalTxs || []) {
-      if (itx.from && itx.from !== '[PRIVATE]') set.add(itx.from.toLowerCase());
-      if (itx.to && itx.to !== '[PRIVATE]') set.add(itx.to.toLowerCase());
-    }
-    return Array.from(set);
-  }, [data, internalTxs]);
-
-  const { visibilities } = useBatchAddressVisibility(allAddresses);
+  // Batch-check removed since visibility metadata is locally injected in transactions and logs
 
   if (isLoading) return <div className="text-neutral-400">Loading...</div>;
   if (error || !data) return <div className="text-error-600">Block not found</div>;
@@ -82,7 +65,7 @@ export function BlockDetail() {
 
       {/* Details Tab */}
       {activeTab === 'details' && (
-        <BlockDetailsTab block={block} visibilities={visibilities} />
+        <BlockDetailsTab block={block} />
       )}
 
       {/* Transactions Tab */}
@@ -91,7 +74,7 @@ export function BlockDetail() {
           <div className="card">
             <div className="divide-y divide-neutral-100">
               {transactions.map((tx) => (
-                <TxRow key={tx.hash} tx={tx} visibilities={visibilities} />
+                <TxRow key={tx.hash} tx={tx} />
               ))}
             </div>
           </div>
@@ -108,7 +91,7 @@ export function BlockDetail() {
           <div className="card">
             <div className="divide-y divide-neutral-100">
               {internalTransactions.map((itx) => (
-                <InternalTxRow key={`${itx.txHash}-${itx.traceAddress}`} itx={itx} visibilities={visibilities} />
+                <InternalTxRow key={`${itx.txHash}-${itx.traceAddress}`} itx={itx} />
               ))}
             </div>
           </div>
@@ -122,10 +105,9 @@ export function BlockDetail() {
   );
 }
 
-function BlockDetailsTab({ block, visibilities }: { block: Block; visibilities: Record<string, AddressVisibility> }) {
+function BlockDetailsTab({ block }: { block: Block }) {
   const [showMore, setShowMore] = useState(false);
   const gasPercent = block.gasLimit > 0 ? ((block.gasUsed / block.gasLimit) * 100).toFixed(2) : '0';
-  const minerVis = visibilities[block.miner?.toLowerCase()];
 
   return (
     <div className="card">
@@ -162,7 +144,7 @@ function BlockDetailsTab({ block, visibilities }: { block: Block; visibilities: 
           label="Miner"
           value={
             <span className="flex items-center gap-1">
-              <AddressLink address={block.miner} full className="font-mono text-sm" visibility={minerVis} />
+              <AddressLink address={block.miner} full className="font-mono text-sm" />
               <CopyButton text={block.miner} />
             </span>
           }
@@ -284,9 +266,9 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function TxRow({ tx, visibilities }: { tx: Transaction; visibilities: Record<string, AddressVisibility> }) {
-  const fromVis = visibilities[tx.from?.toLowerCase()];
-  const toVis = tx.to ? visibilities[tx.to.toLowerCase()] : undefined;
+function TxRow({ tx }: { tx: Transaction }) {
+  const fromReason = tx.addressMetadata?.[tx.from?.toLowerCase()];
+  const toReason = tx.to ? tx.addressMetadata?.[tx.to.toLowerCase()] : undefined;
 
   return (
     <div className="px-4 py-3 flex items-center justify-between hover:bg-primary-50/50 transition-colors">
@@ -295,11 +277,11 @@ function TxRow({ tx, visibilities }: { tx: Transaction; visibilities: Record<str
           {formatHash(tx.hash, 12)}
         </Link>
         <div className="text-sm text-neutral-500">
-          <AddressLink address={tx.from} chars={6} className="text-neutral-500 hover:text-neutral-700" visibility={fromVis} />
+          <AddressLink address={tx.from} chars={6} className="text-neutral-500 hover:text-neutral-700" reason={fromReason} />
           {tx.to && (
             <>
               {' → '}
-              <AddressLink address={tx.to} chars={6} className="text-neutral-500 hover:text-neutral-700" visibility={toVis} />
+              <AddressLink address={tx.to} chars={6} className="text-neutral-500 hover:text-neutral-700" reason={toReason} />
             </>
           )}
         </div>
@@ -318,9 +300,9 @@ function TxRow({ tx, visibilities }: { tx: Transaction; visibilities: Record<str
   );
 }
 
-function InternalTxRow({ itx, visibilities }: { itx: InternalTransaction; visibilities: Record<string, AddressVisibility> }) {
-  const fromVis = visibilities[itx.from?.toLowerCase()];
-  const toVis = itx.to ? visibilities[itx.to.toLowerCase()] : undefined;
+function InternalTxRow({ itx }: { itx: InternalTransaction }) {
+  const fromReason = itx.addressMetadata?.[itx.from?.toLowerCase()];
+  const toReason = itx.to ? itx.addressMetadata?.[itx.to.toLowerCase()] : undefined;
 
   return (
     <div className="px-4 py-3 flex items-center justify-between hover:bg-primary-50/50 transition-colors">
@@ -334,11 +316,11 @@ function InternalTxRow({ itx, visibilities }: { itx: InternalTransaction; visibi
           </span>
         </div>
         <div className="text-sm text-neutral-500">
-          <AddressLink address={itx.from} chars={6} className="text-neutral-500 hover:text-neutral-700" visibility={fromVis} />
+          <AddressLink address={itx.from} chars={6} className="text-neutral-500 hover:text-neutral-700" reason={fromReason} />
           {itx.to && (
             <>
               {' → '}
-              <AddressLink address={itx.to} chars={6} className="text-neutral-500 hover:text-neutral-700" visibility={toVis} />
+              <AddressLink address={itx.to} chars={6} className="text-neutral-500 hover:text-neutral-700" reason={toReason} />
             </>
           )}
         </div>

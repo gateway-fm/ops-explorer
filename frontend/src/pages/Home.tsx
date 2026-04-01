@@ -1,15 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Boxes, ArrowLeftRight, Users, Clock, Box, FileCode, FilePlus, Coins, ArrowRightLeft, Shield } from 'lucide-react';
 import { api } from '../lib/api';
-import type { Block, Transaction, TxCategory, AddressVisibility } from '../lib/api';
+import type { Block, Transaction, TxCategory } from '../lib/api';
 import { formatHash } from '../lib/utils';
 import { LiveTimeAgo } from '../components/LiveTimeAgo';
 import { AddressLink } from '../components/AddressLink';
 import { TransactionHistoryChart } from '../components/TransactionHistoryChart';
 import { SearchBar } from '../components/SearchBar';
-import { useBatchAddressVisibility } from '../hooks/useAddressVisibility';
 import { branding } from '../lib/branding';
 
 export function Home() {
@@ -31,18 +30,7 @@ export function Home() {
     refetchInterval: 2000,
   });
 
-  // Batch-check address visibility for transaction addresses
-  const txAddresses = useMemo(() => {
-    if (!txs?.data) return [];
-    const set = new Set<string>();
-    for (const tx of txs.data) {
-      if (tx.from && tx.from !== '[PRIVATE]') set.add(tx.from.toLowerCase());
-      if (tx.to && tx.to !== '[PRIVATE]') set.add(tx.to.toLowerCase());
-    }
-    return Array.from(set);
-  }, [txs]);
-
-  const { visibilities } = useBatchAddressVisibility(txAddresses);
+  // Removed useBatchAddressVisibility — visibility metadata is now provided natively in API response payloads
 
   // Track seen blocks and transactions for animations
   const seenBlocks = useRef<Set<number>>(new Set());
@@ -184,7 +172,6 @@ export function Home() {
                 key={tx.hash}
                 tx={tx}
                 isNew={newTxs.has(tx.hash)}
-                visibilities={visibilities}
               />
             ))}
             {!txs?.data?.length && (
@@ -323,10 +310,10 @@ function getTxTypeConfig(categories?: TxCategory[]) {
   return DEFAULT_TX_CONFIG;
 }
 
-function TxRow({ tx, isNew, visibilities }: { tx: Transaction; isNew: boolean; visibilities: Record<string, AddressVisibility> }) {
+function TxRow({ tx, isNew }: { tx: Transaction; isNew: boolean }) {
   const { icon, bgColor, textColor, label } = getTxTypeConfig(tx.txCategories);
-  const fromVis = visibilities[tx.from?.toLowerCase()];
-  const toVis = tx.to ? visibilities[tx.to.toLowerCase()] : undefined;
+  const fromReason = tx.addressMetadata?.[tx.from?.toLowerCase()];
+  const toReason = tx.to ? tx.addressMetadata?.[tx.to.toLowerCase()] : undefined;
 
   return (
     <div className={`px-3 sm:px-4 h-[52px] sm:h-[60px] flex items-center gap-3 hover:bg-primary-50/50 dark:hover:bg-primary-900/10 transition-colors ${isNew ? 'feed-item-new' : ''}`}>
@@ -343,11 +330,11 @@ function TxRow({ tx, isNew, visibilities }: { tx: Transaction; isNew: boolean; v
           )}
         </div>
         <div className="text-xs sm:text-sm text-neutral-500 truncate">
-          <AddressLink address={tx.from} chars={8} className="text-neutral-500 hover:text-neutral-700" visibility={fromVis} />
+          <AddressLink address={tx.from} chars={8} className="text-neutral-500 hover:text-neutral-700" reason={fromReason} />
           {tx.to && (
             <>
               {' → '}
-              <AddressLink address={tx.to} chars={8} className="text-neutral-500 hover:text-neutral-700" visibility={toVis} />
+              <AddressLink address={tx.to} chars={8} className="text-neutral-500 hover:text-neutral-700" reason={toReason} />
             </>
           )}
         </div>

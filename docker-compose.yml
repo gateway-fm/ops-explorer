@@ -31,13 +31,13 @@ services:
       - "${API_PORT:-8081}:8080"
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/explorer?sslmode=disable
-      RPC_URL: ${RPC_URL:-http://privacy-proxy-backend:8080}
+      RPC_URL: ${RPC_URL:-http://${PROXY_HOST:-privacy-proxy-backend}:8080}
       API_PORT: "8080"
       SOLC_PATH: /opt/solc
-      PRIVACY_PROXY_URL: ${PRIVACY_PROXY_URL:-http://privacy-proxy-backend:8080}
-      PRIVACY_PROXY_PUBLIC_URL: ${PRIVACY_PROXY_PUBLIC_URL:-http://localhost:8080}
+      PRIVACY_PROXY_URL: ${PRIVACY_PROXY_URL:-http://${PROXY_HOST:-privacy-proxy-backend}:8080}
+      PRIVACY_PROXY_PUBLIC_URL: ${PRIVACY_PROXY_PUBLIC_URL:-http://localhost:${HOST_PORT_PROXY:-8080}}
       SSO_CLIENT_ID: ${SSO_CLIENT_ID:-explorer}
-      SSO_REDIRECT_URI: ${SSO_REDIRECT_URI:-http://localhost:3001/api/auth/callback}
+      SSO_REDIRECT_URI: ${SSO_REDIRECT_URI:-http://localhost:${FRONTEND_PORT:-3001}/api/auth/callback}
     networks:
       - default
       - privacy-proxy
@@ -56,7 +56,7 @@ services:
       - privacy-proxy
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/explorer?sslmode=disable
-      RPC_URL: ${RPC_URL:-http://privacy-proxy-anvil:8545}
+      RPC_URL: ${RPC_URL:-http://${ANVIL_HOST:-privacy-proxy-anvil}:8545}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       POLL_INTERVAL: "2s"
       START_BLOCK: ${START_BLOCK:-0}
@@ -110,7 +110,7 @@ services:
 networks:
   privacy-proxy:
     external: true
-    name: privacy-proxy_proxy-network
+    name: ${PROXY_NETWORK:-privacy-proxy_proxy-network}
 
 volumes:
   postgres_data:

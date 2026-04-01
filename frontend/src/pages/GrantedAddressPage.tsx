@@ -1,12 +1,13 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../lib/api';
-import type { PseudonymizedTransaction } from '../lib/api';
+import type { PseudonymizedTransaction, GrantedAddressResponse } from '../lib/api';
 import { formatWei, formatTimestamp } from '../lib/utils';
 import { useAuth } from '../lib/auth';
 import { redirectToLogin } from '../lib/login';
 import { PageHeader } from '../components/PageHeader';
-import { Fingerprint, Unlock, ShieldAlert, EyeOff, ArrowDownLeft, ArrowUpRight, RotateCcw } from 'lucide-react';
+import { Fingerprint, Unlock, ShieldAlert, EyeOff, ArrowDownLeft, ArrowUpRight, RotateCcw, FileText, Activity, ChevronLeft, ChevronRight } from 'lucide-react';
 
 /**
  * GrantedAddressPage displays address information for disclosed addresses.
@@ -16,10 +17,52 @@ import { Fingerprint, Unlock, ShieldAlert, EyeOff, ArrowDownLeft, ArrowUpRight, 
  * SECURITY: This page receives already-redacted data from the backend.
  * The display_address field contains the pseudonym or "[REDACTED]" for
  * non-full disclosures - the real address is never sent.
+ *
+ * Scope-aware tabs:
+ * - "Transactions" tab shown when scope includes "transaction_history" or "full_disclosure",
+ *   or when no scope_methods are specified (backwards-compatible default).
+ * - "Activity Logs" tab shown when scope includes "activity_logs" or "full_disclosure".
+ * - For activity_logs-only scope, the Transactions tab is NOT shown to avoid 500 errors.
  */
+
+type TabId = 'transactions' | 'activity_logs';
+
+/** Determines which tabs are available based on scope methods. */
+function getAvailableTabs(data: GrantedAddressResponse): TabId[] {
+  const methods = data.scope_methods ?? [];
+  const isRedacted = data.disclosure_level === 'redacted';
+
+  // If no scope methods specified, default to showing transactions
+  // (backwards-compatible with grants created before scope methods were added).
+  if (methods.length === 0) {
+    const tabs: TabId[] = [];
+    if (!isRedacted) tabs.push('transactions');
+    return tabs;
+  }
+
+  const hasFullDisclosure = methods.includes('full_disclosure');
+  const hasTransactionHistory = methods.includes('transaction_history');
+  const hasActivityLogs = methods.includes('activity_logs');
+
+  const tabs: TabId[] = [];
+
+  if ((hasFullDisclosure || hasTransactionHistory) && !isRedacted) {
+    tabs.push('transactions');
+  }
+
+  if (hasFullDisclosure || hasActivityLogs) {
+    tabs.push('activity_logs');
+  }
+
+  return tabs;
+}
+
 export function GrantedAddressPage() {
   const { grantId, addressId } = useParams<{ grantId: string; addressId: string }>();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const [activeTab, setActiveTab] = useState<TabId | null>(null);
+  const [activityOffset, setActivityOffset] = useState(0);
+  const activityLimit = 25;
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['grantedAddress', grantId, addressId],
@@ -28,11 +71,27 @@ export function GrantedAddressPage() {
     retry: false,
   });
 
-  // Fetch transactions (only for non-redacted disclosures)
+  // Compute available tabs from the data
+  const availableTabs = data ? getAvailableTabs(data) : [];
+  const currentTab = activeTab ?? availableTabs[0] ?? null;
+  const showTransactionsTab = availableTabs.includes('transactions');
+  const showActivityLogsTab = availableTabs.includes('activity_logs');
+
+  // Fetch transactions only when the transactions tab is available and selected
+  const shouldFetchTransactions = showTransactionsTab && currentTab === 'transactions';
   const { data: txData, isLoading: txLoading } = useQuery({
     queryKey: ['grantedAddressTransactions', grantId, addressId],
     queryFn: () => api.getGrantedAddressTransactions(grantId!, addressId!),
-    enabled: !!grantId && !!addressId && isAuthenticated && data?.disclosure_level !== 'redacted',
+    enabled: !!grantId && !!addressId && isAuthenticated && shouldFetchTransactions,
+    retry: false,
+  });
+
+  // Fetch activity logs when the activity_logs tab is available and selected
+  const shouldFetchActivityLogs = showActivityLogsTab && currentTab === 'activity_logs';
+  const { data: activityData, isLoading: activityLoading } = useQuery({
+    queryKey: ['grantActivityLogs', grantId, activityLimit, activityOffset],
+    queryFn: () => api.getGrantActivityLogs(grantId!, activityLimit, activityOffset),
+    enabled: !!grantId && isAuthenticated && shouldFetchActivityLogs,
     retry: false,
   });
 
@@ -246,8 +305,42 @@ export function GrantedAddressPage() {
         </div>
       </div>
 
-      {/* Transactions */}
-      {!isRedacted && (
+      {/* Scope-aware tabs */}
+      {availableTabs.length > 1 && (
+        <div className="border-b border-neutral-200">
+          <nav className="flex -mb-px">
+            {showTransactionsTab && (
+              <button
+                onClick={() => setActiveTab('transactions')}
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  currentTab === 'transactions'
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300'
+                }`}
+              >
+                <FileText className="w-4 h-4" />
+                Transactions
+              </button>
+            )}
+            {showActivityLogsTab && (
+              <button
+                onClick={() => setActiveTab('activity_logs')}
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  currentTab === 'activity_logs'
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300'
+                }`}
+              >
+                <Activity className="w-4 h-4" />
+                Activity Logs
+              </button>
+            )}
+          </nav>
+        </div>
+      )}
+
+      {/* Transactions Tab Content */}
+      {currentTab === 'transactions' && !isRedacted && (
         <div className="card">
           <div className="px-4 py-3 border-b border-neutral-100">
             <h3 className="font-medium text-neutral-900">Transactions</h3>
@@ -292,8 +385,86 @@ export function GrantedAddressPage() {
         </div>
       )}
 
-      {/* Redacted notice for transactions */}
-      {isRedacted && (
+      {/* Activity Logs Tab Content */}
+      {currentTab === 'activity_logs' && (
+        <div className="card">
+          <div className="px-4 py-3 border-b border-neutral-100">
+            <h3 className="font-medium text-neutral-900">Activity Logs</h3>
+            <p className="text-xs text-neutral-500 mt-1">
+              RPC method calls made by the disclosed address during the grant period.
+            </p>
+          </div>
+          {activityLoading ? (
+            <div className="p-8 text-center text-neutral-400">Loading activity logs...</div>
+          ) : activityData?.logs.length === 0 ? (
+            <div className="p-8 text-center text-neutral-400">No activity logs found</div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Method</th>
+                      <th>Status</th>
+                      <th>Timestamp</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activityData?.logs.map((log, index) => (
+                      <tr key={`${log.timestamp}-${index}`}>
+                        <td>
+                          <span className="font-mono text-sm text-neutral-900">{log.method}</span>
+                        </td>
+                        <td>
+                          {log.status_code >= 200 && log.status_code < 300 ? (
+                            <span className="badge badge-success">{log.status_code}</span>
+                          ) : log.status_code >= 400 ? (
+                            <span className="badge bg-error-50 text-error-600 border-error-200">{log.status_code}</span>
+                          ) : (
+                            <span className="badge">{log.status_code}</span>
+                          )}
+                        </td>
+                        <td className="text-neutral-500 text-sm whitespace-nowrap">
+                          {new Date(log.timestamp).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {/* Pagination */}
+              {activityData && activityData.total > activityLimit && (
+                <div className="flex items-center justify-between px-4 py-3 border-t border-neutral-100">
+                  <span className="text-sm text-neutral-500">
+                    Showing {activityOffset + 1}–{Math.min(activityOffset + activityLimit, activityData.total)} of {activityData.total}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setActivityOffset(Math.max(0, activityOffset - activityLimit))}
+                      disabled={activityOffset === 0}
+                      className="btn btn-sm flex items-center gap-1 disabled:opacity-50"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      Previous
+                    </button>
+                    <button
+                      onClick={() => setActivityOffset(activityOffset + activityLimit)}
+                      disabled={activityOffset + activityLimit >= activityData.total}
+                      className="btn btn-sm flex items-center gap-1 disabled:opacity-50"
+                    >
+                      Next
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Redacted notice for transactions (when no tabs available) */}
+      {isRedacted && availableTabs.length === 0 && (
         <div className="card p-6 text-center">
           <EyeOff className="w-8 h-8 mx-auto mb-3 text-neutral-300" />
           <p className="text-neutral-500">

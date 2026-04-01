@@ -46,6 +46,7 @@ export interface Transaction {
   // Transaction categories
   txCategories?: TxCategory[];
   tokenTransferCount?: number;
+  addressMetadata?: Record<string, VisibilityReason>;
 }
 
 // Transaction category types
@@ -142,6 +143,7 @@ export interface TokenTransfer {
   tokenType: string;
   tokenId?: string;
   isInternal: boolean;
+  addressMetadata?: Record<string, VisibilityReason>;
 }
 
 export interface Log {
@@ -155,6 +157,7 @@ export interface Log {
   topic3: string | null;
   data: string;
   blockNumber: number;
+  addressMetadata?: Record<string, VisibilityReason>;
 }
 
 export interface InternalTransaction {
@@ -172,6 +175,7 @@ export interface InternalTransaction {
   callType: string;
   error?: string;
   timestamp?: number;
+  addressMetadata?: Record<string, VisibilityReason>;
 }
 
 export interface TxHistoryPoint {
@@ -200,6 +204,7 @@ export interface TokenHolder {
   balance: string | number;
   percentage: number;
   isContract: boolean;
+  addressMetadata?: Record<string, VisibilityReason>;
 }
 
 export interface ChainInfo {
@@ -278,7 +283,7 @@ export interface LinkedAddress {
 
 // Privacy types
 export type VisibilityLevel = 'full' | 'pseudonymous' | 'redacted' | 'hidden';
-export type VisibilityReason = 'own_address' | 'disclosure_grant' | 'rbac_group_member' | 'public_address' | 'no_access';
+export type VisibilityReason = 'own_address' | 'disclosure_grant' | 'rbac_group_member' | 'public_address' | 'no_access' | 'participant_override';
 
 export interface AddressVisibility {
   address: string;
@@ -319,6 +324,7 @@ export interface GrantedAddressResponse {
   balance: string;
   tx_count: number;
   is_contract: boolean;
+  scope_methods?: string[]; // Grant scope methods (e.g. "transaction_history", "activity_logs")
 }
 
 export interface PseudonymizedTransaction {
@@ -338,6 +344,19 @@ export interface PseudonymizedTransactionsResponse {
   disclosure_level: string;
   address_labels: Record<string, string>;
   has_more: boolean;
+}
+
+export interface ActivityLogEntry {
+  method: string;
+  status_code: number;
+  timestamp: string;
+}
+
+export interface ActivityLogsResponse {
+  logs: ActivityLogEntry[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export interface ChartLineInfo {
@@ -527,16 +546,6 @@ export const api = {
   getViewableAddresses: () =>
     fetchAPI<ViewableAddressesResponse>('/privacy/viewable-addresses'),
 
-  checkAddressVisibility: (address: string) =>
-    fetchAPI<AddressVisibility>(`/privacy/check-address/${address}`),
-
-  batchCheckAddresses: (addresses: string[]) =>
-    fetchAPI<{ results: Record<string, AddressVisibility> }>('/privacy/check-addresses', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ addresses }),
-    }),
-
   getGrantedAddress: (grantId: string, addressId: string) =>
     fetchAPI<GrantedAddressResponse>(`/privacy/grant/${grantId}/${addressId}`),
 
@@ -545,6 +554,9 @@ export const api = {
     if (before) params.set('before', String(before));
     return fetchAPI<PseudonymizedTransactionsResponse>(`/privacy/grant/${grantId}/${addressId}/transactions?${params}`);
   },
+
+  getGrantActivityLogs: (grantId: string, limit = 25, offset = 0) =>
+    fetchAPI<ActivityLogsResponse>(`/privacy/grant/${grantId}/activity?limit=${limit}&offset=${offset}`),
 
   // ETH address linking endpoints (proxied through backend to privacy-proxy)
   eth: {

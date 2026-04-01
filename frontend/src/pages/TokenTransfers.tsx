@@ -1,36 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
+
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { TokenTransfer } from '../lib/api';
+import { formatHash } from '../lib/utils';
+import { formatTokenValue } from '../lib/formatToken';
+import { useTokenMap } from '../hooks/useTokenMap';
 import { AddressLink } from '../components/AddressLink';
 import { AddressLabel } from '../components/AddressLabel';
 import { PageHeader } from '../components/PageHeader';
-import { useBatchAddressVisibility } from '../hooks/useAddressVisibility';
+
 import { ArrowRight } from 'lucide-react';
-
-function formatTokenValue(value: string | number, decimals = 18): string {
-  const strValue = String(value);
-  if (!strValue || strValue === '0') return '0';
-  try {
-    const num = BigInt(strValue);
-    const divisor = BigInt(10 ** decimals);
-    const wholePart = num / divisor;
-    const fracPart = num % divisor;
-    if (fracPart === BigInt(0)) {
-      return wholePart.toLocaleString();
-    }
-    const fracStr = fracPart.toString().padStart(decimals, '0').slice(0, 4);
-    return `${wholePart.toLocaleString()}.${fracStr}`;
-  } catch {
-    return strValue;
-  }
-}
-
-function truncateHash(hash: string, chars = 8): string {
-  if (!hash) return '';
-  return `${hash.slice(0, chars + 2)}...${hash.slice(-chars)}`;
-}
 
 export default function TokenTransfers() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -41,17 +21,9 @@ export default function TokenTransfers() {
     queryFn: () => api.getAllTokenTransfers(page, 25),
   });
 
-  const uniqueAddresses = useMemo(() => {
-    if (!data?.data) return [];
-    const set = new Set<string>();
-    for (const t of data.data) {
-      if (t.from && t.from !== '[PRIVATE]') set.add(t.from.toLowerCase());
-      if (t.to && t.to !== '[PRIVATE]') set.add(t.to.toLowerCase());
-    }
-    return Array.from(set);
-  }, [data]);
-
-  const { visibilities } = useBatchAddressVisibility(uniqueAddresses);
+  const transfers = data?.data || [];
+  const tokenMap = useTokenMap(transfers.map(t => t.tokenAddress));
+  const totalPages = data?.totalPages || 1;
 
   const handlePageChange = (newPage: number) => {
     const params = new URLSearchParams(searchParams);
@@ -81,9 +53,6 @@ export default function TokenTransfers() {
     );
   }
 
-  const transfers = data?.data || [];
-  const totalPages = data?.totalPages || 1;
-
   return (
     <div className="space-y-6">
       <PageHeader title="Token Transfers" />
@@ -110,8 +79,8 @@ export default function TokenTransfers() {
                 </thead>
                 <tbody>
                   {transfers.map((transfer: TokenTransfer) => {
-                    const fromVis = visibilities[transfer.from?.toLowerCase()];
-                    const toVis = visibilities[transfer.to?.toLowerCase()];
+                    const fromReason = transfer.addressMetadata?.[transfer.from?.toLowerCase()];
+                    const toReason = transfer.addressMetadata?.[transfer.to?.toLowerCase()];
                     return (
                     <tr key={`${transfer.txHash}-${transfer.logIndex}`}>
                       <td>
@@ -119,7 +88,7 @@ export default function TokenTransfers() {
                           to={`/tx/${transfer.txHash}`}
                           className="text-primary hover:text-primary-600 font-mono text-sm transition-colors"
                         >
-                          {truncateHash(transfer.txHash)}
+                          {formatHash(transfer.txHash)}
                         </Link>
                       </td>
                       <td>
@@ -132,8 +101,8 @@ export default function TokenTransfers() {
                       </td>
                       <td>
                         <span className="inline-flex items-center gap-1">
-                          <AddressLink address={transfer.from} chars={6} visibility={fromVis} />
-                          <AddressLabel reason={fromVis?.reason} />
+                          <AddressLink address={transfer.from} chars={6} reason={fromReason} />
+                          <AddressLabel reason={fromReason} />
                         </span>
                       </td>
                       <td className="text-center">
@@ -141,8 +110,8 @@ export default function TokenTransfers() {
                       </td>
                       <td>
                         <span className="inline-flex items-center gap-1">
-                          <AddressLink address={transfer.to} chars={6} visibility={toVis} />
-                          <AddressLabel reason={toVis?.reason} />
+                          <AddressLink address={transfer.to} chars={6} reason={toReason} />
+                          <AddressLabel reason={toReason} />
                         </span>
                       </td>
                       <td>
@@ -151,7 +120,7 @@ export default function TokenTransfers() {
                             to={`/token/${transfer.tokenAddress}`}
                             className="text-primary hover:text-primary-600 transition-colors font-mono text-sm"
                           >
-                            {truncateHash(transfer.tokenAddress, 6)}
+                            {formatHash(transfer.tokenAddress, 6)}
                           </Link>
                           <span className={`badge ${
                             transfer.tokenType === 'ERC721'
@@ -165,7 +134,7 @@ export default function TokenTransfers() {
                       <td className="text-right font-mono text-neutral-700">
                         {transfer.tokenType === 'ERC721' && transfer.tokenId
                           ? `#${transfer.tokenId}`
-                          : formatTokenValue(transfer.value)}
+                          : formatTokenValue(transfer.value, tokenMap[transfer.tokenAddress.toLowerCase()]?.decimals ?? 18)}
                       </td>
                     </tr>
                     );

@@ -1,13 +1,15 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../lib/api';
-import type { TokenTransfer, Log, TxCategory, AddressVisibility } from '../lib/api';
+import type { TokenTransfer, Log, TxCategory } from '../lib/api';
 import { formatWei, formatGas, formatTimestamp } from '../lib/utils';
+import { formatTokenValue } from '../lib/formatToken';
+import { useTokenMap } from '../hooks/useTokenMap';
 import { AddressLink, TokenAddressLink } from '../components/AddressLink';
 import { AddressLabel } from '../components/AddressLabel';
-import { useBatchAddressVisibility } from '../hooks/useAddressVisibility';
+
 import { PageHeader } from '../components/PageHeader';
 import { CopyButton } from '../components/CopyButton';
 import { decodeEvent, getMethodId, fetchEventSignature, decodeEventWithSignature, KNOWN_EVENTS } from '../lib/eventDecoder';
@@ -54,37 +56,26 @@ export function TransactionDetail() {
     queryKey: ['transaction', hash],
     queryFn: () => api.getTransaction(hash!),
     enabled: !!hash,
+    retry: false,
   });
 
   const { data: transfers } = useQuery({
     queryKey: ['transaction-transfers', hash],
     queryFn: () => api.getTransactionTransfers(hash!),
     enabled: !!hash,
+    retry: false,
   });
 
   const { data: logs } = useQuery({
     queryKey: ['transaction-logs', hash],
     queryFn: () => api.getTransactionLogs(hash!),
     enabled: !!hash,
+    retry: false,
   });
 
-  // Collect from/to addresses for visibility labels (including token transfer addresses)
-  const txAddresses = useMemo(() => {
-    const set = new Set<string>();
-    if (tx) {
-      if (tx.from && tx.from !== '[PRIVATE]') set.add(tx.from.toLowerCase());
-      if (tx.to && tx.to !== '[PRIVATE]') set.add(tx.to.toLowerCase());
-      if (tx.contractAddress && tx.contractAddress !== '[PRIVATE]') set.add(tx.contractAddress.toLowerCase());
-    }
-    if (transfers) {
-      for (const t of transfers) {
-        if (t.from && t.from !== '[PRIVATE]') set.add(t.from.toLowerCase());
-        if (t.to && t.to !== '[PRIVATE]') set.add(t.to.toLowerCase());
-      }
-    }
-    return Array.from(set);
-  }, [tx, transfers]);
-  const { visibilities } = useBatchAddressVisibility(txAddresses);
+  const tokenMap = useTokenMap((transfers || []).map(t => t.tokenAddress));
+
+  // Batch check logic removed; visibility metadata is now attached directly to API responses
 
   if (isLoading) return <div className="text-neutral-400">Loading...</div>;
   if (error && error instanceof Error && (error.message.includes('403') || error.message.includes('500'))) {
@@ -107,8 +98,8 @@ export function TransactionDetail() {
   }
   if (error || !tx) return <div className="text-error-600">Transaction not found</div>;
 
-  const fromVis = visibilities[tx.from?.toLowerCase()];
-  const toVis = tx.to ? visibilities[tx.to.toLowerCase()] : undefined;
+  const fromReason = tx.addressMetadata?.[tx.from?.toLowerCase()];
+  const toReason = tx.to ? tx.addressMetadata?.[tx.to.toLowerCase()] : undefined;
 
   const hasLogs = logs && logs.length > 0;
 
@@ -184,8 +175,8 @@ export function TransactionDetail() {
               label="From"
               value={
                 <span className="flex items-center gap-1">
-                  <AddressLink address={tx.from} full className="text-sm" />
-                  <AddressLabel reason={fromVis?.reason} />
+                  <AddressLink address={tx.from} full className="text-sm" reason={fromReason} />
+                  <AddressLabel reason={fromReason} />
                   <CopyButton text={tx.from} />
                 </span>
               }
@@ -195,8 +186,8 @@ export function TransactionDetail() {
               value={
                 tx.to ? (
                   <span className="flex items-center gap-1">
-                    <AddressLink address={tx.to} full className="text-sm" />
-                    <AddressLabel reason={toVis?.reason} />
+                    <AddressLink address={tx.to} full className="text-sm" reason={toReason} />
+                    <AddressLabel reason={toReason} />
                     {tx.to !== '[PRIVATE]' && <CopyButton text={tx.to} />}
                   </span>
                 ) : tx.contractAddress ? (
@@ -220,9 +211,17 @@ export function TransactionDetail() {
                   <span className="text-xs text-neutral-400">({transfers.length})</span>
                 </div>
                 <div className="flex flex-col gap-2">
-                  {transfers.map((transfer) => (
-                    <TokenTransferRow key={`${transfer.txHash}-${transfer.logIndex}`} transfer={transfer} visibilities={visibilities} />
-                  ))}
+                  {transfers.map((transfer) => {
+                    const tokenInfo = tokenMap[transfer.tokenAddress.toLowerCase()];
+                    return (
+                      <TokenTransferRow
+                        key={`${transfer.txHash}-${transfer.logIndex}`}
+                        transfer={transfer}
+                        tokenDecimals={tokenInfo?.decimals}
+                        tokenSymbol={tokenInfo?.symbol}
+                      />
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -341,49 +340,24 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function TokenTransferRow({ transfer, visibilities }: { transfer: TokenTransfer; visibilities: Record<string, AddressVisibility> }) {
-  const formattedValue = formatTokenValue(transfer.value);
-  const fromVis = visibilities[transfer.from?.toLowerCase()];
-  const toVis = visibilities[transfer.to?.toLowerCase()];
+function TokenTransferRow({ transfer, tokenDecimals, tokenSymbol }: { transfer: TokenTransfer; tokenDecimals?: number; tokenSymbol?: string }) {
+  const formattedValue = formatTokenValue(transfer.value, tokenDecimals ?? 18);
+  const fromReason = transfer.addressMetadata?.[transfer.from?.toLowerCase()];
+  const toReason = transfer.addressMetadata?.[transfer.to?.toLowerCase()];
 
   return (
     <div className="flex items-center gap-1.5 flex-wrap text-sm">
       <span className="text-neutral-500">From</span>
-      <AddressLink address={transfer.from} visibility={fromVis} />
-      <AddressLabel reason={fromVis?.reason} />
+      <AddressLink address={transfer.from} reason={fromReason} />
+      <AddressLabel reason={fromReason} />
       <span className="text-neutral-500">To</span>
-      <AddressLink address={transfer.to} visibility={toVis} />
-      <AddressLabel reason={toVis?.reason} />
+      <AddressLink address={transfer.to} reason={toReason} />
+      <AddressLabel reason={toReason} />
       <span className="text-neutral-500">For</span>
-      <span className="font-mono text-success-600 font-medium">{formattedValue}</span>
+      <span className="font-mono text-success-600 font-medium">{formattedValue}{tokenSymbol ? ` ${tokenSymbol}` : ''}</span>
       <TokenAddressLink address={transfer.tokenAddress} />
     </div>
   );
-}
-
-function formatTokenValue(value: string | number): string {
-  try {
-    const bigValue = typeof value === 'string' ? BigInt(value) : BigInt(Math.floor(value));
-    // Assuming 18 decimals (standard ERC-20)
-    const divisor = BigInt(10 ** 18);
-    const wholePart = bigValue / divisor;
-    const fractionalPart = bigValue % divisor;
-
-    if (fractionalPart === 0n) {
-      return wholePart.toLocaleString();
-    }
-
-    // Show up to 4 decimal places
-    const fractionalStr = fractionalPart.toString().padStart(18, '0');
-    const decimals = fractionalStr.slice(0, 4).replace(/0+$/, '');
-
-    if (decimals) {
-      return `${wholePart.toLocaleString()}.${decimals}`;
-    }
-    return wholePart.toLocaleString();
-  } catch {
-    return String(value);
-  }
 }
 
 type TopicDecodeFormat = 'hex' | 'address' | 'number' | 'text';
@@ -552,7 +526,10 @@ function LogCard({ log }: { log: Log }) {
       <div className="space-y-3">
         <div className="flex flex-col sm:flex-row gap-1 sm:gap-2">
           <span className="text-neutral-500 text-sm w-20 shrink-0">Address</span>
-          <AddressLink address={log.address} full className="text-sm" />
+          <span className="flex items-center gap-1">
+            <AddressLink address={log.address} full className="text-sm" reason={log.addressMetadata?.[log.address?.toLowerCase()]} />
+            <AddressLabel reason={log.addressMetadata?.[log.address?.toLowerCase()]} />
+          </span>
         </div>
 
         {/* Decoded Event Section - shown when event is recognized */}

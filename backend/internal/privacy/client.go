@@ -87,10 +87,6 @@ type AddressVisibility struct {
 	ExpiresAt *time.Time       `json:"expires_at,omitempty"`
 }
 
-type BatchCheckAddressesResponse struct {
-	Results map[string]AddressVisibility `json:"results"`
-}
-
 type ViewerIdentity struct {
 	Wallet   string // Wallet address (used for DB-verified DID lookup)
 	DID      string // DID extracted locally (for display only, NOT sent to proxy)
@@ -138,106 +134,6 @@ func (c *Client) GetViewableAddressesWithIdentity(ctx context.Context, viewer Vi
 	}
 
 	return &result, nil
-}
-
-func (c *Client) CheckAddress(ctx context.Context, wallet, address string) (*AddressVisibility, error) {
-	return c.CheckAddressWithIdentity(ctx, ViewerIdentity{Wallet: wallet}, address)
-}
-
-func (c *Client) CheckAddressWithIdentity(ctx context.Context, viewer ViewerIdentity, address string) (*AddressVisibility, error) {
-	normalizedAddress := strings.ToLower(address)
-	u, err := url.Parse(c.baseURL + "/api/v1/explorer/check-address/" + normalizedAddress)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse URL: %w", err)
-	}
-
-	q := u.Query()
-	if viewer.Wallet != "" {
-		q.Set("wallet", viewer.Wallet)
-	}
-	u.RawQuery = q.Encode()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	if viewer.JWTToken != "" {
-		req.Header.Set("Authorization", "Bearer "+viewer.JWTToken)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
-	}
-
-	var result AddressVisibility
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &result, nil
-}
-
-func (c *Client) CheckAddresses(ctx context.Context, wallet string, addresses []string) (map[string]*AddressVisibility, error) {
-	return c.CheckAddressesWithIdentity(ctx, ViewerIdentity{Wallet: wallet}, addresses)
-}
-
-func (c *Client) CheckAddressesWithIdentity(ctx context.Context, viewer ViewerIdentity, addresses []string) (map[string]*AddressVisibility, error) {
-	u, err := url.Parse(c.baseURL + "/api/v1/explorer/check-addresses")
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse URL: %w", err)
-	}
-
-	q := u.Query()
-	if viewer.Wallet != "" {
-		q.Set("wallet", viewer.Wallet)
-	}
-	u.RawQuery = q.Encode()
-
-	reqBody := map[string]interface{}{"addresses": addresses}
-	body, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request body: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if viewer.JWTToken != "" {
-		req.Header.Set("Authorization", "Bearer "+viewer.JWTToken)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	var batchResp BatchCheckAddressesResponse
-	if err := json.NewDecoder(resp.Body).Decode(&batchResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	result := make(map[string]*AddressVisibility)
-	for addr, vis := range batchResp.Results {
-		v := vis
-		result[addr] = &v
-	}
-
-	return result, nil
 }
 
 func (v *AddressVisibility) IsVisible() bool {
@@ -422,10 +318,11 @@ func (c *Client) UnlinkAddress(ctx context.Context, token string, address string
 }
 
 type ResolveAddressResponse struct {
-	RealAddress     string `json:"real_address"`
-	DisclosureLevel string `json:"disclosure_level"`
-	GrantID         string `json:"grant_id"`
-	Pseudonym       string `json:"pseudonym,omitempty"`
+	RealAddress     string   `json:"real_address"`
+	DisclosureLevel string   `json:"disclosure_level"`
+	GrantID         string   `json:"grant_id"`
+	Pseudonym       string   `json:"pseudonym,omitempty"`
+	ScopeMethods    []string `json:"scope_methods,omitempty"` // Methods from grant scope (e.g. "transaction_history", "activity_logs")
 }
 
 // ResolveAddressID resolves an opaque address_id back to real address information.
@@ -483,6 +380,53 @@ func (c *Client) GetGrantTransactions(ctx context.Context, grantID, addressID st
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	return body, resp.StatusCode, nil
+}
+
+// ActivityLogsResponse matches the privacy proxy's grant activity logs response.
+type ActivityLogsResponse struct {
+	Logs   []ActivityLogEntry `json:"logs"`
+	Total  int                `json:"total"`
+	Limit  int                `json:"limit"`
+	Offset int                `json:"offset"`
+}
+
+// ActivityLogEntry is a stripped-down activity log entry (no IP, no params).
+type ActivityLogEntry struct {
+	Method     string `json:"method"`
+	StatusCode int    `json:"status_code"`
+	Timestamp  string `json:"timestamp"`
+}
+
+// GetGrantActivityLogs fetches activity logs for a disclosure grant from the privacy proxy.
+// The caller's JWT is forwarded so the proxy can verify grant holder identity.
+func (c *Client) GetGrantActivityLogs(ctx context.Context, grantID string, token string, limit, offset int) ([]byte, int, error) {
+	endpoint := fmt.Sprintf("/api/v1/explorer/grant/%s/activity?limit=%d&offset=%d", grantID, limit, offset)
+
+	u, err := url.Parse(c.baseURL + endpoint)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to parse URL: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to create request: %w", err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	resp, err := c.httpClient.Do(req)

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
@@ -6,25 +6,7 @@ import type { TokenHolder, TokenTransfer } from '../lib/api';
 import { AddressLink } from '../components/AddressLink';
 import { AddressLabel } from '../components/AddressLabel';
 import { PageHeader } from '../components/PageHeader';
-import { useBatchAddressVisibility } from '../hooks/useAddressVisibility';
-
-function formatTokenValue(value: string | number, decimals: number): string {
-  const strValue = String(value);
-  if (!strValue || strValue === '0') return '0';
-  try {
-    const num = BigInt(strValue);
-    const divisor = BigInt(10 ** decimals);
-    const wholePart = num / divisor;
-    const fracPart = num % divisor;
-    if (fracPart === BigInt(0)) {
-      return wholePart.toLocaleString();
-    }
-    const fracStr = fracPart.toString().padStart(decimals, '0').slice(0, 6);
-    return `${wholePart.toLocaleString()}.${fracStr}`;
-  } catch {
-    return strValue;
-  }
-}
+import { formatTokenValue } from '../lib/formatToken';
 
 export default function TokenDetail() {
   const { address } = useParams<{ address: string }>();
@@ -61,24 +43,7 @@ export default function TokenDetail() {
     setSearchParams({ page: '1' });
   };
 
-  // Collect unique addresses from holders and transfers for batch visibility check
-  const uniqueAddresses = useMemo(() => {
-    const set = new Set<string>();
-    if (holders?.data) {
-      for (const h of holders.data) {
-        if (h.address && h.address !== '[PRIVATE]') set.add(h.address.toLowerCase());
-      }
-    }
-    if (transfers?.data) {
-      for (const t of transfers.data) {
-        if (t.from && t.from !== '[PRIVATE]') set.add(t.from.toLowerCase());
-        if (t.to && t.to !== '[PRIVATE]') set.add(t.to.toLowerCase());
-      }
-    }
-    return Array.from(set);
-  }, [holders, transfers]);
-
-  const { visibilities } = useBatchAddressVisibility(uniqueAddresses);
+  // Batch visibility checks for holders/transfers removed, using inline metadata instead
 
   if (tokenLoading) {
     return (
@@ -211,7 +176,7 @@ export default function TokenDetail() {
                 </thead>
                 <tbody>
                   {(holders?.data || []).map((holder: TokenHolder, index: number) => {
-                    const holderVis = visibilities[holder.address?.toLowerCase()];
+                    const holderReason = holder.addressMetadata?.[holder.address?.toLowerCase()];
                     return (
                     <tr key={holder.address}>
                       <td className="text-neutral-400">
@@ -219,8 +184,8 @@ export default function TokenDetail() {
                       </td>
                       <td>
                         <div className="flex items-center gap-2">
-                          <AddressLink address={holder.address} visibility={holderVis} />
-                          <AddressLabel reason={holderVis?.reason} />
+                          <AddressLink address={holder.address} reason={holderReason} />
+                          <AddressLabel reason={holderReason} />
                           {holder.isContract && (
                             <span className="badge badge-neutral text-xs">
                               Contract
@@ -255,8 +220,8 @@ export default function TokenDetail() {
                 </thead>
                 <tbody>
                   {(transfers?.data || []).map((transfer: TokenTransfer) => {
-                    const fromVis = visibilities[transfer.from?.toLowerCase()];
-                    const toVis = visibilities[transfer.to?.toLowerCase()];
+                    const fromReason = transfer.addressMetadata?.[transfer.from?.toLowerCase()];
+                    const toReason = transfer.addressMetadata?.[transfer.to?.toLowerCase()];
                     return (
                     <tr key={`${transfer.txHash}-${transfer.logIndex}`}>
                       <td>
@@ -269,14 +234,14 @@ export default function TokenDetail() {
                       </td>
                       <td>
                         <span className="inline-flex items-center gap-1">
-                          <AddressLink address={transfer.from} visibility={fromVis} />
-                          <AddressLabel reason={fromVis?.reason} />
+                          <AddressLink address={transfer.from} reason={fromReason} />
+                          <AddressLabel reason={fromReason} />
                         </span>
                       </td>
                       <td>
                         <span className="inline-flex items-center gap-1">
-                          <AddressLink address={transfer.to} visibility={toVis} />
-                          <AddressLabel reason={toVis?.reason} />
+                          <AddressLink address={transfer.to} reason={toReason} />
+                          <AddressLabel reason={toReason} />
                         </span>
                       </td>
                       <td className="text-neutral-700 font-mono">

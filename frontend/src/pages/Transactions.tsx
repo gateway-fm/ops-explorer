@@ -1,14 +1,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '../lib/api';
-import type { Transaction, TxCategory, AddressVisibility } from '../lib/api';
+import type { Transaction, TxCategory } from '../lib/api';
 import { formatHash, formatWei } from '../lib/utils';
 import { PageHeader } from '../components/PageHeader';
 import { AddressLink } from '../components/AddressLink';
 import { AddressLabel } from '../components/AddressLabel';
-import { useBatchAddressVisibility } from '../hooks/useAddressVisibility';
 import { NewItemsNotice } from '../components/NewItemsNotice';
 
 export function Transactions() {
@@ -49,18 +48,6 @@ export function Transactions() {
     setSnapshotTotal(null);
     queryClient.invalidateQueries({ queryKey: ['transactions', page, pageSize] });
   }, [queryClient, page, pageSize]);
-
-  const uniqueAddresses = useMemo(() => {
-    if (!data?.data) return [];
-    const set = new Set<string>();
-    for (const tx of data.data) {
-      if (tx.from && tx.from !== '[PRIVATE]') set.add(tx.from.toLowerCase());
-      if (tx.to && tx.to !== '[PRIVATE]') set.add(tx.to.toLowerCase());
-    }
-    return Array.from(set);
-  }, [data]);
-
-  const { visibilities } = useBatchAddressVisibility(uniqueAddresses);
 
   const goToPage = (newPage: number) => {
     setSnapshotTotal(null);
@@ -103,7 +90,7 @@ export function Transactions() {
             </thead>
             <tbody>
               {data?.data?.map((tx) => (
-                <TxTableRow key={tx.hash} tx={tx} visibilities={visibilities} />
+                <TxTableRow key={tx.hash} tx={tx} />
               ))}
             </tbody>
           </table>
@@ -216,9 +203,9 @@ function TxTypeCell({ categories, tokenTransferCount }: { categories?: TxCategor
   );
 }
 
-function TxTableRow({ tx, visibilities }: { tx: Transaction; visibilities: Record<string, AddressVisibility> }) {
-  const fromVis = visibilities[tx.from?.toLowerCase()];
-  const toVis = tx.to ? visibilities[tx.to.toLowerCase()] : undefined;
+function TxTableRow({ tx }: { tx: Transaction }) {
+  const fromReason = tx.addressMetadata?.[tx.from?.toLowerCase()];
+  const toReason = tx.to ? tx.addressMetadata?.[tx.to.toLowerCase()] : undefined;
 
   return (
     <tr>
@@ -237,15 +224,15 @@ function TxTableRow({ tx, visibilities }: { tx: Transaction; visibilities: Recor
       </td>
       <td className="text-sm">
         <span className="inline-flex items-center gap-1">
-          <AddressLink address={tx.from} chars={6} visibility={fromVis} />
-          <AddressLabel reason={fromVis?.reason} />
+          <AddressLink address={tx.from} chars={6} reason={fromReason} />
+          <AddressLabel reason={fromReason} />
         </span>
       </td>
       <td className="text-sm">
         {tx.to ? (
           <span className="inline-flex items-center gap-1">
-            <AddressLink address={tx.to} chars={6} visibility={toVis} />
-            <AddressLabel reason={toVis?.reason} />
+            <AddressLink address={tx.to} chars={6} reason={toReason} />
+            <AddressLabel reason={toReason} />
           </span>
         ) : (
           <span className="text-neutral-400">Contract</span>

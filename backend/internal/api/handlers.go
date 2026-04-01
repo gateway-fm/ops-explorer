@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -581,13 +582,9 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	if common.IsHexAddress(q) {
 		address := common.HexToAddress(q).Hex()
 
-		// Check privacy visibility before returning address results
-		vis := s.checkAddressVisibility(r, address)
-		if vis != nil && !vis.Visible {
-			http.Error(w, "not found", http.StatusNotFound)
-			return
-		}
-
+		// No separate visibility check needed — in privacy mode the
+		// ProxyDataProvider already filters results through the proxy.
+		// If GetAddressStats returns data, the user is allowed to see it.
 		stats, _ := s.provider.GetAddressStats(ctx, address)
 		writeJSON(w, map[string]any{"type": "address", "data": stats})
 		return
@@ -616,6 +613,15 @@ func parseLimit(r *http.Request) int {
 		}
 	}
 	return defaultLimit
+}
+
+func parseOffset(r *http.Request) int {
+	if o := r.URL.Query().Get("offset"); o != "" {
+		if offset, err := strconv.Atoi(o); err == nil && offset >= 0 {
+			return offset
+		}
+	}
+	return 0
 }
 
 func parseBeforeBlock(r *http.Request) *uint64 {
@@ -784,7 +790,8 @@ func (s *Server) handleGetTokenHolders(w http.ResponseWriter, r *http.Request) {
 	offset := (page - 1) * pageSize
 	holders, total, err := s.provider.GetTokenHolders(r.Context(), address, pageSize, offset)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Warn("failed to get token holders", "address", address, "error", err)
+		http.Error(w, "failed to get token holders", http.StatusInternalServerError)
 		return
 	}
 
@@ -1097,7 +1104,8 @@ func (s *Server) handleGetAddressTokenBalances(w http.ResponseWriter, r *http.Re
 
 	balances, err := s.provider.GetTokenBalances(r.Context(), address)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Warn("failed to get token balances", "address", address, "error", err)
+		http.Error(w, "failed to get token balances", http.StatusInternalServerError)
 		return
 	}
 

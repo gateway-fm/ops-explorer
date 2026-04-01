@@ -145,10 +145,9 @@ func (s *Server) setupRoutes() {
 	if s.privacyClient != nil && s.privacyClient.IsEnabled() {
 		s.router.Route("/api/privacy", func(r chi.Router) {
 			r.Get("/viewable-addresses", s.handleGetViewableAddresses)
-			r.Get("/check-address/{address}", s.handleCheckAddressVisibility)
-			r.Post("/check-addresses", s.handleBatchCheckAddresses)
 			r.Get("/grant/{grantId}/{addressId}", s.handleGetGrantedAddress)
 			r.Get("/grant/{grantId}/{addressId}/transactions", s.handleGetGrantedAddressTransactions)
+			r.Get("/grant/{grantId}/activity", s.handleGetGrantActivityLogs)
 		})
 
 		s.router.Route("/api/eth", func(r chi.Router) {
@@ -213,7 +212,10 @@ func (s *Server) setupAPIRoutes(r chi.Router) {
 	r.Route("/tokens", func(r chi.Router) {
 		r.Get("/", s.handleGetTokens)
 		r.Route("/{address}", func(r chi.Router) {
-			r.Use(s.addressPrivacyMiddleware)
+			// No addressPrivacyMiddleware here — the privacy proxy already handles
+			// token visibility (returns redacted fields for non-Full access, 404 for
+			// Hidden). Blocking at the explorer level would prevent fetching token
+			// decimals needed for correct value formatting.
 			r.Get("/", s.handleGetToken)
 			r.Get("/holders", s.handleGetTokenHolders)
 			r.Get("/transfers", s.handleGetTokenTransfers)

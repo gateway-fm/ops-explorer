@@ -319,9 +319,10 @@ export function PrivacyDashboard() {
                         : truncateAddress(disclosed.address);
 
                       const isFull = disclosed.disclosure_level === 'full';
-                      const viewLink = isFull
-                        ? `/address/${disclosed.address}`
-                        : `/grant/${disclosed.grantId}/${disclosed.addressId}`;
+                      // Always use the grant page — it has scope-aware tabs
+                      // (Activity Logs, Transactions). The regular /address page
+                      // doesn't know about disclosure grants or scopes.
+                      const viewLink = `/grant/${disclosed.grantId}/${disclosed.addressId}`;
 
                       return (
                         <tr key={disclosed.grantId + disclosed.addressId}>
