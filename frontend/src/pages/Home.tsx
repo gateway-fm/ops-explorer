@@ -1,42 +1,18 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Boxes, ArrowLeftRight, Users, Clock, Box, FileCode, FilePlus, Coins, ArrowRightLeft, Shield, LogOut, Copy, Check } from 'lucide-react';
+import { Boxes, ArrowLeftRight, Users, Clock, Box, FileCode, FilePlus, Coins, ArrowRightLeft, Shield } from 'lucide-react';
 import { api } from '../lib/api';
 import type { Block, Transaction, TxCategory, AddressVisibility } from '../lib/api';
-import { formatHash, formatDID } from '../lib/utils';
+import { formatHash } from '../lib/utils';
 import { LiveTimeAgo } from '../components/LiveTimeAgo';
 import { AddressLink } from '../components/AddressLink';
 import { TransactionHistoryChart } from '../components/TransactionHistoryChart';
 import { SearchBar } from '../components/SearchBar';
-import { redirectToLogin } from '../lib/login';
-import { useAuth } from '../lib/auth';
 import { useBatchAddressVisibility } from '../hooks/useAddressVisibility';
 import { branding } from '../lib/branding';
 
 export function Home() {
-  const { isAuthenticated, auth, logout } = useAuth();
-  const [showAccountMenu, setShowAccountMenu] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const accountMenuRef = useRef<HTMLDivElement>(null);
-
-  function copyDid() {
-    if (!auth.did) return;
-    navigator.clipboard.writeText(auth.did);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (accountMenuRef.current && !accountMenuRef.current.contains(e.target as Node)) {
-        setShowAccountMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   const { data: stats } = useQuery({
     queryKey: ['stats'],
     queryFn: api.getStats,
@@ -140,66 +116,7 @@ export function Home() {
             {branding.name}
           </h1>
 
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-            <div className="flex-1">
-              <SearchBar variant="hero" />
-            </div>
-            {stats?.privacyEnabled && (
-            <div className="shrink-0">
-              {isAuthenticated ? (
-                <div ref={accountMenuRef} className="relative">
-                  <button
-                    onClick={() => setShowAccountMenu(!showAccountMenu)}
-                    title={auth.did || undefined}
-                    className="flex items-center gap-2 px-4 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 text-sm text-white h-[50px] hover:bg-white/20 transition-colors cursor-pointer"
-                  >
-                    <Shield className="w-4 h-4 text-green-300" />
-                    <span className="font-mono text-xs">
-                      {auth.did ? formatDID(auth.did) : 'Authenticated'}
-                    </span>
-                  </button>
-
-                  {showAccountMenu && (
-                    <div className="absolute top-full right-0 mt-2 w-64 card overflow-hidden z-50 shadow-elevated">
-                      {auth.did && (
-                        <div className="px-4 py-3 border-b border-neutral-100">
-                          <div className="text-xs text-neutral-400 mb-1">Your DID</div>
-                          <div className="flex items-center gap-1">
-                            <span className="font-mono text-xs text-neutral-700 flex-1 truncate" title={auth.did}>
-                              {auth.did}
-                            </span>
-                            <button
-                              onClick={copyDid}
-                              className="shrink-0 p-1 text-neutral-400 hover:text-neutral-700 transition-colors"
-                              title="Copy DID"
-                            >
-                              {copied ? <Check className="w-3.5 h-3.5 text-success-500" /> : <Copy className="w-3.5 h-3.5" />}
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      <button
-                        onClick={() => { logout(); setShowAccountMenu(false); }}
-                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-primary-50 transition-colors"
-                      >
-                        <LogOut className="w-4 h-4 text-neutral-500" />
-                        <span className="text-sm text-neutral-700">Sign out</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <button
-                  onClick={() => redirectToLogin()}
-                  className="inline-flex items-center gap-2 px-6 h-[50px] rounded-xl bg-neutral-50 text-primary font-medium text-sm hover:bg-neutral-100 transition-colors shadow-card whitespace-nowrap border border-neutral-200"
-                >
-                  <Shield className="w-4 h-4" />
-                  Sign in with Privado
-                </button>
-              )}
-            </div>
-            )}
-          </div>
+          <SearchBar variant="hero" />
         </div>
       </div>
 
