@@ -346,6 +346,19 @@ export interface PseudonymizedTransactionsResponse {
   has_more: boolean;
 }
 
+export interface ActivityLogEntry {
+  method: string;
+  status_code: number;
+  timestamp: string;
+}
+
+export interface ActivityLogsResponse {
+  logs: ActivityLogEntry[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export interface ChartLineInfo {
   id: string;
   title: string;
@@ -541,6 +554,9 @@ export const api = {
     if (before) params.set('before', String(before));
     return fetchAPI<PseudonymizedTransactionsResponse>(`/privacy/grant/${grantId}/${addressId}/transactions?${params}`);
   },
+
+  getGrantActivityLogs: (grantId: string, limit = 25, offset = 0) =>
+    fetchAPI<ActivityLogsResponse>(`/privacy/grant/${grantId}/activity?limit=${limit}&offset=${offset}`),
 
   // ETH address linking endpoints (proxied through backend to privacy-proxy)
   eth: {

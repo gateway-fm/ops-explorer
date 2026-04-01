@@ -7,7 +7,7 @@ import { formatWei, formatTimestamp } from '../lib/utils';
 import { useAuth } from '../lib/auth';
 import { redirectToLogin } from '../lib/login';
 import { PageHeader } from '../components/PageHeader';
-import { Fingerprint, Unlock, ShieldAlert, EyeOff, ArrowDownLeft, ArrowUpRight, RotateCcw, FileText, Activity } from 'lucide-react';
+import { Fingerprint, Unlock, ShieldAlert, EyeOff, ArrowDownLeft, ArrowUpRight, RotateCcw, FileText, Activity, ChevronLeft, ChevronRight } from 'lucide-react';
 
 /**
  * GrantedAddressPage displays address information for disclosed addresses.
@@ -61,6 +61,8 @@ export function GrantedAddressPage() {
   const { grantId, addressId } = useParams<{ grantId: string; addressId: string }>();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<TabId | null>(null);
+  const [activityOffset, setActivityOffset] = useState(0);
+  const activityLimit = 25;
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['grantedAddress', grantId, addressId],
@@ -81,6 +83,15 @@ export function GrantedAddressPage() {
     queryKey: ['grantedAddressTransactions', grantId, addressId],
     queryFn: () => api.getGrantedAddressTransactions(grantId!, addressId!),
     enabled: !!grantId && !!addressId && isAuthenticated && shouldFetchTransactions,
+    retry: false,
+  });
+
+  // Fetch activity logs when the activity_logs tab is available and selected
+  const shouldFetchActivityLogs = showActivityLogsTab && currentTab === 'activity_logs';
+  const { data: activityData, isLoading: activityLoading } = useQuery({
+    queryKey: ['grantActivityLogs', grantId, activityLimit, activityOffset],
+    queryFn: () => api.getGrantActivityLogs(grantId!, activityLimit, activityOffset),
+    enabled: !!grantId && isAuthenticated && shouldFetchActivityLogs,
     retry: false,
   });
 
@@ -376,23 +387,79 @@ export function GrantedAddressPage() {
 
       {/* Activity Logs Tab Content */}
       {currentTab === 'activity_logs' && (
-        <div className="card p-6">
-          <div className="flex flex-col items-center text-center space-y-3">
-            <div className="w-12 h-12 rounded-full bg-neutral-100 flex items-center justify-center">
-              <Activity className="w-6 h-6 text-neutral-400" />
-            </div>
+        <div className="card">
+          <div className="px-4 py-3 border-b border-neutral-100">
             <h3 className="font-medium text-neutral-900">Activity Logs</h3>
-            <p className="text-neutral-500 text-sm max-w-md">
-              Activity logs are available via the API. A UI for viewing them is coming soon.
-            </p>
-            <p className="text-neutral-400 text-xs">
-              Use the admin API endpoint{' '}
-              <code className="px-1.5 py-0.5 bg-neutral-100 rounded text-xs font-mono">
-                GET /api/v1/admin/disclosure/grants/{data.grant_id.slice(0, 8)}.../logs
-              </code>{' '}
-              to access activity logs programmatically.
+            <p className="text-xs text-neutral-500 mt-1">
+              RPC method calls made by the disclosed address during the grant period.
             </p>
           </div>
+          {activityLoading ? (
+            <div className="p-8 text-center text-neutral-400">Loading activity logs...</div>
+          ) : activityData?.logs.length === 0 ? (
+            <div className="p-8 text-center text-neutral-400">No activity logs found</div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Method</th>
+                      <th>Status</th>
+                      <th>Timestamp</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activityData?.logs.map((log, index) => (
+                      <tr key={`${log.timestamp}-${index}`}>
+                        <td>
+                          <span className="font-mono text-sm text-neutral-900">{log.method}</span>
+                        </td>
+                        <td>
+                          {log.status_code >= 200 && log.status_code < 300 ? (
+                            <span className="badge badge-success">{log.status_code}</span>
+                          ) : log.status_code >= 400 ? (
+                            <span className="badge bg-error-50 text-error-600 border-error-200">{log.status_code}</span>
+                          ) : (
+                            <span className="badge">{log.status_code}</span>
+                          )}
+                        </td>
+                        <td className="text-neutral-500 text-sm whitespace-nowrap">
+                          {new Date(log.timestamp).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {/* Pagination */}
+              {activityData && activityData.total > activityLimit && (
+                <div className="flex items-center justify-between px-4 py-3 border-t border-neutral-100">
+                  <span className="text-sm text-neutral-500">
+                    Showing {activityOffset + 1}–{Math.min(activityOffset + activityLimit, activityData.total)} of {activityData.total}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setActivityOffset(Math.max(0, activityOffset - activityLimit))}
+                      disabled={activityOffset === 0}
+                      className="btn btn-sm flex items-center gap-1 disabled:opacity-50"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      Previous
+                    </button>
+                    <button
+                      onClick={() => setActivityOffset(activityOffset + activityLimit)}
+                      disabled={activityOffset + activityLimit >= activityData.total}
+                      className="btn btn-sm flex items-center gap-1 disabled:opacity-50"
+                    >
+                      Next
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 

@@ -187,6 +187,41 @@ func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *h
 	w.Write(body)
 }
 
+// handleGetGrantActivityLogs proxies grant activity log requests to the privacy proxy.
+// The viewer's JWT is forwarded so the proxy can verify grant holder identity.
+func (s *Server) handleGetGrantActivityLogs(w http.ResponseWriter, r *http.Request) {
+	grantID := chi.URLParam(r, "grantId")
+	if grantID == "" {
+		http.Error(w, "grant_id is required", http.StatusBadRequest)
+		return
+	}
+
+	viewer := s.getViewerIdentity(r)
+	if viewer.DID == "" {
+		http.Error(w, "authentication required", http.StatusUnauthorized)
+		return
+	}
+
+	if !s.privacyClient.IsEnabled() {
+		http.Error(w, "privacy service not enabled", http.StatusServiceUnavailable)
+		return
+	}
+
+	limit := parseLimit(r)
+	offset := parseOffset(r)
+
+	body, statusCode, err := s.privacyClient.GetGrantActivityLogs(r.Context(), grantID, viewer.JWTToken, limit, offset)
+	if err != nil {
+		slog.Warn("failed to get grant activity logs", "grant_id", grantID, "error", err)
+		http.Error(w, "failed to get activity logs", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	w.Write(body)
+}
+
 // generateExternalPseudonym creates a consistent pseudonym derived from address + grantID,
 // generateExternalPseudonym was removed — pseudonymization is now handled
 // entirely by the privacy proxy (see GetGrantTransactions).

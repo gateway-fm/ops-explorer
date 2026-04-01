@@ -395,3 +395,50 @@ func (c *Client) GetGrantTransactions(ctx context.Context, grantID, addressID st
 
 	return body, resp.StatusCode, nil
 }
+
+// ActivityLogsResponse matches the privacy proxy's grant activity logs response.
+type ActivityLogsResponse struct {
+	Logs   []ActivityLogEntry `json:"logs"`
+	Total  int                `json:"total"`
+	Limit  int                `json:"limit"`
+	Offset int                `json:"offset"`
+}
+
+// ActivityLogEntry is a stripped-down activity log entry (no IP, no params).
+type ActivityLogEntry struct {
+	Method     string `json:"method"`
+	StatusCode int    `json:"status_code"`
+	Timestamp  string `json:"timestamp"`
+}
+
+// GetGrantActivityLogs fetches activity logs for a disclosure grant from the privacy proxy.
+// The caller's JWT is forwarded so the proxy can verify grant holder identity.
+func (c *Client) GetGrantActivityLogs(ctx context.Context, grantID string, token string, limit, offset int) ([]byte, int, error) {
+	endpoint := fmt.Sprintf("/api/v1/explorer/grant/%s/activity?limit=%d&offset=%d", grantID, limit, offset)
+
+	u, err := url.Parse(c.baseURL + endpoint)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to parse URL: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to create request: %w", err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	return body, resp.StatusCode, nil
+}

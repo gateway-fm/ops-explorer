@@ -615,6 +615,15 @@ func parseLimit(r *http.Request) int {
 	return defaultLimit
 }
 
+func parseOffset(r *http.Request) int {
+	if o := r.URL.Query().Get("offset"); o != "" {
+		if offset, err := strconv.Atoi(o); err == nil && offset >= 0 {
+			return offset
+		}
+	}
+	return 0
+}
+
 func parseBeforeBlock(r *http.Request) *uint64 {
 	if b := r.URL.Query().Get("before"); b != "" {
 		if before, err := strconv.ParseUint(b, 10, 64); err == nil {

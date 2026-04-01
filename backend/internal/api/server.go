@@ -147,6 +147,7 @@ func (s *Server) setupRoutes() {
 			r.Get("/viewable-addresses", s.handleGetViewableAddresses)
 			r.Get("/grant/{grantId}/{addressId}", s.handleGetGrantedAddress)
 			r.Get("/grant/{grantId}/{addressId}/transactions", s.handleGetGrantedAddressTransactions)
+			r.Get("/grant/{grantId}/activity", s.handleGetGrantActivityLogs)
 		})
 
 		s.router.Route("/api/eth", func(r chi.Router) {
