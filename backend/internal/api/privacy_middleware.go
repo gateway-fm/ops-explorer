@@ -2,8 +2,6 @@ package api
 
 import (
 	"net/http"
-
-	"github.com/go-chi/chi/v5"
 )
 
 // addressPrivacyMiddleware is a no-op pass-through. Address-level privacy

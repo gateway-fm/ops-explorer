@@ -25,7 +25,9 @@ export default function TokenTransfers() {
     queryFn: () => api.getAllTokenTransfers(page, 25),
   });
 
-  // Unique addresses and batch check removed since API natively provides address metadata
+  const transfers = data?.data || [];
+  const tokenMap = useTokenMap(transfers.map(t => t.tokenAddress));
+  const totalPages = data?.totalPages || 1;
 
   const handlePageChange = (newPage: number) => {
     const params = new URLSearchParams(searchParams);
@@ -54,10 +56,6 @@ export default function TokenTransfers() {
       </div>
     );
   }
-
-  const transfers = data?.data || [];
-  const tokenMap = useTokenMap(transfers.map(t => t.tokenAddress));
-  const totalPages = data?.totalPages || 1;
 
   return (
     <div className="space-y-6">

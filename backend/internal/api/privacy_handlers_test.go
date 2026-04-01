@@ -37,8 +37,6 @@ func setupPrivacyTestServer(privacyClient *privacy.Client) *chi.Mux {
 	r := chi.NewRouter()
 	r.Route("/api/privacy", func(r chi.Router) {
 		r.Get("/viewable-addresses", s.handleGetViewableAddresses)
-		r.Get("/check-address/{address}", s.handleCheckAddressVisibility)
-		r.Post("/check-addresses", s.handleBatchCheckAddresses)
 	})
 
 	return r
@@ -59,94 +57,6 @@ func TestHandleGetViewableAddresses_NoAuth(t *testing.T) {
 	}
 }
 
-func TestHandleCheckAddressVisibility_NoAuth(t *testing.T) {
-	router := setupPrivacyTestServer(nil)
-
-	req := httptest.NewRequest("GET", "/api/privacy/check-address/0xabcd", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
-	}
-	if !bytes.Contains(w.Body.Bytes(), []byte("authentication required")) {
-		t.Errorf("expected error about authentication, got %s", w.Body.String())
-	}
-}
-
-func TestHandleBatchCheckAddresses_NoAuth(t *testing.T) {
-	router := setupPrivacyTestServer(nil)
-
-	body := bytes.NewBufferString(`{"addresses":["0x1234"]}`)
-	req := httptest.NewRequest("POST", "/api/privacy/check-addresses", body)
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
-	}
-	if !bytes.Contains(w.Body.Bytes(), []byte("authentication required")) {
-		t.Errorf("expected error about authentication, got %s", w.Body.String())
-	}
-}
-
-func TestHandleBatchCheckAddresses_InvalidBody(t *testing.T) {
-	router := setupPrivacyTestServer(nil)
-
-	// Set a valid auth cookie to pass the auth check
-	body := bytes.NewBufferString(`invalid json`)
-	req := httptest.NewRequest("POST", "/api/privacy/check-addresses", body)
-	req.Header.Set("Content-Type", "application/json")
-	// Note: Without auth cookie, will fail with auth error first
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	// Without auth, returns 400 for auth, not for invalid body
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
-	}
-}
-
-func TestHandleBatchCheckAddresses_EmptyAddresses(t *testing.T) {
-	router := setupPrivacyTestServer(nil)
-
-	body := bytes.NewBufferString(`{"addresses":[]}`)
-	req := httptest.NewRequest("POST", "/api/privacy/check-addresses", body)
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	// Without auth, returns auth error
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
-	}
-}
-
-func TestHandleBatchCheckAddresses_TooManyAddresses(t *testing.T) {
-	router := setupPrivacyTestServer(nil)
-
-	addresses := make([]string, 101)
-	for i := range addresses {
-		addresses[i] = "0x1234"
-	}
-	reqBody := struct {
-		Addresses []string `json:"addresses"`
-	}{Addresses: addresses}
-	bodyBytes, _ := json.Marshal(reqBody)
-
-	req := httptest.NewRequest("POST", "/api/privacy/check-addresses", bytes.NewReader(bodyBytes))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	// Without auth, returns auth error first
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
-	}
-}
-
-
 // ============================================================================
 // Test: handleGetGrantedAddress
 // ============================================================================
@@ -166,8 +76,6 @@ func setupPrivacyTestServerWithMock(privacyClient *privacy.Client) *chi.Mux {
 	r := chi.NewRouter()
 	r.Route("/api/privacy", func(r chi.Router) {
 		r.Get("/viewable-addresses", s.handleGetViewableAddresses)
-		r.Get("/check-address/{address}", s.handleCheckAddressVisibility)
-		r.Post("/check-addresses", s.handleBatchCheckAddresses)
 		r.Get("/grant/{grantId}/{addressId}", s.handleGetGrantedAddress)
 		r.Get("/grant/{grantId}/{addressId}/transactions", s.handleGetGrantedAddressTransactions)
 	})
@@ -278,36 +186,6 @@ func TestHandleGetGrantedAddress_RevokedGrant(t *testing.T) {
 	}
 }
 
-
-// ============================================================================
-// Test: checkAddressVisibility helper
-// ============================================================================
-
-func TestCheckAddressVisibility_NoPrivacyClient(t *testing.T) {
-	s := &Server{privacyClient: nil}
-	req := httptest.NewRequest("GET", "/test", nil)
-
-	result := s.checkAddressVisibility(req, "0x2222222222222222222222222222222222222222")
-	if result != nil {
-		t.Error("expected nil when privacy client is not enabled")
-	}
-}
-
-func TestCheckAddressVisibility_NoIdentity(t *testing.T) {
-	client := mockPrivacyServer(t, func(w http.ResponseWriter, r *http.Request) {
-		// Should not be called when no identity
-		t.Error("Should not call privacy proxy without identity")
-	})
-
-	s := &Server{privacyClient: client}
-	// No auth cookie
-	req := httptest.NewRequest("GET", "/test", nil)
-
-	result := s.checkAddressVisibility(req, "0x2222222222222222222222222222222222222222")
-	if result != nil {
-		t.Error("expected nil without identity")
-	}
-}
 
 // ============================================================================
 // Test: handleGetGrantedAddressTransactions — proxy forwarding

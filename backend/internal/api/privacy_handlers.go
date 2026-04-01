@@ -1,14 +1,11 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"explorer/internal/privacy"
-	"explorer/pkg/eth/common"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -44,122 +41,6 @@ func (s *Server) handleGetViewableAddresses(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, result)
-}
-
-func (s *Server) handleCheckAddressVisibility(w http.ResponseWriter, r *http.Request) {
-	viewer := s.getViewerIdentity(r)
-
-	if viewer.DID == "" {
-		http.Error(w, "authentication required (sign in via Privado SSO)", http.StatusBadRequest)
-		return
-	}
-
-	address := chi.URLParam(r, "address")
-	if address == "" {
-		http.Error(w, "address parameter required", http.StatusBadRequest)
-		return
-	}
-
-	if !s.privacyClient.IsEnabled() {
-		writeJSON(w, privacy.AddressVisibility{
-			Address: strings.ToLower(address),
-			Visible: true,
-			Level:   privacy.VisibilityFull,
-			Reason:  privacy.ReasonPublicAddress,
-		})
-		return
-	}
-
-	result, err := s.privacyClient.CheckAddressWithIdentity(r.Context(), viewer, address)
-	if err != nil {
-		slog.Warn("failed to check address visibility", "address", address, "error", err)
-		http.Error(w, "failed to check address visibility", http.StatusInternalServerError)
-		return
-	}
-
-	writeJSON(w, result)
-}
-
-func (s *Server) handleBatchCheckAddresses(w http.ResponseWriter, r *http.Request) {
-	viewer := s.getViewerIdentity(r)
-
-	if viewer.DID == "" {
-		http.Error(w, "authentication required (sign in via Privado SSO)", http.StatusBadRequest)
-		return
-	}
-
-	var req struct {
-		Addresses []string `json:"addresses"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	if len(req.Addresses) == 0 {
-		http.Error(w, "addresses array is required", http.StatusBadRequest)
-		return
-	}
-
-	if len(req.Addresses) > 100 {
-		http.Error(w, "maximum 100 addresses allowed per request", http.StatusBadRequest)
-		return
-	}
-
-	for _, addr := range req.Addresses {
-		if !common.IsHexAddress(addr) {
-			http.Error(w, "invalid address format", http.StatusBadRequest)
-			return
-		}
-	}
-
-	if !s.privacyClient.IsEnabled() {
-		results := make(map[string]*privacy.AddressVisibility)
-		for _, addr := range req.Addresses {
-			results[strings.ToLower(addr)] = &privacy.AddressVisibility{
-				Address: strings.ToLower(addr),
-				Visible: true,
-				Level:   privacy.VisibilityFull,
-				Reason:  privacy.ReasonPublicAddress,
-			}
-		}
-		writeJSON(w, map[string]any{"results": results})
-		return
-	}
-
-	results, err := s.privacyClient.CheckAddressesWithIdentity(r.Context(), viewer, req.Addresses)
-	if err != nil {
-		http.Error(w, "failed to check address visibility", http.StatusInternalServerError)
-		return
-	}
-
-	writeJSON(w, map[string]any{"results": results})
-}
-
-// checkAddressVisibility returns nil if privacy is not enabled (no gating needed).
-// Fails closed: on error returns HIDDEN to prevent leaking private data.
-func (s *Server) checkAddressVisibility(r *http.Request, address string) *privacy.AddressVisibility {
-	if !s.privacyClient.IsEnabled() {
-		return nil
-	}
-
-	viewer := s.getViewerIdentity(r)
-	if viewer.DID == "" {
-		return nil
-	}
-
-	vis, err := s.privacyClient.CheckAddressWithIdentity(r.Context(), viewer, address)
-	if err != nil {
-		// Fail closed - return HIDDEN on error
-		return &privacy.AddressVisibility{
-			Address: strings.ToLower(address),
-			Visible: false,
-			Level:   privacy.VisibilityHidden,
-			Reason:  privacy.ReasonNoAccess,
-		}
-	}
-
-	return vis
 }
 
 
