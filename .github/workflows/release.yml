@@ -34,10 +34,9 @@ jobs:
         with:
           images: gatewayfm/block-explorer-api
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
           labels: |
             org.opencontainers.image.title=block-explorer-api
             org.opencontainers.image.description=Block Explorer API Service
@@ -81,10 +80,9 @@ jobs:
         with:
           images: gatewayfm/block-explorer-indexer
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
           labels: |
             org.opencontainers.image.title=block-explorer-indexer
             org.opencontainers.image.description=Block Explorer Indexer Service
@@ -128,10 +126,9 @@ jobs:
         with:
           images: gatewayfm/block-explorer-public-api
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
           labels: |
             org.opencontainers.image.title=block-explorer-public-api
             org.opencontainers.image.description=Block Explorer Public API Service
@@ -175,10 +172,9 @@ jobs:
         with:
           images: gatewayfm/block-explorer-frontend
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
           labels: |
             org.opencontainers.image.title=block-explorer-frontend
             org.opencontainers.image.description=Block Explorer Frontend
