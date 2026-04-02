@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -29,6 +31,32 @@ func main() {
 		log.Fatal("failed to connect to database", "error", err)
 	}
 	defer database.Close()
+
+	// Parse hidden transaction types — prefer env var, fall back to config default
+	hiddenTxTypesRaw := cfg.HiddenTxTypes
+	if v := os.Getenv("HIDDEN_TX_TYPES"); v != "" {
+		hiddenTxTypesRaw = v
+	}
+	if hiddenTxTypesRaw == "" {
+		hiddenTxTypesRaw = "126" // Default: hide OP deposit system transactions
+	}
+	if hiddenTxTypesRaw != "" {
+		for _, s := range strings.Split(hiddenTxTypesRaw, ",") {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			n, err := strconv.Atoi(s)
+			if err != nil {
+				log.Warn("invalid hidden_tx_types value, skipping", "value", s, "error", err)
+				continue
+			}
+			database.HiddenTxTypes = append(database.HiddenTxTypes, n)
+		}
+		if len(database.HiddenTxTypes) > 0 {
+			log.Info("hiding transaction types from listings", "types", database.HiddenTxTypes)
+		}
+	}
 
 	if err := database.Migrate(); err != nil {
 		log.Fatal("failed to run migrations", "error", err)
