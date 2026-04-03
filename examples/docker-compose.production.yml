@@ -131,7 +131,7 @@ services:
   frontend:
     image: gatewayfm/block-explorer-frontend:${VERSION:-latest}
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - "${FRONTEND_PORT:-3000}:80"
     environment:
       # --- API connection ---
       VITE_API_URL: /api                            # Path to internal API (proxied via nginx/ingress)
