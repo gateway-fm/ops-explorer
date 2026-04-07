@@ -1,8 +1,11 @@
 // Centralised branding config. Every visual brand reference in the app reads
-// from here. Override any value via VITE_ environment variables at build time.
+// from here. Override any value via VITE_ environment variables at runtime or
+// build time.
+
+import { getConfig } from './runtimeConfig';
 
 function env(key: string, fallback: string): string {
-  return import.meta.env[key] || fallback;
+  return getConfig(key, fallback);
 }
 
 export const branding = {

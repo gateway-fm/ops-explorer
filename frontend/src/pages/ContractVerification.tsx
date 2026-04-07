@@ -4,6 +4,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { AlertCircle, AlertTriangle, CheckCircle, ChevronDown, ChevronRight, Info, Loader2, Plus, Trash2, Upload, X, FileText } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
+import { getConfig } from '../lib/runtimeConfig';
 
 const LICENSE_TYPES = [
   'No License',
@@ -1129,7 +1130,7 @@ contract MyContract {
   customChains: [
     {
       network: "custom-network",
-      chainId: ${import.meta.env.VITE_CHAIN_ID || '<CHAIN_ID>'},
+      chainId: ${getConfig('VITE_CHAIN_ID', '<CHAIN_ID>')},
       urls: {
         apiURL: "${window.location.origin}/api",
         browserURL: "${window.location.origin}"

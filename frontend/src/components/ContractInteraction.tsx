@@ -3,6 +3,7 @@ import { BrowserProvider, Contract, parseUnits } from 'ethers';
 import type { Eip1193Provider } from 'ethers';
 import type { AbiFragment, AbiInput } from '../lib/api';
 import { ChevronDown, ChevronUp, Loader2, Wallet, AlertCircle, CheckCircle } from 'lucide-react';
+import { getConfig } from '../lib/runtimeConfig';
 
 // Extend Window interface for ethereum provider
 declare global {
@@ -12,7 +13,7 @@ declare global {
 }
 
 // Get RPC URL from environment
-const RPC_URL = import.meta.env.VITE_RPC_URL || 'http://localhost:8545';
+const RPC_URL = getConfig('VITE_RPC_URL', 'http://localhost:8545');
 
 interface ContractInteractionProps {
   address: string;

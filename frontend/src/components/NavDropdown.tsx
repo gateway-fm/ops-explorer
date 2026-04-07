@@ -8,6 +8,7 @@ import { MetaMaskFox } from './MetaMask';
 import { addNetworkToMetaMask } from '../lib/metamask';
 import { useTheme } from '../hooks/useTheme';
 import { formatDID } from '../lib/utils';
+import { getConfig } from '../lib/runtimeConfig';
 
 const blockchainItems = [
   { to: '/blocks', label: 'Blocks', icon: Boxes },
@@ -230,7 +231,7 @@ function AuthButton() {
   );
 }
 
-const TARGET_CHAIN_ID = '0x' + Number(import.meta.env.VITE_CHAIN_ID || '1001').toString(16);
+const TARGET_CHAIN_ID = '0x' + Number(getConfig('VITE_CHAIN_ID', '1001')).toString(16);
 
 export function NavDropdown() {
   const [networkAdded, setNetworkAdded] = useState(false);

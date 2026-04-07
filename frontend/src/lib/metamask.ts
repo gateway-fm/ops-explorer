@@ -1,4 +1,5 @@
 import { getShortName } from './branding';
+import { getConfig } from './runtimeConfig';
 
 export function addNetworkToMetaMask() {
   if (!window.ethereum) {
@@ -8,10 +9,10 @@ export function addNetworkToMetaMask() {
   window.ethereum.request({
     method: 'wallet_addEthereumChain',
     params: [{
-      chainId: '0x' + Number(import.meta.env.VITE_CHAIN_ID || '1001').toString(16),
-      chainName: import.meta.env.VITE_NETWORK_NAME || getShortName(),
-      nativeCurrency: { name: 'Ether', symbol: import.meta.env.VITE_NETWORK_CURRENCY || 'ETH', decimals: 18 },
-      rpcUrls: [import.meta.env.VITE_RPC_URL || 'http://localhost:8545'],
+      chainId: '0x' + Number(getConfig('VITE_CHAIN_ID', '1001')).toString(16),
+      chainName: getConfig('VITE_NETWORK_NAME') || getShortName(),
+      nativeCurrency: { name: 'Ether', symbol: getConfig('VITE_NETWORK_CURRENCY', 'ETH'), decimals: 18 },
+      rpcUrls: [getConfig('VITE_RPC_URL', 'http://localhost:8545')],
     }],
   });
 }
