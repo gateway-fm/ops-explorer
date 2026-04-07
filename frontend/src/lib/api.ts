@@ -1,4 +1,6 @@
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
+import { getConfig } from './runtimeConfig';
+
+const API_BASE = getConfig('VITE_API_URL', '/api');
 
 export interface Block {
   number: number;

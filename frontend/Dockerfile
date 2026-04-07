@@ -13,9 +13,13 @@ RUN npm install --legacy-peer-deps
 
 COPY . .
 
-ARG VITE_CHAIN_ID=1001
-ARG VITE_NETWORK_NAME=Gateway
-ARG VITE_NETWORK_CURRENCY=ETH
+# Build-time args are no longer needed for deployment configuration.
+# All VITE_* vars are injected at container startup via entrypoint.sh.
+# These ARGs are kept only for backward compatibility with CI builds
+# that pass --build-arg.
+ARG VITE_CHAIN_ID=
+ARG VITE_NETWORK_NAME=
+ARG VITE_NETWORK_CURRENCY=
 ARG VITE_RPC_URL=
 ENV VITE_CHAIN_ID=$VITE_CHAIN_ID
 ENV VITE_NETWORK_NAME=$VITE_NETWORK_NAME
@@ -35,10 +39,14 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 # Create nginx cache/pid directories writable by non-root
 RUN mkdir -p /var/cache/nginx /var/run && \
     chown -R nginx:nginx /var/cache/nginx /var/run /usr/share/nginx/html /etc/nginx/conf.d && \
-    sed -i 's|/var/run/nginx.pid|/tmp/nginx.pid|' /etc/nginx/nginx.conf
+    sed -i 's|/run/nginx.pid|/tmp/nginx.pid|' /etc/nginx/nginx.conf
+
+# Copy entrypoint script
+COPY deploy/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 EXPOSE 80
 
 USER nginx
 
-CMD ["nginx", "-g", "daemon off;"]
+ENTRYPOINT ["/entrypoint.sh"]

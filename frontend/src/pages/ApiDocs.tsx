@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Copy, Check, ChevronDown, ChevronRight, Play, Loader2, BookOpen, AlertTriangle } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
+import { getConfig } from '../lib/runtimeConfig';
 
-const BASE_URL = import.meta.env.VITE_PUBLIC_API_URL || 'http://localhost:8082';
+const BASE_URL = getConfig('VITE_PUBLIC_API_URL', 'http://localhost:8082');
 
 // ---------------------------------------------------------------------------
 // Types

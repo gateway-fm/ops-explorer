@@ -126,13 +126,17 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
-  # Frontend — React SPA served by Node.js (or nginx in production builds)
+  # Frontend — React SPA served by nginx with runtime config injection
   # ---------------------------------------------------------------------------
+  # The entrypoint.sh script generates /config.js from VITE_* env vars at
+  # container startup. No rebuild needed when configuration changes.
   frontend:
     image: gatewayfm/block-explorer-frontend:${VERSION:-latest}
     ports:
       - "${FRONTEND_PORT:-3000}:80"
     environment:
+      # --- Runtime configuration (injected at container startup) ---
+
       # --- API connection ---
       VITE_API_URL: /api                            # Path to internal API (proxied via nginx/ingress)
       VITE_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8082}  # Public API URL for API docs "Try it"
