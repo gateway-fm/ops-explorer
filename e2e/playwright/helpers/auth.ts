@@ -1,5 +1,11 @@
 const PROXY_URL = process.env.PROXY_URL || 'http://localhost:8080';
 
+/** Default test DID used across e2e tests. */
+export const MAIN_DID = 'did:privado:e2e_main_user';
+
+/** Default test address (Anvil account #2) used across e2e tests. */
+export const MAIN_ADDRESS = '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC';
+
 interface AuthTokens {
   accessToken: string;
   refreshToken: string;
