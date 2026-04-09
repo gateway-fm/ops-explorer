@@ -411,6 +411,62 @@ type ActivityLogEntry struct {
 	Timestamp  string `json:"timestamp"`
 }
 
+// SharedLogEntry represents a single log entry shared with the viewer via logVisibleTo.
+type SharedLogEntry struct {
+	TxHash      string   `json:"tx_hash"`
+	BlockNumber uint64   `json:"block_number"`
+	LogIndex    int      `json:"log_index"`
+	Address     string   `json:"address"`
+	Topics      []string `json:"topics"`
+	Data        string   `json:"data"`
+	SenderDID   string   `json:"sender_did"`
+	CreatedAt   string   `json:"created_at"`
+}
+
+// SharedLogsResponse is the paginated response from the privacy proxy's shared-logs endpoint.
+type SharedLogsResponse struct {
+	Logs   []SharedLogEntry `json:"logs"`
+	Total  int              `json:"total"`
+	Limit  int              `json:"limit"`
+	Offset int              `json:"offset"`
+}
+
+// GetSharedLogs fetches logs shared with the authenticated viewer via logVisibleTo.
+// Requires a valid JWT token for authentication.
+func (c *Client) GetSharedLogs(ctx context.Context, token string, limit, offset int) (*SharedLogsResponse, error) {
+	endpoint := fmt.Sprintf("/api/v1/explorer/shared-logs?limit=%d&offset=%d", limit, offset)
+	u, err := url.Parse(c.baseURL + endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse URL: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result SharedLogsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
 // GetGrantActivityLogs fetches activity logs for a disclosure grant from the privacy proxy.
 // The caller's JWT is forwarded so the proxy can verify grant holder identity.
 func (c *Client) GetGrantActivityLogs(ctx context.Context, grantID string, token string, limit, offset int) ([]byte, int, error) {

@@ -145,6 +145,7 @@ func (s *Server) setupRoutes() {
 	if s.privacyClient != nil && s.privacyClient.IsEnabled() {
 		s.router.Route("/api/privacy", func(r chi.Router) {
 			r.Get("/viewable-addresses", s.handleGetViewableAddresses)
+			r.Get("/shared-logs", s.handleGetSharedLogs)
 			r.Get("/grant/{grantId}/{addressId}", s.handleGetGrantedAddress)
 			r.Get("/grant/{grantId}/{addressId}/transactions", s.handleGetGrantedAddressTransactions)
 			r.Get("/grant/{grantId}/activity", s.handleGetGrantActivityLogs)

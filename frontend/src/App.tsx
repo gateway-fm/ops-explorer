@@ -21,6 +21,7 @@ import ChainInfo from './pages/ChainInfo';
 import ApiDocs from './pages/ApiDocs';
 import Stats from './pages/Stats';
 import { PrivacyDashboard } from './pages/PrivacyDashboard';
+import { SharedLogs } from './pages/SharedLogs';
 import { GrantedAddressPage } from './pages/GrantedAddressPage';
 
 const queryClient = new QueryClient({
@@ -57,6 +58,7 @@ function App() {
                 <Route path="stats" element={<Stats />} />
                 <Route path="api-docs" element={<ApiDocs />} />
                 <Route path="privacy" element={<PrivacyDashboard />} />
+                <Route path="shared-logs" element={<SharedLogs />} />
                 <Route path="grant/:grantId/:addressId" element={<GrantedAddressPage />} />
               </Route>
             </Routes>

@@ -76,6 +76,7 @@ func setupPrivacyTestServerWithMock(privacyClient *privacy.Client) *chi.Mux {
 	r := chi.NewRouter()
 	r.Route("/api/privacy", func(r chi.Router) {
 		r.Get("/viewable-addresses", s.handleGetViewableAddresses)
+		r.Get("/shared-logs", s.handleGetSharedLogs)
 		r.Get("/grant/{grantId}/{addressId}", s.handleGetGrantedAddress)
 		r.Get("/grant/{grantId}/{addressId}/transactions", s.handleGetGrantedAddressTransactions)
 	})
@@ -308,6 +309,177 @@ func TestHandleGetGrantedAddressTransactions_ProxyErrorForwarded(t *testing.T) {
 
 	if w.Code != http.StatusForbidden {
 		t.Errorf("expected status %d, got %d", http.StatusForbidden, w.Code)
+	}
+}
+
+// ============================================================================
+// Test: handleGetSharedLogs
+// ============================================================================
+
+func TestHandleGetSharedLogs_NoAuth(t *testing.T) {
+	client := mockPrivacyServer(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("proxy should not be called without auth")
+	})
+	router := setupPrivacyTestServerWithMock(client)
+
+	req := httptest.NewRequest("GET", "/api/privacy/shared-logs", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected status %d, got %d", http.StatusUnauthorized, w.Code)
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("authentication required")) {
+		t.Errorf("expected authentication error, got %s", w.Body.String())
+	}
+}
+
+func TestHandleGetSharedLogs_PrivacyNotEnabled(t *testing.T) {
+	// nil client = privacy not enabled
+	router := setupPrivacyTestServerWithMock(nil)
+
+	req := httptest.NewRequest("GET", "/api/privacy/shared-logs", nil)
+	req.AddCookie(mockAuthCookie())
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var resp struct {
+		Logs   []any `json:"logs"`
+		Total  int   `json:"total"`
+		Limit  int   `json:"limit"`
+		Offset int   `json:"offset"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(resp.Logs) != 0 {
+		t.Errorf("expected empty logs, got %d", len(resp.Logs))
+	}
+	if resp.Total != 0 {
+		t.Errorf("expected total 0, got %d", resp.Total)
+	}
+}
+
+func TestHandleGetSharedLogs_ProxiesToPrivacyProxy(t *testing.T) {
+	client := mockPrivacyServer(t, func(w http.ResponseWriter, r *http.Request) {
+		// Verify the request goes to the correct proxy endpoint
+		if r.URL.Path != "/api/v1/explorer/shared-logs" {
+			t.Errorf("unexpected proxy path: %s", r.URL.Path)
+		}
+		// Verify limit/offset are forwarded
+		if r.URL.Query().Get("limit") != "25" {
+			t.Errorf("expected limit=25, got %s", r.URL.Query().Get("limit"))
+		}
+		if r.URL.Query().Get("offset") != "0" {
+			t.Errorf("expected offset=0, got %s", r.URL.Query().Get("offset"))
+		}
+		// Verify auth header is forwarded
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			t.Error("expected Authorization header to be forwarded")
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"logs": []map[string]any{
+				{
+					"tx_hash":      "0xabc123",
+					"block_number": 42,
+					"log_index":    0,
+					"address":      "0xcontract1",
+					"topics":       []string{"0xtopic0"},
+					"data":         "0xdata",
+					"sender_did":   "did:test:sender",
+					"created_at":   "2026-04-03T00:00:00Z",
+				},
+			},
+			"total":  1,
+			"limit":  25,
+			"offset": 0,
+		})
+	})
+	router := setupPrivacyTestServerWithMock(client)
+
+	req := httptest.NewRequest("GET", "/api/privacy/shared-logs", nil)
+	req.AddCookie(mockAuthCookie())
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d: %s", http.StatusOK, w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Logs []struct {
+			TxHash    string `json:"tx_hash"`
+			SenderDID string `json:"sender_did"`
+		} `json:"logs"`
+		Total int `json:"total"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(resp.Logs) != 1 {
+		t.Fatalf("expected 1 log, got %d", len(resp.Logs))
+	}
+	if resp.Logs[0].TxHash != "0xabc123" {
+		t.Errorf("expected tx_hash 0xabc123, got %s", resp.Logs[0].TxHash)
+	}
+	if resp.Total != 1 {
+		t.Errorf("expected total 1, got %d", resp.Total)
+	}
+}
+
+func TestHandleGetSharedLogs_WithPagination(t *testing.T) {
+	client := mockPrivacyServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("limit") != "10" {
+			t.Errorf("expected limit=10, got %s", r.URL.Query().Get("limit"))
+		}
+		if r.URL.Query().Get("offset") != "20" {
+			t.Errorf("expected offset=20, got %s", r.URL.Query().Get("offset"))
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"logs":   []any{},
+			"total":  30,
+			"limit":  10,
+			"offset": 20,
+		})
+	})
+	router := setupPrivacyTestServerWithMock(client)
+
+	req := httptest.NewRequest("GET", "/api/privacy/shared-logs?limit=10&offset=20", nil)
+	req.AddCookie(mockAuthCookie())
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestHandleGetSharedLogs_ProxyError(t *testing.T) {
+	client := mockPrivacyServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("internal error"))
+	})
+	router := setupPrivacyTestServerWithMock(client)
+
+	req := httptest.NewRequest("GET", "/api/privacy/shared-logs", nil)
+	req.AddCookie(mockAuthCookie())
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected status %d, got %d", http.StatusInternalServerError, w.Code)
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("failed to get shared logs")) {
+		t.Errorf("expected error message, got %s", w.Body.String())
 	}
 }
 

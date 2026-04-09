@@ -361,6 +361,24 @@ export interface ActivityLogsResponse {
   offset: number;
 }
 
+export interface SharedLogEntry {
+  tx_hash: string;
+  block_number: number;
+  log_index: number;
+  address: string;
+  topics: string[];
+  data: string;
+  sender_did: string;
+  created_at: string;
+}
+
+export interface SharedLogsResponse {
+  logs: SharedLogEntry[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export interface ChartLineInfo {
   id: string;
   title: string;
@@ -559,6 +577,9 @@ export const api = {
 
   getGrantActivityLogs: (grantId: string, limit = 25, offset = 0) =>
     fetchAPI<ActivityLogsResponse>(`/privacy/grant/${grantId}/activity?limit=${limit}&offset=${offset}`),
+
+  getSharedLogs: (limit = 25, offset = 0) =>
+    fetchAPI<SharedLogsResponse>(`/privacy/shared-logs?limit=${limit}&offset=${offset}`),
 
   // ETH address linking endpoints (proxied through backend to privacy-proxy)
   eth: {

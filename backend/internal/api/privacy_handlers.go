@@ -221,6 +221,37 @@ func (s *Server) handleGetGrantActivityLogs(w http.ResponseWriter, r *http.Reque
 	w.Write(body)
 }
 
+// handleGetSharedLogs returns logs shared with the authenticated viewer via logVisibleTo.
+func (s *Server) handleGetSharedLogs(w http.ResponseWriter, r *http.Request) {
+	viewer := s.getViewerIdentity(r)
+	if viewer.DID == "" {
+		http.Error(w, "authentication required", http.StatusUnauthorized)
+		return
+	}
+
+	if !s.privacyClient.IsEnabled() {
+		writeJSON(w, privacy.SharedLogsResponse{
+			Logs:   []privacy.SharedLogEntry{},
+			Total:  0,
+			Limit:  defaultLimit,
+			Offset: 0,
+		})
+		return
+	}
+
+	limit := parseLimit(r)
+	offset := parseOffset(r)
+
+	result, err := s.privacyClient.GetSharedLogs(r.Context(), viewer.JWTToken, limit, offset)
+	if err != nil {
+		slog.Warn("failed to get shared logs", "error", err)
+		http.Error(w, "failed to get shared logs", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, result)
+}
+
 // generateExternalPseudonym creates a consistent pseudonym derived from address + grantID,
 // generateExternalPseudonym was removed — pseudonymization is now handled
 // entirely by the privacy proxy (see GetGrantTransactions).

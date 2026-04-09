@@ -9,6 +9,7 @@ import {
   Check,
   ExternalLink,
   Fingerprint,
+  FileText,
 } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { useViewableAddresses } from '../hooks/useAddressVisibility';
@@ -207,6 +208,25 @@ export function PrivacyDashboard() {
           color={expiringSoon > 0 ? 'warning' : 'neutral'}
         />
       </div>
+
+      {/* Shared Logs Link */}
+      <Link
+        to="/shared-logs"
+        className="card p-4 sm:p-6 flex items-center gap-4 hover:bg-neutral-50 transition-colors group"
+      >
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center border bg-primary-50 text-primary-600 border-primary-200">
+          <FileText className="w-5 h-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-neutral-900 group-hover:text-primary transition-colors">
+            Shared Logs
+          </p>
+          <p className="text-xs text-neutral-500">
+            View event logs shared with you via logVisibleTo
+          </p>
+        </div>
+        <ExternalLink className="w-4 h-4 text-neutral-400 group-hover:text-primary transition-colors" />
+      </Link>
 
       {/* Linked ETH Addresses */}
       <LinkedAddresses />
