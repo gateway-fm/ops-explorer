@@ -385,7 +385,7 @@ func TestHandleGetSharedLogs_ProxiesToPrivacyProxy(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
-			"logs": []map[string]any{
+			"shared_logs": []map[string]any{
 				{
 					"tx_hash":      "0xabc123",
 					"block_number": 42,
@@ -417,7 +417,7 @@ func TestHandleGetSharedLogs_ProxiesToPrivacyProxy(t *testing.T) {
 		Logs []struct {
 			TxHash    string `json:"tx_hash"`
 			SenderDID string `json:"sender_did"`
-		} `json:"logs"`
+		} `json:"shared_logs"`
 		Total int `json:"total"`
 	}
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {

@@ -125,7 +125,7 @@ export function SharedLogsTab() {
                 </td>
                 <td className="hidden md:table-cell">
                   <span className="badge badge-primary">
-                    {log.topics.length} topic{log.topics.length !== 1 ? 's' : ''}
+                    {(log.topics ?? []).length} topic{(log.topics ?? []).length !== 1 ? 's' : ''}
                   </span>
                 </td>
                 <td className="hidden lg:table-cell">
