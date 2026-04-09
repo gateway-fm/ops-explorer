@@ -3,18 +3,21 @@ import { ProxyAdminFixture } from '../../helpers/proxy-admin';
 import { loginViaCookie, logout } from '../../helpers/explorer-auth';
 
 // ---------------------------------------------------------------------------
-// Shared Logs Page — verify that the /shared-logs page works correctly:
+// Shared Logs — now embedded as a tab inside the "Shared with Me" page at
+// /privacy. The old /shared-logs route redirects there for backward compat.
 //
 //   1. Unauthenticated users see a sign-in prompt
-//   2. Authenticated users see the Shared Logs page header and content area
+//   2. Authenticated users see the Shared with Me page with Shared Logs tab
 //   3. The API endpoint returns the correct structure when authenticated
 //   4. The API endpoint rejects unauthenticated requests
-//   5. The navigation link to Shared Logs is visible from the privacy dashboard
+//   5. The Shared Logs tab is clickable on the Shared with Me page
+//   6. /shared-logs redirects to /privacy
+//   7. Sign-in prompt disappears after login
 //
 // Requires both privacy-proxy and block-explorer stacks to be running.
 // ---------------------------------------------------------------------------
 
-test.describe('Shared Logs Page', () => {
+test.describe('Shared Logs Tab', () => {
   test.describe.configure({ mode: 'serial' });
 
   let fixture: ProxyAdminFixture;
@@ -37,51 +40,43 @@ test.describe('Shared Logs Page', () => {
   // 1. Unauthenticated users see sign-in prompt
   // -------------------------------------------------------------------------
 
-  test('shared logs page requires authentication', async ({ page, context }) => {
+  test('shared with me page requires authentication', async ({ page, context }) => {
     await logout(context);
 
-    await page.goto('/shared-logs');
+    await page.goto('/privacy');
     await page.waitForLoadState('networkidle');
 
     // The page should show the authentication prompt with "Sign In" button
     const signInBtn = page.getByRole('button', { name: /Sign In/i });
     await expect(signInBtn).toBeVisible({ timeout: 10000 });
 
-    // The prompt text should mention signing in to view shared logs
-    const promptText = page.getByText(/Sign in to view event logs shared with you/i);
+    // The prompt text should mention signing in
+    const promptText = page.getByText(/Sign in to view addresses and logs shared with you/i);
     await expect(promptText).toBeVisible({ timeout: 5000 });
 
-    // The main "Shared Logs" page header (with subtitle) should NOT be visible
-    // because the auth gate replaces the full page content.
-    // The prompt does show "Shared Logs" as a heading, but the table should not.
+    // The table should not be visible (auth gate replaces page content)
     const table = page.locator('table');
     const tableVisible = await table.isVisible({ timeout: 3000 }).catch(() => false);
     expect(tableVisible).toBe(false);
   });
 
   // -------------------------------------------------------------------------
-  // 2. Authenticated user sees the page
+  // 2. Authenticated user sees the page with Shared Logs tab
   // -------------------------------------------------------------------------
 
-  test('authenticated user sees shared logs page', async ({ page, context }) => {
+  test('authenticated user sees shared with me page', async ({ page, context }) => {
     await loginViaCookie(context, viewerDid);
 
-    await page.goto('/shared-logs');
+    await page.goto('/privacy');
     await page.waitForLoadState('networkidle');
 
-    // The page header should show "Shared Logs"
-    const heading = page.getByText('Shared Logs', { exact: false });
+    // The page header should show "Shared with Me"
+    const heading = page.getByText('Shared with Me', { exact: false });
     await expect(heading.first()).toBeVisible({ timeout: 10000 });
 
-    // Either a table (if logs exist) or the empty state should be visible
-    const table = page.locator('table');
-    const emptyState = page.getByText(/No logs have been shared with you/i);
-
-    const hasTable = await table.isVisible({ timeout: 5000 }).catch(() => false);
-    const hasEmpty = await emptyState.isVisible({ timeout: 3000 }).catch(() => false);
-
-    // One of these must be true — either data or empty state
-    expect(hasTable || hasEmpty).toBe(true);
+    // The "Shared Logs" tab button should be visible
+    const sharedLogsTab = page.getByRole('button', { name: /Shared Logs/i });
+    await expect(sharedLogsTab).toBeVisible({ timeout: 5000 });
   });
 
   // -------------------------------------------------------------------------
@@ -125,52 +120,47 @@ test.describe('Shared Logs Page', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 5. Navigation link visible from privacy dashboard
+  // 5. Shared Logs tab is clickable and shows content
   // -------------------------------------------------------------------------
 
-  test('shared logs link visible on privacy dashboard', async ({ page, context }) => {
+  test('shared logs tab shows content when clicked', async ({ page, context }) => {
     await loginViaCookie(context, viewerDid);
 
     await page.goto('/privacy');
     await page.waitForLoadState('networkidle');
 
-    // The privacy dashboard should have a "Shared Logs" link
-    const sharedLogsLink = page.getByRole('link', { name: /Shared Logs/i });
-    await expect(sharedLogsLink.first()).toBeVisible({ timeout: 10000 });
+    // Click the "Shared Logs" tab
+    const sharedLogsTab = page.getByRole('button', { name: /Shared Logs/i });
+    await expect(sharedLogsTab).toBeVisible({ timeout: 10000 });
+    await sharedLogsTab.click();
 
-    // Click the link and verify navigation
-    await sharedLogsLink.first().click();
-    await page.waitForLoadState('networkidle');
+    // Either a table (if logs exist) or the empty state should be visible
+    const table = page.locator('table');
+    const emptyState = page.getByText(/No logs have been shared with you/i);
 
-    // Should navigate to /shared-logs
-    expect(page.url()).toContain('/shared-logs');
+    const hasTable = await table.isVisible({ timeout: 5000 }).catch(() => false);
+    const hasEmpty = await emptyState.isVisible({ timeout: 3000 }).catch(() => false);
+
+    // One of these must be true — either data or empty state
+    expect(hasTable || hasEmpty).toBe(true);
   });
 
   // -------------------------------------------------------------------------
-  // 6. Navigation dropdown includes shared logs link when authenticated
+  // 6. /shared-logs redirects to /privacy
   // -------------------------------------------------------------------------
 
-  test('nav dropdown includes shared logs link', async ({ page, context }) => {
+  test('/shared-logs redirects to /privacy', async ({ page, context }) => {
     await loginViaCookie(context, viewerDid);
 
-    await page.goto('/');
+    await page.goto('/shared-logs');
     await page.waitForLoadState('networkidle');
 
-    // Open the user menu (profile dropdown shows DID text)
-    const didTextBtn = page.getByText('did:privado:').first();
-    const hasDIDBtn = await didTextBtn.isVisible({ timeout: 5000 }).catch(() => false);
+    // Should have been redirected to /privacy
+    expect(page.url()).toContain('/privacy');
 
-    if (!hasDIDBtn) {
-      // Some explorer builds may use a different nav pattern; skip gracefully
-      test.skip(true, 'DID-based nav dropdown not found — UI may use different pattern');
-      return;
-    }
-
-    await didTextBtn.click();
-
-    // The dropdown should contain a "Shared Logs" link
-    const sharedLogsMenuItem = page.getByText('Shared Logs', { exact: true });
-    await expect(sharedLogsMenuItem).toBeVisible({ timeout: 5000 });
+    // The page should show "Shared with Me"
+    const heading = page.getByText('Shared with Me', { exact: false });
+    await expect(heading.first()).toBeVisible({ timeout: 10000 });
   });
 
   // -------------------------------------------------------------------------
@@ -181,7 +171,7 @@ test.describe('Shared Logs Page', () => {
     // Start logged out
     await logout(context);
 
-    await page.goto('/shared-logs');
+    await page.goto('/privacy');
     await page.waitForLoadState('networkidle');
 
     // Verify sign-in prompt is shown
@@ -202,8 +192,8 @@ test.describe('Shared Logs Page', () => {
       .catch(() => false);
     expect(signInBtnAfter).toBe(false);
 
-    // Should now see the page content (header + table/empty state)
-    const heading = page.getByText('Shared Logs', { exact: false });
+    // Should now see the page content (header + tabs)
+    const heading = page.getByText('Shared with Me', { exact: false });
     await expect(heading.first()).toBeVisible({ timeout: 10000 });
   });
 });

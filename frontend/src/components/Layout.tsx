@@ -1,7 +1,7 @@
 import { Link, Outlet, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Menu, X, ArrowLeftRight, Users, Coins, ShieldCheck, Boxes, Fuel, Eye, Info, BookOpen, BarChart3, FileText } from 'lucide-react';
+import { Search, Menu, X, ArrowLeftRight, Users, Coins, ShieldCheck, Boxes, Fuel, Eye, Info, BookOpen, BarChart3 } from 'lucide-react';
 import { api } from '../lib/api';
 import type { SearchSuggestion } from '../lib/api';
 import { NavDropdown } from './NavDropdown';
@@ -22,8 +22,7 @@ const mobileNavItems = [
   { to: '/chain-info', label: 'Chain Info', icon: Info },
   { to: '/stats', label: 'Charts', icon: BarChart3 },
   { to: '/api-docs', label: 'API Docs', icon: BookOpen },
-  { to: '/privacy', label: 'Privacy', icon: Eye },
-  { to: '/shared-logs', label: 'Shared Logs', icon: FileText },
+  { to: '/privacy', label: 'Shared with Me', icon: Eye },
 ];
 
 export function Layout() {

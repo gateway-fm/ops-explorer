@@ -9,17 +9,17 @@ import {
   Check,
   ExternalLink,
   Fingerprint,
-  FileText,
 } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { useViewableAddresses } from '../hooks/useAddressVisibility';
 import { PageHeader } from '../components/PageHeader';
 import { LinkedAddresses } from '../components/LinkedAddresses';
+import { SharedLogsTab } from '../components/SharedLogsTab';
 import { redirectToLogin } from '../lib/login';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { formatDID } from '../lib/utils';
 
-type TabType = 'own' | 'disclosed';
+type TabType = 'disclosed' | 'shared-logs' | 'own';
 
 interface StatCardProps {
   title: string;
@@ -124,7 +124,7 @@ function isExpiringSoon(expiresAt?: string): boolean {
 export function PrivacyDashboard() {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const { data, loading: dataLoading, error } = useViewableAddresses();
-  const [activeTab, setActiveTab] = useState<TabType>('own');
+  const [activeTab, setActiveTab] = useState<TabType>('disclosed');
 
   // Calculate stats
   const ownCount = data?.ownAddresses?.length ?? 0;
@@ -139,9 +139,9 @@ export function PrivacyDashboard() {
         <div className="w-16 h-16 rounded-full bg-primary-50 flex items-center justify-center border border-primary-200">
           <Fingerprint className="w-8 h-8 text-primary" />
         </div>
-        <h2 className="text-xl font-semibold text-neutral-900">Privacy Dashboard</h2>
+        <h2 className="text-xl font-semibold text-neutral-900">Shared with Me</h2>
         <p className="text-neutral-500 text-center max-w-md">
-          Sign in to view your addresses and privacy disclosures.
+          Sign in to view addresses and logs shared with you.
         </p>
         <div className="mt-4">
           <button
@@ -177,8 +177,8 @@ export function PrivacyDashboard() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Privacy Dashboard"
-        subtitle="Manage your address visibility and disclosures"
+        title="Shared with Me"
+        subtitle="Addresses, logs, and grants shared with your identity"
       />
 
       {/* Stats Cards */}
@@ -209,41 +209,12 @@ export function PrivacyDashboard() {
         />
       </div>
 
-      {/* Shared Logs Link */}
-      <Link
-        to="/shared-logs"
-        className="card p-4 sm:p-6 flex items-center gap-4 hover:bg-neutral-50 transition-colors group"
-      >
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center border bg-primary-50 text-primary-600 border-primary-200">
-          <FileText className="w-5 h-5" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-neutral-900 group-hover:text-primary transition-colors">
-            Shared Logs
-          </p>
-          <p className="text-xs text-neutral-500">
-            View event logs shared with you via logVisibleTo
-          </p>
-        </div>
-        <ExternalLink className="w-4 h-4 text-neutral-400 group-hover:text-primary transition-colors" />
-      </Link>
-
       {/* Linked ETH Addresses */}
       <LinkedAddresses />
 
       {/* Tabs */}
       <div className="card">
         <div className="flex border-b border-neutral-200">
-          <button
-            onClick={() => setActiveTab('own')}
-            className={`px-4 py-3 text-sm font-medium transition-colors ${
-              activeTab === 'own'
-                ? 'text-neutral-900 border-b-2 border-primary'
-                : 'text-neutral-500 hover:text-neutral-700'
-            }`}
-          >
-            Your Addresses ({ownCount})
-          </button>
           <button
             onClick={() => setActiveTab('disclosed')}
             className={`px-4 py-3 text-sm font-medium transition-colors ${
@@ -252,61 +223,29 @@ export function PrivacyDashboard() {
                 : 'text-neutral-500 hover:text-neutral-700'
             }`}
           >
-            Disclosed to You ({disclosedCount})
+            Disclosed Addresses ({disclosedCount})
+          </button>
+          <button
+            onClick={() => setActiveTab('shared-logs')}
+            className={`px-4 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'shared-logs'
+                ? 'text-neutral-900 border-b-2 border-primary'
+                : 'text-neutral-500 hover:text-neutral-700'
+            }`}
+          >
+            Shared Logs
+          </button>
+          <button
+            onClick={() => setActiveTab('own')}
+            className={`px-4 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'own'
+                ? 'text-neutral-900 border-b-2 border-primary'
+                : 'text-neutral-500 hover:text-neutral-700'
+            }`}
+          >
+            My Addresses ({ownCount})
           </button>
         </div>
-
-        {/* Own Addresses Tab */}
-        {activeTab === 'own' && (
-          <>
-            {ownCount === 0 ? (
-              <div className="empty-state">
-                <Eye className="w-12 h-12 mx-auto mb-4 text-neutral-300" />
-                <p className="text-neutral-500">No addresses linked to your identity</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Address</th>
-                      <th className="text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data?.ownAddresses?.map((address) => (
-                      <tr key={address}>
-                        <td>
-                          <div className="flex items-center gap-2">
-                            <Link
-                              to={`/address/${address}`}
-                              className="font-mono text-primary hover:text-primary-600 transition-colors"
-                            >
-                              <span className="hidden sm:inline">{address}</span>
-                              <span className="sm:hidden">{truncateAddress(address)}</span>
-                            </Link>
-                            <CopyButton text={address} />
-                          </div>
-                        </td>
-                        <td className="text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <Link
-                              to={`/address/${address}`}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary-50 rounded-lg transition-colors"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5" />
-                              View
-                            </Link>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </>
-        )}
 
         {/* Disclosed Addresses Tab */}
         {activeTab === 'disclosed' && (
@@ -419,6 +358,64 @@ export function PrivacyDashboard() {
             )}
           </>
         )}
+
+        {/* Shared Logs Tab */}
+        {activeTab === 'shared-logs' && (
+          <SharedLogsTab />
+        )}
+
+        {/* My Addresses Tab */}
+        {activeTab === 'own' && (
+          <>
+            {ownCount === 0 ? (
+              <div className="empty-state">
+                <Eye className="w-12 h-12 mx-auto mb-4 text-neutral-300" />
+                <p className="text-neutral-500">No addresses linked to your identity</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Address</th>
+                      <th className="text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data?.ownAddresses?.map((address) => (
+                      <tr key={address}>
+                        <td>
+                          <div className="flex items-center gap-2">
+                            <Link
+                              to={`/address/${address}`}
+                              className="font-mono text-primary hover:text-primary-600 transition-colors"
+                            >
+                              <span className="hidden sm:inline">{address}</span>
+                              <span className="sm:hidden">{truncateAddress(address)}</span>
+                            </Link>
+                            <CopyButton text={address} />
+                          </div>
+                        </td>
+                        <td className="text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <Link
+                              to={`/address/${address}`}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary-50 rounded-lg transition-colors"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              View
+                            </Link>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+
       </div>
     </div>
   );

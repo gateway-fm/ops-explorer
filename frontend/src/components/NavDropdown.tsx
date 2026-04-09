@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, Boxes, ArrowLeftRight, Users, ShieldCheck, Coins, ArrowRightLeft, Fuel, Info, Settings, Sun, Moon, LogIn, Shield, LogOut, Copy, Check, FileText } from 'lucide-react';
+import { ChevronDown, Boxes, ArrowLeftRight, Users, ShieldCheck, Coins, ArrowRightLeft, Fuel, Info, Settings, Sun, Moon, LogIn, Shield, LogOut, Copy, Check } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { redirectToLogin } from '../lib/login';
 import { usePrivacyEnabled } from '../hooks/usePrivacyEnabled';
@@ -199,22 +199,6 @@ function AuthButton() {
                 </div>
               </div>
             )}
-            <Link
-              to="/privacy"
-              onClick={() => setShowMenu(false)}
-              className="flex items-center gap-3 px-4 py-3 hover:bg-primary-50 transition-colors"
-            >
-              <Shield className="w-4 h-4 text-neutral-500" />
-              <span className="text-sm text-neutral-700">Privacy</span>
-            </Link>
-            <Link
-              to="/shared-logs"
-              onClick={() => setShowMenu(false)}
-              className="flex items-center gap-3 px-4 py-3 hover:bg-primary-50 transition-colors"
-            >
-              <FileText className="w-4 h-4 text-neutral-500" />
-              <span className="text-sm text-neutral-700">Shared Logs</span>
-            </Link>
             <button
               onClick={() => { logout(); setShowMenu(false); }}
               className="w-full flex items-center gap-3 px-4 py-3 hover:bg-primary-50 transition-colors"
