@@ -348,16 +348,16 @@ func TestHandleGetSharedLogs_PrivacyNotEnabled(t *testing.T) {
 	}
 
 	var resp struct {
-		Logs   []any `json:"logs"`
-		Total  int   `json:"total"`
-		Limit  int   `json:"limit"`
-		Offset int   `json:"offset"`
+		SharedLogs []any `json:"shared_logs"`
+		Total      int   `json:"total"`
+		Limit      int   `json:"limit"`
+		Offset     int   `json:"offset"`
 	}
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if len(resp.Logs) != 0 {
-		t.Errorf("expected empty logs, got %d", len(resp.Logs))
+	if len(resp.SharedLogs) != 0 {
+		t.Errorf("expected empty shared_logs, got %d", len(resp.SharedLogs))
 	}
 	if resp.Total != 0 {
 		t.Errorf("expected total 0, got %d", resp.Total)
@@ -387,14 +387,22 @@ func TestHandleGetSharedLogs_ProxiesToPrivacyProxy(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"shared_logs": []map[string]any{
 				{
-					"tx_hash":      "0xabc123",
-					"block_number": 42,
-					"log_index":    0,
-					"address":      "0xcontract1",
-					"topics":       []string{"0xtopic0"},
-					"data":         "0xdata",
-					"sender_did":   "did:test:sender",
-					"created_at":   "2026-04-03T00:00:00Z",
+					"tx_hash":          "0xabc123",
+					"block_number":     42,
+					"contract_address": "0xcontract1",
+					"logs": []map[string]any{
+						{
+							"id":          1,
+							"txHash":      "0xabc123",
+							"logIndex":    0,
+							"address":     "0xcontract1",
+							"topic0":      "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+							"data":        "0x0000000000000000000000000000000000000000000000000de0b6b3a7640000",
+							"blockNumber": 42,
+							"removed":     false,
+						},
+					},
+					"shared_at": "2026-04-03T00:00:00Z",
 				},
 			},
 			"total":  1,
@@ -414,20 +422,29 @@ func TestHandleGetSharedLogs_ProxiesToPrivacyProxy(t *testing.T) {
 	}
 
 	var resp struct {
-		Logs []struct {
-			TxHash    string `json:"tx_hash"`
-			SenderDID string `json:"sender_did"`
+		SharedLogs []struct {
+			TxHash          string `json:"tx_hash"`
+			ContractAddress string `json:"contract_address"`
+			Logs            []struct {
+				Address string `json:"address"`
+			} `json:"logs"`
 		} `json:"shared_logs"`
 		Total int `json:"total"`
 	}
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if len(resp.Logs) != 1 {
-		t.Fatalf("expected 1 log, got %d", len(resp.Logs))
+	if len(resp.SharedLogs) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(resp.SharedLogs))
 	}
-	if resp.Logs[0].TxHash != "0xabc123" {
-		t.Errorf("expected tx_hash 0xabc123, got %s", resp.Logs[0].TxHash)
+	if resp.SharedLogs[0].TxHash != "0xabc123" {
+		t.Errorf("expected tx_hash 0xabc123, got %s", resp.SharedLogs[0].TxHash)
+	}
+	if len(resp.SharedLogs[0].Logs) != 1 {
+		t.Fatalf("expected 1 log in entry, got %d", len(resp.SharedLogs[0].Logs))
+	}
+	if resp.SharedLogs[0].Logs[0].Address != "0xcontract1" {
+		t.Errorf("expected log address 0xcontract1, got %s", resp.SharedLogs[0].Logs[0].Address)
 	}
 	if resp.Total != 1 {
 		t.Errorf("expected total 1, got %d", resp.Total)

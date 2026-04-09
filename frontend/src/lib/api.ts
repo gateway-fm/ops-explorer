@@ -361,11 +361,23 @@ export interface ActivityLogsResponse {
   offset: number;
 }
 
+export interface SharedEventLog {
+  address: string;
+  topic0: string | null;
+  topic1: string | null;
+  topic2: string | null;
+  topic3: string | null;
+  data: string;
+  blockNumber: number;
+  logIndex: number;
+}
+
 export interface SharedLogEntry {
   tx_hash: string;
   block_number: number;
+  timestamp?: number;
   contract_address: string;
-  logs: { topics: string[]; data: string }[];
+  logs: SharedEventLog[];
   shared_at: string;
 }
 

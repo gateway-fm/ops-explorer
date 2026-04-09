@@ -231,10 +231,10 @@ func (s *Server) handleGetSharedLogs(w http.ResponseWriter, r *http.Request) {
 
 	if !s.privacyClient.IsEnabled() {
 		writeJSON(w, privacy.SharedLogsResponse{
-			Logs:   []privacy.SharedLogEntry{},
-			Total:  0,
-			Limit:  defaultLimit,
-			Offset: 0,
+			SharedLogs: []privacy.SharedLogEntry{},
+			Total:      0,
+			Limit:      defaultLimit,
+			Offset:     0,
 		})
 		return
 	}

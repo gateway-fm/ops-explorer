@@ -88,17 +88,29 @@ func TestGetSharedLogs_Success(t *testing.T) {
 		if r.URL.Query().Get("offset") != "0" {
 			t.Errorf("expected offset=0, got %s", r.URL.Query().Get("offset"))
 		}
+		topic0 := "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+		topic1 := "0x0000000000000000000000001234567890abcdef1234567890abcdef12345678"
+		topic2 := "0x000000000000000000000000abcdefabcdefabcdefabcdefabcdefabcdefabcd"
 		json.NewEncoder(w).Encode(SharedLogsResponse{
-			Logs: []SharedLogEntry{
+			SharedLogs: []SharedLogEntry{
 				{
-					TxHash:      "0xabc",
-					BlockNumber: 42,
-					LogIndex:    0,
-					Address:     "0xcontract",
-					Topics:      []string{"0xtopic0"},
-					Data:        "0xdata",
-					SenderDID:   "did:test:sender",
-					CreatedAt:   "2026-04-03T00:00:00Z",
+					TxHash:          "0xabc",
+					BlockNumber:     42,
+					ContractAddress: "0xcontract",
+					Logs: []SharedLog{
+						{
+							ID:          1,
+							TxHash:      "0xabc",
+							LogIndex:    0,
+							Address:     "0xcontract",
+							Topic0:      &topic0,
+							Topic1:      &topic1,
+							Topic2:      &topic2,
+							Data:        "0x0000000000000000000000000000000000000000000000000de0b6b3a7640000",
+							BlockNumber: 42,
+						},
+					},
+					SharedAt: "2026-04-03T00:00:00Z",
 				},
 			},
 			Total:  1,
@@ -113,11 +125,17 @@ func TestGetSharedLogs_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(result.Logs) != 1 {
-		t.Fatalf("expected 1 log, got %d", len(result.Logs))
+	if len(result.SharedLogs) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(result.SharedLogs))
 	}
-	if result.Logs[0].TxHash != "0xabc" {
-		t.Errorf("expected tx_hash 0xabc, got %s", result.Logs[0].TxHash)
+	if result.SharedLogs[0].TxHash != "0xabc" {
+		t.Errorf("expected tx_hash 0xabc, got %s", result.SharedLogs[0].TxHash)
+	}
+	if len(result.SharedLogs[0].Logs) != 1 {
+		t.Fatalf("expected 1 log in entry, got %d", len(result.SharedLogs[0].Logs))
+	}
+	if result.SharedLogs[0].Logs[0].Address != "0xcontract" {
+		t.Errorf("expected log address 0xcontract, got %s", result.SharedLogs[0].Logs[0].Address)
 	}
 	if result.Total != 1 {
 		t.Errorf("expected total 1, got %d", result.Total)

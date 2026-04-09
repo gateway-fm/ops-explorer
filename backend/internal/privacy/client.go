@@ -411,24 +411,39 @@ type ActivityLogEntry struct {
 	Timestamp  string `json:"timestamp"`
 }
 
-// SharedLogEntry represents a single log entry shared with the viewer via logVisibleTo.
+// SharedLog represents an individual event log from the explorer DB, returned by the
+// privacy proxy's shared-logs endpoint. Fields mirror explorer.Log JSON tags.
+type SharedLog struct {
+	ID          int64   `json:"id"`
+	TxHash      string  `json:"txHash"`
+	LogIndex    int     `json:"logIndex"`
+	Address     string  `json:"address"`
+	Topic0      *string `json:"topic0"`
+	Topic1      *string `json:"topic1"`
+	Topic2      *string `json:"topic2"`
+	Topic3      *string `json:"topic3"`
+	Data        string  `json:"data"`
+	BlockNumber uint64  `json:"blockNumber"`
+	Timestamp   *uint64 `json:"timestamp,omitempty"`
+	Removed     bool    `json:"removed"`
+}
+
+// SharedLogEntry groups event logs by transaction for a shared-logs response.
 type SharedLogEntry struct {
-	TxHash      string   `json:"tx_hash"`
-	BlockNumber uint64   `json:"block_number"`
-	LogIndex    int      `json:"log_index"`
-	Address     string   `json:"address"`
-	Topics      []string `json:"topics"`
-	Data        string   `json:"data"`
-	SenderDID   string   `json:"sender_did"`
-	CreatedAt   string   `json:"created_at"`
+	TxHash          string      `json:"tx_hash"`
+	BlockNumber     uint64      `json:"block_number"`
+	Timestamp       *uint64     `json:"timestamp,omitempty"`
+	ContractAddress string      `json:"contract_address"`
+	Logs            []SharedLog `json:"logs"`
+	SharedAt        string      `json:"shared_at"`
 }
 
 // SharedLogsResponse is the paginated response from the privacy proxy's shared-logs endpoint.
 type SharedLogsResponse struct {
-	Logs   []SharedLogEntry `json:"shared_logs"`
-	Total  int              `json:"total"`
-	Limit  int              `json:"limit"`
-	Offset int              `json:"offset"`
+	SharedLogs []SharedLogEntry `json:"shared_logs"`
+	Total      int              `json:"total"`
+	Limit      int              `json:"limit"`
+	Offset     int              `json:"offset"`
 }
 
 // GetSharedLogs fetches logs shared with the authenticated viewer via logVisibleTo.
