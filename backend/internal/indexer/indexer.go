@@ -32,7 +32,8 @@ type Config struct {
 	CatchupBatchSize int
 	CatchupQueueSize int
 
-	SkipAddressStats bool
+	SkipAddressStats    bool
+	SkipReceiptTxTypes  map[int]bool // tx types to skip receipt fetching for (e.g. 126 for OP deposit)
 
 	EnableOPDeposits bool
 }
@@ -531,9 +532,14 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 	rawTxs := rawBlock.Transactions
 	blockTimestamp := uint64(rawBlock.Timestamp)
 
-	txHashes := make([]common.Hash, len(rawTxs))
-	for idx, tx := range rawTxs {
-		txHashes[idx] = tx.Hash
+	// Build receipt fetch list, skipping tx types that are known to fail
+	// (e.g. type 126 OP deposit system transactions on op-reth devnets)
+	txHashes := make([]common.Hash, 0, len(rawTxs))
+	for _, tx := range rawTxs {
+		if i.config.SkipReceiptTxTypes != nil && i.config.SkipReceiptTxTypes[int(tx.Type)] {
+			continue
+		}
+		txHashes = append(txHashes, tx.Hash)
 	}
 
 	receipts, err := i.rpc.FetchReceiptsBatch(ctx, txHashes, i.config.RPCWorkers, i.config.RPCRateLimit)
