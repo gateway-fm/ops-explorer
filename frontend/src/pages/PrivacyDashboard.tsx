@@ -1,9 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Eye,
   Users,
-  Clock,
   AlertTriangle,
   Copy,
   Check,
@@ -13,13 +11,12 @@ import {
 import { useAuth } from '../lib/auth';
 import { useViewableAddresses } from '../hooks/useAddressVisibility';
 import { PageHeader } from '../components/PageHeader';
-import { LinkedAddresses } from '../components/LinkedAddresses';
 import { SharedLogsTab } from '../components/SharedLogsTab';
 import { redirectToLogin } from '../lib/login';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { formatDID } from '../lib/utils';
 
-type TabType = 'disclosed' | 'shared-logs' | 'own';
+type TabType = 'disclosed' | 'shared-logs';
 
 interface StatCardProps {
   title: string;
@@ -126,11 +123,7 @@ export function PrivacyDashboard() {
   const { data, loading: dataLoading, error } = useViewableAddresses();
   const [activeTab, setActiveTab] = useState<TabType>('disclosed');
 
-  // Calculate stats
-  const ownCount = data?.ownAddresses?.length ?? 0;
   const disclosedCount = data?.disclosedAddresses?.length ?? 0;
-  const totalGrants = disclosedCount;
-  const expiringSoon = (data?.disclosedAddresses?.filter(d => isExpiringSoon(d.expires_at)) || []).length;
 
   // Show authentication prompt if not authenticated via Privado
   if (!isAuthenticated && !authLoading) {
@@ -178,39 +171,8 @@ export function PrivacyDashboard() {
     <div className="space-y-6">
       <PageHeader
         title="Shared with Me"
-        subtitle="Addresses, logs, and grants shared with your identity"
+        subtitle="Addresses and logs that others have shared with you"
       />
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <StatCard
-          title="Your Addresses"
-          value={ownCount}
-          icon={Eye}
-          color="primary"
-        />
-        <StatCard
-          title="Disclosed To You"
-          value={disclosedCount}
-          icon={Users}
-          color="success"
-        />
-        <StatCard
-          title="Active Grants"
-          value={totalGrants}
-          icon={Clock}
-          color="neutral"
-        />
-        <StatCard
-          title="Expiring Soon"
-          value={expiringSoon}
-          icon={AlertTriangle}
-          color={expiringSoon > 0 ? 'warning' : 'neutral'}
-        />
-      </div>
-
-      {/* Linked ETH Addresses */}
-      <LinkedAddresses />
 
       {/* Tabs */}
       <div className="card">
@@ -234,16 +196,6 @@ export function PrivacyDashboard() {
             }`}
           >
             Shared Logs
-          </button>
-          <button
-            onClick={() => setActiveTab('own')}
-            className={`px-4 py-3 text-sm font-medium transition-colors ${
-              activeTab === 'own'
-                ? 'text-neutral-900 border-b-2 border-primary'
-                : 'text-neutral-500 hover:text-neutral-700'
-            }`}
-          >
-            My Addresses ({ownCount})
           </button>
         </div>
 
@@ -362,58 +314,6 @@ export function PrivacyDashboard() {
         {/* Shared Logs Tab */}
         {activeTab === 'shared-logs' && (
           <SharedLogsTab />
-        )}
-
-        {/* My Addresses Tab */}
-        {activeTab === 'own' && (
-          <>
-            {ownCount === 0 ? (
-              <div className="empty-state">
-                <Eye className="w-12 h-12 mx-auto mb-4 text-neutral-300" />
-                <p className="text-neutral-500">No addresses linked to your identity</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Address</th>
-                      <th className="text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data?.ownAddresses?.map((address) => (
-                      <tr key={address}>
-                        <td>
-                          <div className="flex items-center gap-2">
-                            <Link
-                              to={`/address/${address}`}
-                              className="font-mono text-primary hover:text-primary-600 transition-colors"
-                            >
-                              <span className="hidden sm:inline">{address}</span>
-                              <span className="sm:hidden">{truncateAddress(address)}</span>
-                            </Link>
-                            <CopyButton text={address} />
-                          </div>
-                        </td>
-                        <td className="text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <Link
-                              to={`/address/${address}`}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary-50 rounded-lg transition-colors"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5" />
-                              View
-                            </Link>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </>
         )}
 
       </div>

@@ -373,7 +373,7 @@ export interface SharedLogEntry {
 }
 
 export interface SharedLogsResponse {
-  logs: SharedLogEntry[];
+  shared_logs: SharedLogEntry[];
   total: number;
   limit: number;
   offset: number;

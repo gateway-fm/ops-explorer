@@ -425,7 +425,7 @@ type SharedLogEntry struct {
 
 // SharedLogsResponse is the paginated response from the privacy proxy's shared-logs endpoint.
 type SharedLogsResponse struct {
-	Logs   []SharedLogEntry `json:"logs"`
+	Logs   []SharedLogEntry `json:"shared_logs"`
 	Total  int              `json:"total"`
 	Limit  int              `json:"limit"`
 	Offset int              `json:"offset"`

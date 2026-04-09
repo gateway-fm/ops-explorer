@@ -225,6 +225,22 @@ function AuthButton() {
 
 const TARGET_CHAIN_ID = '0x' + Number(getConfig('VITE_CHAIN_ID', '1001')).toString(16);
 
+function SharedWithMeLink() {
+  const privacyEnabled = usePrivacyEnabled();
+  const { isAuthenticated } = useAuth();
+
+  if (!privacyEnabled || !isAuthenticated) return null;
+
+  return (
+    <Link
+      to="/privacy"
+      className="flex items-center gap-1.5 px-3 py-2 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors text-sm font-medium"
+    >
+      Shared with Me
+    </Link>
+  );
+}
+
 export function NavDropdown() {
   const [networkAdded, setNetworkAdded] = useState(false);
 
@@ -258,6 +274,7 @@ export function NavDropdown() {
       )}
       <Dropdown label="Blockchain" items={blockchainItems} />
       <Dropdown label="Tokens" items={tokenItems} />
+      <SharedWithMeLink />
       <Link
         to="/stats"
         className="flex items-center gap-1.5 px-3 py-2 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors text-sm font-medium"

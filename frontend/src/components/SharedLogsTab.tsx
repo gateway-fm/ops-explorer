@@ -47,18 +47,16 @@ export function SharedLogsTab() {
 
   const offset = (page - 1) * PAGE_SIZE;
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isFetching, error } = useQuery({
     queryKey: ['sharedLogs', page],
     queryFn: () => api.getSharedLogs(PAGE_SIZE, offset),
     retry: false,
     staleTime: 30000,
+    placeholderData: (prev) => prev, // keep previous data while fetching
   });
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
-
-  if (isLoading) {
-    return <div className="p-6 text-neutral-400">Loading shared logs...</div>;
-  }
+  const hasData = data !== undefined;
 
   if (error) {
     return (
@@ -71,7 +69,7 @@ export function SharedLogsTab() {
     );
   }
 
-  const logs = data?.logs ?? [];
+  const logs = data?.shared_logs ?? [];
 
   if (logs.length === 0) {
     return (
