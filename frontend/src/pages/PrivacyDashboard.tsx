@@ -18,35 +18,7 @@ import { formatDID } from '../lib/utils';
 
 type TabType = 'disclosed' | 'shared-logs';
 
-interface StatCardProps {
-  title: string;
-  value: number | string;
-  icon: React.ElementType;
-  color: 'primary' | 'success' | 'warning' | 'neutral';
-}
 
-function StatCard({ title, value, icon: Icon, color }: StatCardProps) {
-  const colorClasses = {
-    primary: 'bg-primary-50 text-primary-600 border-primary-200',
-    success: 'bg-success-50 text-success-600 border-success-200',
-    warning: 'bg-warning-50 text-warning-600 border-warning-200',
-    neutral: 'bg-neutral-100 text-neutral-600 border-neutral-200',
-  };
-
-  return (
-    <div className="card p-4 sm:p-6">
-      <div className="flex items-center gap-3">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${colorClasses[color]}`}>
-          <Icon className="w-5 h-5" />
-        </div>
-        <div>
-          <p className="text-sm text-neutral-500">{title}</p>
-          <p className="text-xl sm:text-2xl font-bold text-neutral-900">{value}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);

@@ -364,12 +364,9 @@ export interface ActivityLogsResponse {
 export interface SharedLogEntry {
   tx_hash: string;
   block_number: number;
-  log_index: number;
-  address: string;
-  topics: string[];
-  data: string;
-  sender_did: string;
-  created_at: string;
+  contract_address: string;
+  logs: { topics: string[]; data: string }[];
+  shared_at: string;
 }
 
 export interface SharedLogsResponse {

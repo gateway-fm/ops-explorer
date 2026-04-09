@@ -8,8 +8,6 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { api } from '../lib/api';
-import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
-import { formatDID } from '../lib/utils';
 
 const PAGE_SIZE = 25;
 
@@ -47,7 +45,7 @@ export function SharedLogsTab() {
 
   const offset = (page - 1) * PAGE_SIZE;
 
-  const { data, isFetching, error } = useQuery({
+  const { data, error } = useQuery({
     queryKey: ['sharedLogs', page],
     queryFn: () => api.getSharedLogs(PAGE_SIZE, offset),
     retry: false,
@@ -56,7 +54,6 @@ export function SharedLogsTab() {
   });
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
-  const hasData = data !== undefined;
 
   if (error) {
     return (
@@ -86,71 +83,44 @@ export function SharedLogsTab() {
         <table className="table">
           <thead>
             <tr>
-              <th>Tx Hash</th>
-              <th>Block</th>
-              <th>Contract</th>
-              <th className="hidden md:table-cell">Topics</th>
-              <th className="hidden lg:table-cell">Shared By</th>
-              <th className="text-right">Time</th>
+              <th>Transaction</th>
+              <th className="hidden md:table-cell">Contract</th>
+              <th className="hidden md:table-cell">Event Logs</th>
+              <th className="text-right">Shared</th>
             </tr>
           </thead>
           <tbody>
             {logs.map((log) => (
-              <tr key={`${log.tx_hash}-${log.log_index}`}>
+              <tr key={log.tx_hash}>
                 <td>
                   <Link
                     to={`/tx/${log.tx_hash}`}
                     className="font-mono text-sm text-primary hover:text-primary-600 transition-colors"
                   >
-                    <span className="hidden sm:inline">{truncateHash(log.tx_hash)}</span>
-                    <span className="sm:hidden">{truncateHash(log.tx_hash)}</span>
-                  </Link>
-                </td>
-                <td>
-                  <Link
-                    to={`/block/${log.block_number}`}
-                    className="text-primary hover:text-primary-600 transition-colors"
-                  >
-                    {log.block_number}
-                  </Link>
-                </td>
-                <td>
-                  <Link
-                    to={`/address/${log.address}`}
-                    className="font-mono text-sm text-primary hover:text-primary-600 transition-colors"
-                  >
-                    <span className="hidden sm:inline">{truncateAddress(log.address)}</span>
-                    <span className="sm:hidden">{truncateAddress(log.address)}</span>
+                    {truncateHash(log.tx_hash)}
                   </Link>
                 </td>
                 <td className="hidden md:table-cell">
-                  <span className="badge badge-primary">
-                    {(log.topics ?? []).length} topic{(log.topics ?? []).length !== 1 ? 's' : ''}
+                  {log.contract_address ? (
+                    <Link
+                      to={`/address/${log.contract_address}`}
+                      className="font-mono text-sm text-primary hover:text-primary-600 transition-colors"
+                    >
+                      {truncateAddress(log.contract_address)}
+                    </Link>
+                  ) : (
+                    <span className="text-neutral-400 text-sm">ETH transfer</span>
+                  )}
+                </td>
+                <td className="hidden md:table-cell">
+                  <span className="badge badge-neutral">
+                    {(log.logs ?? []).length} log{(log.logs ?? []).length !== 1 ? 's' : ''}
                   </span>
                 </td>
-                <td className="hidden lg:table-cell">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="font-mono text-xs text-neutral-500 cursor-help">
-                        {formatDID(log.sender_did)}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <span className="font-mono text-xs">{log.sender_did}</span>
-                    </TooltipContent>
-                  </Tooltip>
-                </td>
                 <td className="text-right">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="text-sm text-neutral-500 cursor-help">
-                        {formatTime(log.created_at)}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <span className="text-xs">{new Date(log.created_at).toLocaleString()}</span>
-                    </TooltipContent>
-                  </Tooltip>
+                  <span className="text-sm text-neutral-500">
+                    {formatTime(log.shared_at)}
+                  </span>
                 </td>
               </tr>
             ))}
