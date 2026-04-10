@@ -1,11 +1,12 @@
 import type { SharedEventLog } from './api';
+import { decodeAddress, decodeUint256 } from './eventDecoder';
 
 const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 
 export interface DecodedTransfer {
   from: string;
   to: string;
-  amount: string; // raw hex for formatTokenValue
+  amount: string; // decimal string for formatTokenValue
   tokenAddress: string;
 }
 
@@ -16,19 +17,10 @@ export function isTransferLog(log: SharedEventLog): boolean {
 export function decodeTransferLog(log: SharedEventLog): DecodedTransfer | null {
   if (!isTransferLog(log) || !log.topic1 || !log.topic2) return null;
 
-  const from = '0x' + log.topic1.slice(-40);
-  const to = '0x' + log.topic2.slice(-40);
-
-  // data is the uint256 amount as hex
-  let amount = '0';
-  if (log.data && log.data !== '0x' && log.data.length > 2) {
-    amount = log.data;
-  }
-
   return {
-    from: from.toLowerCase(),
-    to: to.toLowerCase(),
-    amount,
+    from: decodeAddress(log.topic1),
+    to: decodeAddress(log.topic2),
+    amount: decodeUint256(log.data),
     tokenAddress: log.address.toLowerCase(),
   };
 }

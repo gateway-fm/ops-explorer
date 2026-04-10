@@ -153,13 +153,13 @@ export const KNOWN_EVENTS: Record<string, EventSignature> = {
 };
 
 // Decode a hex topic to an address (last 20 bytes)
-function decodeAddress(hex: string): string {
+export function decodeAddress(hex: string): string {
   const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
   return '0x' + clean.slice(-40).toLowerCase();
 }
 
-// Decode hex to uint256
-function decodeUint256(hex: string): string {
+// Decode hex to uint256 (returns decimal string)
+export function decodeUint256(hex: string): string {
   try {
     const clean = hex.startsWith('0x') ? hex : '0x' + hex;
     return BigInt(clean).toString();
