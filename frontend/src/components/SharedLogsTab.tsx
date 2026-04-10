@@ -56,6 +56,7 @@ type DisplayRow =
 
 function flattenEntries(entries: SharedLogEntry[]): DisplayRow[] {
   const rows: DisplayRow[] = [];
+  let rowIdx = 0;
   for (const entry of entries) {
     for (const log of entry.logs) {
       const decoded = decodeTransferLog(log);
@@ -63,7 +64,7 @@ function flattenEntries(entries: SharedLogEntry[]): DisplayRow[] {
         rows.push({
           kind: 'transfer',
           data: {
-            key: `${entry.tx_hash}-${log.logIndex}`,
+            key: `shared-${rowIdx++}`,
             transfer: decoded,
             sharedAt: entry.shared_at,
           },
@@ -72,9 +73,9 @@ function flattenEntries(entries: SharedLogEntry[]): DisplayRow[] {
         rows.push({
           kind: 'generic',
           data: {
-            key: `${entry.tx_hash}-${log.logIndex}`,
+            key: `shared-${rowIdx++}`,
             log,
-            contractAddress: entry.contract_address,
+            contractAddress: log.address,
             sharedAt: entry.shared_at,
           },
         });
@@ -144,7 +145,6 @@ export function SharedLogsTab() {
               <th>To</th>
               <th>Token</th>
               <th className="text-right">Amount</th>
-              <th className="hidden md:table-cell">Block</th>
               <th className="text-right">Shared</th>
             </tr>
           </thead>
@@ -178,14 +178,6 @@ export function SharedLogsTab() {
                     <td className="text-right font-mono text-neutral-700">
                       {formatTokenValue(transfer.amount, decimals)}
                     </td>
-                    <td className="hidden md:table-cell">
-                      <Link
-                        to={`/block/${transfer.blockNumber}`}
-                        className="text-primary hover:text-primary-600 transition-colors"
-                      >
-                        {transfer.blockNumber.toLocaleString()}
-                      </Link>
-                    </td>
                     <td className="text-right">
                       <span className="text-sm text-neutral-500">
                         {formatTime(sharedAt)}
@@ -211,14 +203,6 @@ export function SharedLogsTab() {
                     </span>
                   </td>
                   <td className="text-right font-mono text-neutral-400 text-xs">-</td>
-                  <td className="hidden md:table-cell">
-                    <Link
-                      to={`/block/${log.blockNumber}`}
-                      className="text-primary hover:text-primary-600 transition-colors"
-                    >
-                      {log.blockNumber.toLocaleString()}
-                    </Link>
-                  </td>
                   <td className="text-right">
                     <span className="text-sm text-neutral-500">
                       {formatTime(sharedAt)}

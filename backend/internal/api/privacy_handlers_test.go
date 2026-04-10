@@ -387,19 +387,11 @@ func TestHandleGetSharedLogs_ProxiesToPrivacyProxy(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"shared_logs": []map[string]any{
 				{
-					"tx_hash":          "0xabc123",
-					"block_number":     42,
-					"contract_address": "0xcontract1",
 					"logs": []map[string]any{
 						{
-							"id":          1,
-							"txHash":      "0xabc123",
-							"logIndex":    0,
-							"address":     "0xcontract1",
-							"topic0":      "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
-							"data":        "0x0000000000000000000000000000000000000000000000000de0b6b3a7640000",
-							"blockNumber": 42,
-							"removed":     false,
+							"address":      "0xcontract1",
+							"topic0":       "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+							"data":         "0x0000000000000000000000000000000000000000000000000de0b6b3a7640000",
 						},
 					},
 					"shared_at": "2026-04-03T00:00:00Z",
@@ -423,11 +415,10 @@ func TestHandleGetSharedLogs_ProxiesToPrivacyProxy(t *testing.T) {
 
 	var resp struct {
 		SharedLogs []struct {
-			TxHash          string `json:"tx_hash"`
-			ContractAddress string `json:"contract_address"`
-			Logs            []struct {
-				Address string `json:"address"`
+			Logs []struct {
+				Address     string `json:"address"`
 			} `json:"logs"`
+			SharedAt string `json:"shared_at"`
 		} `json:"shared_logs"`
 		Total int `json:"total"`
 	}
@@ -437,14 +428,14 @@ func TestHandleGetSharedLogs_ProxiesToPrivacyProxy(t *testing.T) {
 	if len(resp.SharedLogs) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(resp.SharedLogs))
 	}
-	if resp.SharedLogs[0].TxHash != "0xabc123" {
-		t.Errorf("expected tx_hash 0xabc123, got %s", resp.SharedLogs[0].TxHash)
-	}
 	if len(resp.SharedLogs[0].Logs) != 1 {
 		t.Fatalf("expected 1 log in entry, got %d", len(resp.SharedLogs[0].Logs))
 	}
 	if resp.SharedLogs[0].Logs[0].Address != "0xcontract1" {
 		t.Errorf("expected log address 0xcontract1, got %s", resp.SharedLogs[0].Logs[0].Address)
+	}
+	if resp.SharedLogs[0].SharedAt != "2026-04-03T00:00:00Z" {
+		t.Errorf("expected shared_at, got %s", resp.SharedLogs[0].SharedAt)
 	}
 	if resp.Total != 1 {
 		t.Errorf("expected total 1, got %d", resp.Total)

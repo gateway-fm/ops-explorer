@@ -94,20 +94,13 @@ func TestGetSharedLogs_Success(t *testing.T) {
 		json.NewEncoder(w).Encode(SharedLogsResponse{
 			SharedLogs: []SharedLogEntry{
 				{
-					TxHash:          "0xabc",
-					BlockNumber:     42,
-					ContractAddress: "0xcontract",
 					Logs: []SharedLog{
 						{
-							ID:          1,
-							TxHash:      "0xabc",
-							LogIndex:    0,
 							Address:     "0xcontract",
 							Topic0:      &topic0,
 							Topic1:      &topic1,
 							Topic2:      &topic2,
 							Data:        "0x0000000000000000000000000000000000000000000000000de0b6b3a7640000",
-							BlockNumber: 42,
 						},
 					},
 					SharedAt: "2026-04-03T00:00:00Z",
@@ -127,9 +120,6 @@ func TestGetSharedLogs_Success(t *testing.T) {
 	}
 	if len(result.SharedLogs) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(result.SharedLogs))
-	}
-	if result.SharedLogs[0].TxHash != "0xabc" {
-		t.Errorf("expected tx_hash 0xabc, got %s", result.SharedLogs[0].TxHash)
 	}
 	if len(result.SharedLogs[0].Logs) != 1 {
 		t.Fatalf("expected 1 log in entry, got %d", len(result.SharedLogs[0].Logs))

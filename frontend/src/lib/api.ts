@@ -368,15 +368,9 @@ export interface SharedEventLog {
   topic2: string | null;
   topic3: string | null;
   data: string;
-  blockNumber: number;
-  logIndex: number;
 }
 
 export interface SharedLogEntry {
-  tx_hash: string;
-  block_number: number;
-  timestamp?: number;
-  contract_address: string;
   logs: SharedEventLog[];
   shared_at: string;
 }

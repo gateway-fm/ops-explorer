@@ -7,8 +7,6 @@ export interface DecodedTransfer {
   to: string;
   amount: string; // raw hex for formatTokenValue
   tokenAddress: string;
-  blockNumber: number;
-  logIndex: number;
 }
 
 export function isTransferLog(log: SharedEventLog): boolean {
@@ -32,7 +30,5 @@ export function decodeTransferLog(log: SharedEventLog): DecodedTransfer | null {
     to: to.toLowerCase(),
     amount,
     tokenAddress: log.address.toLowerCase(),
-    blockNumber: log.blockNumber,
-    logIndex: log.logIndex,
   };
 }
