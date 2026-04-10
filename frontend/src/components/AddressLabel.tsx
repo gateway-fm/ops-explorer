@@ -10,6 +10,7 @@ const LABEL_CONFIG: Record<string, { text: string; classes: string }> = {
   own_address:          { text: 'Mine',                 classes: 'bg-success-50 text-success-700' },
   rbac_group_member:    { text: 'My Org',               classes: 'bg-warning-50 text-warning-700' },
   public_address:       { text: 'Public',               classes: 'bg-neutral-100 text-neutral-500' },
+  disclosure_grant:     { text: 'Disclosed',             classes: 'bg-purple-100 text-purple-700' },
   participant_override: { text: 'Counterparty',         classes: 'bg-primary-50 text-primary-700' },
 };
 
