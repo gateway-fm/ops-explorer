@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { TooltipProvider } from './components/ui/tooltip';
 import { AuthProvider } from './lib/auth';
 import { ThemeProvider } from './hooks/useTheme';
+import { getConfig } from './lib/runtimeConfig';
 import { Layout } from './components/Layout';
 import { Home } from './pages/Home';
 import { Blocks } from './pages/Blocks';
@@ -37,7 +38,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <TooltipProvider delayDuration={200}>
-          <BrowserRouter>
+          <BrowserRouter basename={getConfig('VITE_BASE_PATH', '')}>
             <Routes>
               <Route path="/" element={<Layout />}>
                 <Route index element={<Home />} />
