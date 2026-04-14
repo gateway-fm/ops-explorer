@@ -51,6 +51,8 @@ type Database interface {
 	ComputeDailyStats(ctx context.Context, date time.Time) (*types.DailyStats, error)
 	UpsertDailyStats(ctx context.Context, stats *types.DailyStats) error
 	BackfillDailyStats(ctx context.Context) error
+
+	WipeAllData(ctx context.Context) error
 }
 
 type RPCClient interface {

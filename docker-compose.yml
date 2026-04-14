@@ -60,6 +60,9 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       POLL_INTERVAL: "2s"
       START_BLOCK: ${START_BLOCK:-0}
+      # Set to "true" to auto-wipe the DB when a chain reset is detected
+      # (e.g. Anvil restarted with fresh state)
+      FORCE_REINDEX: ${FORCE_REINDEX:-false}
       # Tuning - reduce these if your RPC gets overwhelmed (EOF errors)
       CATCHUP_WORKERS: ${CATCHUP_WORKERS:-10}
       RPC_WORKERS: ${RPC_WORKERS:-50}
