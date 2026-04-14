@@ -1574,6 +1574,45 @@ func (d *DB) ComputeDailyStats(ctx context.Context, date time.Time) (*types.Dail
 	return s, nil
 }
 
+// WipeAllData truncates all indexed tables, used for chain reset recovery.
+func (d *DB) WipeAllData(ctx context.Context) error {
+	// Order matters: truncate tables with foreign key dependencies using CASCADE.
+	// TRUNCATE ... CASCADE handles referential integrity automatically, but we
+	// list child tables first for clarity.
+	tables := []string{
+		"daily_stats",
+		"internal_transactions",
+		"logs",
+		"token_transfers",
+		"balances",
+		"op_deposits",
+		"contracts",
+		"transactions",
+		"blocks",
+		"tokens",
+		"counters",
+		"address_stats",
+		"indexer_progress",
+		"missing_block_ranges",
+		"sync_status",
+	}
+	for _, table := range tables {
+		if _, err := d.pool.Exec(ctx, "TRUNCATE TABLE "+table+" CASCADE"); err != nil {
+			return fmt.Errorf("failed to truncate %s: %w", table, err)
+		}
+	}
+	// Re-seed the singleton rows that migrations created.
+	if _, err := d.pool.Exec(ctx,
+		"INSERT INTO sync_status (last_indexed_block, is_syncing) VALUES (0, false) ON CONFLICT DO NOTHING"); err != nil {
+		return fmt.Errorf("failed to re-seed sync_status: %w", err)
+	}
+	if _, err := d.pool.Exec(ctx,
+		"INSERT INTO indexer_progress (min_fetched_block, max_fetched_block, backfill_complete) VALUES (0, 0, false) ON CONFLICT DO NOTHING"); err != nil {
+		return fmt.Errorf("failed to re-seed indexer_progress: %w", err)
+	}
+	return nil
+}
+
 func (d *DB) BackfillDailyStats(ctx context.Context) error {
 	// Find earliest and latest block dates
 	var minTimestamp, maxTimestamp *int64
