@@ -8,6 +8,24 @@ const ADMIN_TOKEN = process.env.ADMIN_API_TOKEN || '';
 
 export type Claim = 'read' | 'write' | 'admin' | 'upgrade' | 'deploy';
 
+// Proxy doesn't support wildcard '*' in allowed_methods — expand based on claims.
+const READ_METHODS = [
+  'eth_blockNumber', 'eth_chainId', 'eth_gasPrice', 'eth_call',
+  'eth_getBalance', 'eth_getCode', 'eth_getLogs', 'eth_getStorageAt',
+  'eth_getTransactionByHash', 'eth_getTransactionCount',
+  'eth_getTransactionReceipt', 'eth_getBlockByNumber', 'eth_getBlockByHash',
+  'eth_getBlockReceipts', 'net_version',
+];
+const WRITE_METHODS = ['eth_sendRawTransaction', 'eth_estimateGas', 'eth_sendTransaction'];
+
+function expandMethodsForClaims(claims: Claim[]): string[] {
+  const methods = [...READ_METHODS];
+  if (claims.includes('write') || claims.includes('admin') || claims.includes('deploy') || claims.includes('upgrade')) {
+    methods.push(...WRITE_METHODS);
+  }
+  return methods;
+}
+
 export interface Organization {
   id: string;
   slug: string;
@@ -190,7 +208,7 @@ export async function createGroup(
     {
       method: 'PUT',
       headers: adminHeaders(),
-      body: JSON.stringify({ claims, allowed_methods: ['*'] }),
+      body: JSON.stringify({ claims, allowed_methods: expandMethodsForClaims(claims) }),
     },
   );
   await assertOk(accessResponse, `setGroupAccess(${slug})`);
@@ -231,6 +249,14 @@ export async function ensureUser(did: string): Promise<{ user: User; accessToken
   if (!user) {
     throw new Error(`User not found after mock login: ${did}`);
   }
+  // Set KYC=true so the user can call RPC methods
+  const kycResp = await fetch(`${PROXY_URL}/api/v1/admin/users/${user.id}`, {
+    method: 'PUT',
+    headers: adminHeaders(),
+    body: JSON.stringify({ kyc: true }),
+  });
+  await assertOk(kycResp, `setKYC(${user.id})`);
+  user.kyc = true;
   return { user, accessToken: tokens.accessToken };
 }
 

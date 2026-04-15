@@ -16,7 +16,10 @@ import (
 var migrations embed.FS
 
 type DB struct {
-	pool *pgxpool.Pool
+	pool          *pgxpool.Pool
+	// HiddenTxTypes are transaction type numbers excluded from default listings
+	// (e.g. 126 for OP deposit system transactions). Set via HIDDEN_TX_TYPES env var.
+	HiddenTxTypes []int
 }
 
 func New(databaseURL string) (*DB, error) {
@@ -27,7 +30,7 @@ func New(databaseURL string) (*DB, error) {
 	if err := pool.Ping(context.Background()); err != nil {
 		return nil, err
 	}
-	return &DB{pool: pool}, nil
+	return &DB{pool: pool, HiddenTxTypes: []int{}}, nil
 }
 
 func (d *DB) Close() {

@@ -10,11 +10,21 @@ interface PageHeaderProps {
 export function PageHeader({ title, subtitle, children }: PageHeaderProps) {
   const navigate = useNavigate();
 
+  const goBack = () => {
+    // If there's in-app history, go back; otherwise fall back to home.
+    // This keeps iframe embeds safe — we never navigate outside the app.
+    if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate('/');
+    }
+  };
+
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
       <div className="flex items-center gap-3 sm:gap-4 min-w-0">
         <button
-          onClick={() => navigate('/')}
+          onClick={goBack}
           className="p-1.5 sm:p-2 rounded-lg bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 transition-colors shrink-0"
           title="Go back"
         >

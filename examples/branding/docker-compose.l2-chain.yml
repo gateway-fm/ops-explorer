@@ -1,0 +1,38 @@
+# Example branding for an L2 chain deployment — orange theme.
+# Demonstrates combining branding with network-specific config (chain ID, RPC, currency).
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f examples/branding/docker-compose.l2-chain.yml up --build -d
+
+services:
+  frontend:
+    environment:
+      # Branding
+      VITE_BRAND_NAME: "Horizon Explorer"
+      VITE_BRAND_COMPANY: "Horizon Foundation"
+      VITE_BRAND_DESCRIPTION: "Horizon Explorer - Block explorer for the Horizon L2 rollup"
+
+      # Logos (path relative to frontend/public/ or absolute URL)
+      VITE_BRAND_LOGO: "/logo.svg"
+      VITE_BRAND_ICON: "/mascot.png"
+
+      # Orange theme
+      VITE_BRAND_COLOR_PRIMARY: "#EA580C"
+      VITE_BRAND_COLOR_HERO_BG: "linear-gradient(135deg, #7c2d12, #c2410c, #EA580C)"
+
+      # Links
+      VITE_BRAND_WEBSITE: "https://horizon.example.com"
+      VITE_BRAND_DOCS: "https://docs.horizon.example.com"
+      VITE_BRAND_LEGAL: "https://horizon.example.com/terms"
+      VITE_BRAND_SECURITY: ""
+      VITE_BRAND_TRUST: ""
+      VITE_BRAND_TWITTER: "https://x.com/horizon_l2"
+      VITE_BRAND_DISCORD: "https://discord.gg/horizon"
+      VITE_BRAND_LINKEDIN: ""
+      VITE_BRAND_TELEGRAM: "https://t.me/horizon_l2"
+
+      # Network config
+      VITE_CHAIN_ID: "42170"
+      VITE_NETWORK_NAME: "Horizon L2"
+      VITE_NETWORK_CURRENCY: "ETH"
+      VITE_RPC_URL: "https://rpc.horizon.example.com"

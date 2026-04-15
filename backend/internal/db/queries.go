@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"explorer/internal/types"
 
@@ -144,7 +145,7 @@ func (d *DB) GetTransactions(ctx context.Context, limit int, beforeBlock *uint64
 				t.tx_type, t.input_data, t.status, t.error, t.revert_reason, t.created_at
 			FROM transactions t
 			JOIN blocks b ON t.block_number = b.number
-			WHERE t.block_number < $1 ORDER BY t.block_number DESC, t.tx_index DESC LIMIT $2`, *beforeBlock, limit)
+			WHERE NOT (t.tx_type = ANY($1::int[])) AND t.block_number < $2 ORDER BY t.block_number DESC, t.tx_index DESC LIMIT $3`, d.HiddenTxTypes, *beforeBlock, limit)
 	} else {
 		rows, err = d.pool.Query(ctx, `
 			SELECT t.hash, t.block_number, b.timestamp, t.tx_index, t.from_address, t.to_address, t.value::text,
@@ -152,7 +153,7 @@ func (d *DB) GetTransactions(ctx context.Context, limit int, beforeBlock *uint64
 				t.tx_type, t.input_data, t.status, t.error, t.revert_reason, t.created_at
 			FROM transactions t
 			JOIN blocks b ON t.block_number = b.number
-			ORDER BY t.block_number DESC, t.tx_index DESC LIMIT $1`, limit)
+			WHERE NOT (t.tx_type = ANY($1::int[])) ORDER BY t.block_number DESC, t.tx_index DESC LIMIT $2`, d.HiddenTxTypes, limit)
 	}
 	if err != nil {
 		return nil, err
@@ -164,7 +165,7 @@ func (d *DB) GetTransactions(ctx context.Context, limit int, beforeBlock *uint64
 
 func (d *DB) GetTransactionsPaginated(ctx context.Context, page, pageSize int) ([]types.Transaction, int64, error) {
 	var total int64
-	err := d.pool.QueryRow(ctx, `SELECT COUNT(*) FROM transactions`).Scan(&total)
+	err := d.pool.QueryRow(ctx, `SELECT COUNT(*) FROM transactions WHERE NOT (tx_type = ANY($1::int[]))`, d.HiddenTxTypes).Scan(&total)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -176,8 +177,9 @@ func (d *DB) GetTransactionsPaginated(ctx context.Context, page, pageSize int) (
 			t.tx_type, t.input_data, t.status, t.error, t.revert_reason, t.created_at
 		FROM transactions t
 		JOIN blocks b ON t.block_number = b.number
+		WHERE NOT (t.tx_type = ANY($1::int[]))
 		ORDER BY t.block_number DESC, t.tx_index DESC
-		LIMIT $1 OFFSET $2`, pageSize, offset)
+		LIMIT $2 OFFSET $3`, d.HiddenTxTypes, pageSize, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -265,11 +267,11 @@ func (d *DB) GetTransactionsWithCategories(ctx context.Context, limit int, befor
 		JOIN blocks b ON t.block_number = b.number`
 
 	if beforeBlock != nil {
-		query += ` WHERE t.block_number < $1 ORDER BY t.block_number DESC, t.tx_index DESC LIMIT $2`
-		rows, err = d.pool.Query(ctx, query, *beforeBlock, limit)
+		query += ` WHERE NOT (t.tx_type = ANY($1::int[])) AND t.block_number < $2 ORDER BY t.block_number DESC, t.tx_index DESC LIMIT $3`
+		rows, err = d.pool.Query(ctx, query, d.HiddenTxTypes, *beforeBlock, limit)
 	} else {
-		query += ` ORDER BY t.block_number DESC, t.tx_index DESC LIMIT $1`
-		rows, err = d.pool.Query(ctx, query, limit)
+		query += ` WHERE NOT (t.tx_type = ANY($1::int[])) ORDER BY t.block_number DESC, t.tx_index DESC LIMIT $2`
+		rows, err = d.pool.Query(ctx, query, d.HiddenTxTypes, limit)
 	}
 	if err != nil {
 		return nil, err
@@ -281,7 +283,7 @@ func (d *DB) GetTransactionsWithCategories(ctx context.Context, limit int, befor
 
 func (d *DB) GetTransactionsPaginatedWithCategories(ctx context.Context, page, pageSize int) ([]types.Transaction, int64, error) {
 	var total int64
-	err := d.pool.QueryRow(ctx, `SELECT COUNT(*) FROM transactions`).Scan(&total)
+	err := d.pool.QueryRow(ctx, `SELECT COUNT(*) FROM transactions WHERE NOT (tx_type = ANY($1::int[]))`, d.HiddenTxTypes).Scan(&total)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -298,8 +300,9 @@ func (d *DB) GetTransactionsPaginatedWithCategories(ctx context.Context, page, p
 			(SELECT COUNT(*) FROM token_transfers tt WHERE tt.tx_hash = t.hash) as token_transfer_count
 		FROM transactions t
 		JOIN blocks b ON t.block_number = b.number
+		WHERE NOT (t.tx_type = ANY($1::int[]))
 		ORDER BY t.block_number DESC, t.tx_index DESC
-		LIMIT $1 OFFSET $2`, pageSize, offset)
+		LIMIT $2 OFFSET $3`, d.HiddenTxTypes, pageSize, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -339,7 +342,7 @@ func (d *DB) GetTransactionWithCategories(ctx context.Context, hash string) (*ty
 		return nil, err
 	}
 	tx.Value = types.JSONString(valueStr)
-	tx.TxCategories = buildCategories(isCoinTransfer, isContractCall, isContractCreation, tokenTransferCount)
+	tx.TxCategories = buildCategories(tx.TxType, isCoinTransfer, isContractCall, isContractCreation, tokenTransferCount)
 	tx.TokenTransferCount = tokenTransferCount
 
 	return &tx, nil
@@ -360,7 +363,7 @@ func scanTransactionsWithCategories(rows pgx.Rows) ([]types.Transaction, error) 
 			return nil, err
 		}
 		tx.Value = types.JSONString(valueStr)
-		tx.TxCategories = buildCategories(isCoinTransfer, isContractCall, isContractCreation, tokenTransferCount)
+		tx.TxCategories = buildCategories(tx.TxType, isCoinTransfer, isContractCall, isContractCreation, tokenTransferCount)
 		tx.TokenTransferCount = tokenTransferCount
 
 		txs = append(txs, tx)
@@ -368,7 +371,10 @@ func scanTransactionsWithCategories(rows pgx.Rows) ([]types.Transaction, error) 
 	return txs, rows.Err()
 }
 
-func buildCategories(isCoinTransfer, isContractCall, isContractCreation bool, tokenTransferCount int) []string {
+func buildCategories(txType int, isCoinTransfer, isContractCall, isContractCreation bool, tokenTransferCount int) []string {
+	if txType == types.TxTypeDeposit {
+		return []string{types.TxCategorySystemTransaction}
+	}
 	var categories []string
 	if isContractCreation {
 		categories = append(categories, types.TxCategoryContractCreation)
@@ -1356,4 +1362,287 @@ func (d *DB) GetGasPercentiles(ctx context.Context, numBlocks int, slowPct, avgP
 		FastWei:   fast,
 		BaseFee:   baseFee,
 	}, nil
+}
+
+// Daily Stats operations
+
+func (d *DB) UpsertDailyStats(ctx context.Context, stats *types.DailyStats) error {
+	_, err := d.pool.Exec(ctx, `
+		INSERT INTO daily_stats (date, total_blocks, total_transactions, total_gas_used, avg_gas_price,
+			successful_txs, failed_txs, active_addresses, new_addresses, avg_block_time, avg_block_size,
+			new_contracts, token_transfer_count, cumulative_transactions, cumulative_addresses, cumulative_contracts)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+		ON CONFLICT (date) DO UPDATE SET
+			total_blocks = EXCLUDED.total_blocks,
+			total_transactions = EXCLUDED.total_transactions,
+			total_gas_used = EXCLUDED.total_gas_used,
+			avg_gas_price = EXCLUDED.avg_gas_price,
+			successful_txs = EXCLUDED.successful_txs,
+			failed_txs = EXCLUDED.failed_txs,
+			active_addresses = EXCLUDED.active_addresses,
+			new_addresses = EXCLUDED.new_addresses,
+			avg_block_time = EXCLUDED.avg_block_time,
+			avg_block_size = EXCLUDED.avg_block_size,
+			new_contracts = EXCLUDED.new_contracts,
+			token_transfer_count = EXCLUDED.token_transfer_count,
+			cumulative_transactions = EXCLUDED.cumulative_transactions,
+			cumulative_addresses = EXCLUDED.cumulative_addresses,
+			cumulative_contracts = EXCLUDED.cumulative_contracts`,
+		stats.Date, stats.TotalBlocks, stats.TotalTransactions, stats.TotalGasUsed, stats.AvgGasPrice,
+		stats.SuccessfulTxs, stats.FailedTxs, stats.ActiveAddresses, stats.NewAddresses, stats.AvgBlockTime,
+		stats.AvgBlockSize, stats.NewContracts, stats.TokenTransferCount, stats.CumulativeTransactions,
+		stats.CumulativeAddresses, stats.CumulativeContracts)
+	return err
+}
+
+func (d *DB) GetDailyStats(ctx context.Context, from, to time.Time) ([]types.DailyStats, error) {
+	rows, err := d.pool.Query(ctx, `
+		SELECT date, total_blocks, total_transactions, total_gas_used, avg_gas_price,
+			successful_txs, failed_txs, active_addresses, new_addresses, avg_block_time, avg_block_size,
+			new_contracts, token_transfer_count, cumulative_transactions, cumulative_addresses, cumulative_contracts
+		FROM daily_stats
+		WHERE date >= $1 AND date <= $2
+		ORDER BY date ASC`, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stats []types.DailyStats
+	for rows.Next() {
+		var s types.DailyStats
+		var date time.Time
+		if err := rows.Scan(&date, &s.TotalBlocks, &s.TotalTransactions, &s.TotalGasUsed, &s.AvgGasPrice,
+			&s.SuccessfulTxs, &s.FailedTxs, &s.ActiveAddresses, &s.NewAddresses, &s.AvgBlockTime,
+			&s.AvgBlockSize, &s.NewContracts, &s.TokenTransferCount, &s.CumulativeTransactions,
+			&s.CumulativeAddresses, &s.CumulativeContracts); err != nil {
+			return nil, err
+		}
+		s.Date = date.Format("2006-01-02")
+		stats = append(stats, s)
+	}
+	return stats, rows.Err()
+}
+
+func (d *DB) GetDailyStatsForDate(ctx context.Context, date time.Time) (*types.DailyStats, error) {
+	var s types.DailyStats
+	var dt time.Time
+	err := d.pool.QueryRow(ctx, `
+		SELECT date, total_blocks, total_transactions, total_gas_used, avg_gas_price,
+			successful_txs, failed_txs, active_addresses, new_addresses, avg_block_time, avg_block_size,
+			new_contracts, token_transfer_count, cumulative_transactions, cumulative_addresses, cumulative_contracts
+		FROM daily_stats
+		WHERE date = $1`, date).Scan(&dt, &s.TotalBlocks, &s.TotalTransactions, &s.TotalGasUsed, &s.AvgGasPrice,
+		&s.SuccessfulTxs, &s.FailedTxs, &s.ActiveAddresses, &s.NewAddresses, &s.AvgBlockTime,
+		&s.AvgBlockSize, &s.NewContracts, &s.TokenTransferCount, &s.CumulativeTransactions,
+		&s.CumulativeAddresses, &s.CumulativeContracts)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	s.Date = dt.Format("2006-01-02")
+	return &s, nil
+}
+
+func (d *DB) ComputeDailyStats(ctx context.Context, date time.Time) (*types.DailyStats, error) {
+	dateStr := date.Format("2006-01-02")
+	s := &types.DailyStats{Date: dateStr}
+
+	// total_blocks, total_gas_used, avg_block_size
+	err := d.pool.QueryRow(ctx, `
+		SELECT COUNT(*), COALESCE(SUM(gas_used)::bigint, 0), COALESCE(AVG(size)::bigint, 0)
+		FROM blocks b
+		WHERE b.timestamp >= extract(epoch from $1::date)::bigint
+		  AND b.timestamp < extract(epoch from ($1::date + interval '1 day'))::bigint`, dateStr).
+		Scan(&s.TotalBlocks, &s.TotalGasUsed, &s.AvgBlockSize)
+	if err != nil {
+		return nil, fmt.Errorf("compute blocks stats: %w", err)
+	}
+
+	// total_transactions, avg_gas_price, successful_txs, failed_txs
+	err = d.pool.QueryRow(ctx, `
+		SELECT COUNT(*), COALESCE(AVG(t.gas_price)::bigint, 0),
+			COUNT(*) FILTER (WHERE t.status = 1),
+			COUNT(*) FILTER (WHERE t.status = 0)
+		FROM transactions t
+		JOIN blocks b ON t.block_number = b.number
+		WHERE b.timestamp >= extract(epoch from $1::date)::bigint
+		  AND b.timestamp < extract(epoch from ($1::date + interval '1 day'))::bigint`, dateStr).
+		Scan(&s.TotalTransactions, &s.AvgGasPrice, &s.SuccessfulTxs, &s.FailedTxs)
+	if err != nil {
+		return nil, fmt.Errorf("compute tx stats: %w", err)
+	}
+
+	// active_addresses (distinct from + to in transactions for this day)
+	err = d.pool.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT addr) FROM (
+			SELECT from_address AS addr FROM transactions t
+			JOIN blocks b ON t.block_number = b.number
+			WHERE b.timestamp >= extract(epoch from $1::date)::bigint
+			  AND b.timestamp < extract(epoch from ($1::date + interval '1 day'))::bigint
+			UNION
+			SELECT to_address AS addr FROM transactions t
+			JOIN blocks b ON t.block_number = b.number
+			WHERE b.timestamp >= extract(epoch from $1::date)::bigint
+			  AND b.timestamp < extract(epoch from ($1::date + interval '1 day'))::bigint
+			  AND t.to_address IS NOT NULL
+		) sub`, dateStr).Scan(&s.ActiveAddresses)
+	if err != nil {
+		return nil, fmt.Errorf("compute active addresses: %w", err)
+	}
+
+	// new_addresses
+	err = d.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM address_stats
+		WHERE first_seen >= extract(epoch from $1::date)::bigint
+		  AND first_seen < extract(epoch from ($1::date + interval '1 day'))::bigint`, dateStr).
+		Scan(&s.NewAddresses)
+	if err != nil {
+		return nil, fmt.Errorf("compute new addresses: %w", err)
+	}
+
+	// avg_block_time
+	err = d.pool.QueryRow(ctx, `
+		SELECT COALESCE(
+			AVG(b.timestamp - prev.timestamp)::float,
+			0
+		)
+		FROM blocks b
+		JOIN blocks prev ON prev.number = b.number - 1
+		WHERE b.timestamp >= extract(epoch from $1::date)::bigint
+		  AND b.timestamp < extract(epoch from ($1::date + interval '1 day'))::bigint`, dateStr).
+		Scan(&s.AvgBlockTime)
+	if err != nil {
+		return nil, fmt.Errorf("compute avg block time: %w", err)
+	}
+
+	// new_contracts
+	err = d.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM address_stats
+		WHERE is_contract = true
+		  AND first_seen >= extract(epoch from $1::date)::bigint
+		  AND first_seen < extract(epoch from ($1::date + interval '1 day'))::bigint`, dateStr).
+		Scan(&s.NewContracts)
+	if err != nil {
+		return nil, fmt.Errorf("compute new contracts: %w", err)
+	}
+
+	// token_transfer_count
+	err = d.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM token_transfers tt
+		JOIN blocks b ON tt.block_number = b.number
+		WHERE b.timestamp >= extract(epoch from $1::date)::bigint
+		  AND b.timestamp < extract(epoch from ($1::date + interval '1 day'))::bigint`, dateStr).
+		Scan(&s.TokenTransferCount)
+	if err != nil {
+		return nil, fmt.Errorf("compute token transfers: %w", err)
+	}
+
+	// cumulative_transactions: sum of all total_transactions up to and including this date
+	err = d.pool.QueryRow(ctx, `
+		SELECT COALESCE(SUM(cnt), 0) FROM (
+			SELECT COUNT(*) as cnt
+			FROM transactions t
+			JOIN blocks b ON t.block_number = b.number
+			WHERE b.timestamp < extract(epoch from ($1::date + interval '1 day'))::bigint
+		) sub`, dateStr).Scan(&s.CumulativeTransactions)
+	if err != nil {
+		return nil, fmt.Errorf("compute cumulative transactions: %w", err)
+	}
+
+	// cumulative_addresses
+	err = d.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM address_stats
+		WHERE first_seen < extract(epoch from ($1::date + interval '1 day'))::bigint`, dateStr).
+		Scan(&s.CumulativeAddresses)
+	if err != nil {
+		return nil, fmt.Errorf("compute cumulative addresses: %w", err)
+	}
+
+	// cumulative_contracts
+	err = d.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM address_stats
+		WHERE is_contract = true
+		  AND first_seen < extract(epoch from ($1::date + interval '1 day'))::bigint`, dateStr).
+		Scan(&s.CumulativeContracts)
+	if err != nil {
+		return nil, fmt.Errorf("compute cumulative contracts: %w", err)
+	}
+
+	return s, nil
+}
+
+// WipeAllData truncates all indexed tables, used for chain reset recovery.
+func (d *DB) WipeAllData(ctx context.Context) error {
+	// Order matters: truncate tables with foreign key dependencies using CASCADE.
+	// TRUNCATE ... CASCADE handles referential integrity automatically, but we
+	// list child tables first for clarity.
+	tables := []string{
+		"daily_stats",
+		"internal_transactions",
+		"logs",
+		"token_transfers",
+		"balances",
+		"op_deposits",
+		"contracts",
+		"transactions",
+		"blocks",
+		"tokens",
+		"counters",
+		"address_stats",
+		"indexer_progress",
+		"missing_block_ranges",
+		"sync_status",
+	}
+	for _, table := range tables {
+		if _, err := d.pool.Exec(ctx, "TRUNCATE TABLE "+table+" CASCADE"); err != nil {
+			return fmt.Errorf("failed to truncate %s: %w", table, err)
+		}
+	}
+	// Re-seed the singleton rows that migrations created.
+	if _, err := d.pool.Exec(ctx,
+		"INSERT INTO sync_status (last_indexed_block, is_syncing) VALUES (0, false) ON CONFLICT DO NOTHING"); err != nil {
+		return fmt.Errorf("failed to re-seed sync_status: %w", err)
+	}
+	if _, err := d.pool.Exec(ctx,
+		"INSERT INTO indexer_progress (min_fetched_block, max_fetched_block, backfill_complete) VALUES (0, 0, false) ON CONFLICT DO NOTHING"); err != nil {
+		return fmt.Errorf("failed to re-seed indexer_progress: %w", err)
+	}
+	return nil
+}
+
+func (d *DB) BackfillDailyStats(ctx context.Context) error {
+	// Find earliest and latest block dates
+	var minTimestamp, maxTimestamp *int64
+	err := d.pool.QueryRow(ctx, `SELECT MIN(timestamp), MAX(timestamp) FROM blocks`).Scan(&minTimestamp, &maxTimestamp)
+	if err != nil || minTimestamp == nil || maxTimestamp == nil {
+		return err
+	}
+
+	startDate := time.Unix(*minTimestamp, 0).UTC().Truncate(24 * time.Hour)
+	endDate := time.Unix(*maxTimestamp, 0).UTC().Truncate(24 * time.Hour)
+
+	for d_ := startDate; !d_.After(endDate); d_ = d_.AddDate(0, 0, 1) {
+		// Skip dates that already exist
+		existing, err := d.GetDailyStatsForDate(ctx, d_)
+		if err != nil {
+			return fmt.Errorf("check existing stats for %s: %w", d_.Format("2006-01-02"), err)
+		}
+		if existing != nil {
+			continue
+		}
+
+		stats, err := d.ComputeDailyStats(ctx, d_)
+		if err != nil {
+			return fmt.Errorf("compute stats for %s: %w", d_.Format("2006-01-02"), err)
+		}
+
+		if err := d.UpsertDailyStats(ctx, stats); err != nil {
+			return fmt.Errorf("upsert stats for %s: %w", d_.Format("2006-01-02"), err)
+		}
+	}
+
+	return nil
 }

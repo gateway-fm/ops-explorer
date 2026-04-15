@@ -1,0 +1,88 @@
+package main
+
+import (
+	"context"
+	"os"
+	"os/signal"
+	"strconv"
+	"syscall"
+	"time"
+
+	"explorer/internal/api"
+	"explorer/internal/chaininfo"
+	"explorer/internal/db"
+	"explorer/internal/gas"
+	"explorer/internal/log"
+	"explorer/internal/publicapi"
+	"explorer/internal/rpc"
+)
+
+func main() {
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		log.Fatal("DATABASE_URL is required")
+	}
+
+	rpcURL := os.Getenv("RPC_URL")
+	if rpcURL == "" {
+		log.Fatal("RPC_URL is required")
+	}
+
+	port := 8082
+	if p := os.Getenv("PUBLIC_API_PORT"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil {
+			port = v
+		}
+	}
+
+	rateLimit := 100
+	if rl := os.Getenv("RATE_LIMIT"); rl != "" {
+		if v, err := strconv.Atoi(rl); err == nil {
+			rateLimit = v
+		}
+	}
+
+	rateWindow := 1 * time.Minute
+	if rw := os.Getenv("RATE_LIMIT_WINDOW"); rw != "" {
+		if d, err := time.ParseDuration(rw); err == nil {
+			rateWindow = d
+		}
+	}
+
+	database, err := db.New(databaseURL)
+	if err != nil {
+		log.Fatal("failed to connect to database", "error", err)
+	}
+	defer database.Close()
+
+	if err := database.Migrate(); err != nil {
+		log.Fatal("failed to run migrations", "error", err)
+	}
+
+	rpcClient, err := rpc.New(rpcURL)
+	if err != nil {
+		log.Fatal("failed to create rpc client", "error", err)
+	}
+
+	dataProvider := api.NewDirectDBProvider(database, rpcClient, nil)
+	gasTracker := gas.NewTracker(database, nil)
+	chainInfo := chaininfo.NewService(rpcClient, 10*time.Minute)
+
+	server := publicapi.NewServer(dataProvider, gasTracker, chainInfo, port, rateLimit, rateWindow)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		<-sigCh
+		log.Info("shutting down public API server")
+		cancel()
+	}()
+
+	log.Info("starting public API server", "port", port, "rateLimit", rateLimit, "rateWindow", rateWindow.String())
+	if err := server.Start(ctx); err != nil {
+		log.Fatal("server error", "error", err)
+	}
+}

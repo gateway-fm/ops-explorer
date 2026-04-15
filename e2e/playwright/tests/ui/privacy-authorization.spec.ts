@@ -78,19 +78,6 @@ test.describe('Privacy Proxy Authorization & Visibility', () => {
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ authenticated: true }) })
     );
 
-    // Mock Address Visibility
-    await page.route('**/api/privacy/check-address/**', route => {
-      const url = route.request().url().toLowerCase();
-      if (url.includes(publicAddr.toLowerCase())) {
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
-          address: publicAddr, visible: true, level: 'full', reason: 'public_address'
-        })});
-      }
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
-        address: privateAddr, visible: false, level: 'hidden', reason: 'no_access'
-      })});
-    });
-
     // Mock Address Stats (Dynamic)
     await page.route('**/api/addresses/*', route => {
       const url = route.request().url();

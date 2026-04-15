@@ -1,0 +1,178 @@
+# =============================================================================
+# Block Explorer — Production Docker Compose
+# =============================================================================
+#
+# Full production deployment with all configuration options documented.
+# Copy this file, fill in your values, and run:
+#
+#   docker compose -f docker-compose.production.yml up -d
+#
+# Images are published to Docker Hub on each release:
+#   gatewayfm/block-explorer-api
+#   gatewayfm/block-explorer-indexer
+#   gatewayfm/block-explorer-public-api
+#   gatewayfm/block-explorer-frontend
+#
+# Pin to a specific version (recommended):
+#   image: gatewayfm/block-explorer-api:0.0.1
+#
+# Or use latest (not recommended for production):
+#   image: gatewayfm/block-explorer-api:latest
+#
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — Data store for indexed chain data
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-explorer}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-explorer}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-explorer}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # API — Serves the explorer frontend and internal API
+  # ---------------------------------------------------------------------------
+  api:
+    image: gatewayfm/block-explorer-api:${VERSION:-latest}
+    ports:
+      - "${API_PORT:-8081}:8080"
+    environment:
+      # --- Required ---
+      DATABASE_URL: postgres://${POSTGRES_USER:-explorer}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-explorer}?sslmode=disable
+      RPC_URL: ${RPC_URL:?Set RPC_URL to your chain RPC endpoint}
+
+      # --- Server ---
+      API_PORT: "8080"                              # Internal port (mapped via Docker)
+      SOLC_PATH: /opt/solc                          # Path to solc binaries for contract verification
+
+      # --- Privacy Proxy (optional) ---
+      # Uncomment these if you're running with a privacy proxy
+      # PRIVACY_PROXY_URL: http://privacy-proxy:8080
+      # PRIVACY_PROXY_PUBLIC_URL: https://privacy.example.com
+      # SSO_CLIENT_ID: explorer
+      # SSO_REDIRECT_URI: https://explorer.example.com/api/auth/callback
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Indexer — Indexes chain data from the RPC node into PostgreSQL
+  # ---------------------------------------------------------------------------
+  indexer:
+    image: gatewayfm/block-explorer-indexer:${VERSION:-latest}
+    environment:
+      # --- Required ---
+      DATABASE_URL: postgres://${POSTGRES_USER:-explorer}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-explorer}?sslmode=disable
+      RPC_URL: ${RPC_URL:?Set RPC_URL to your chain RPC endpoint}
+
+      # --- Indexer tuning ---
+      POLL_INTERVAL: ${POLL_INTERVAL:-2s}           # How often to poll for new blocks
+      START_BLOCK: ${START_BLOCK:-0}                # Block number to start indexing from (0 = genesis)
+      LOG_LEVEL: ${LOG_LEVEL:-info}                 # Log level: debug, info, warn, error
+
+      # --- Performance tuning ---
+      # Reduce these if your RPC endpoint gets overwhelmed (EOF errors, rate limits)
+      CATCHUP_WORKERS: ${CATCHUP_WORKERS:-10}       # Parallel workers for historical block catchup
+      RPC_WORKERS: ${RPC_WORKERS:-50}               # Concurrent RPC request workers
+      RPC_RATE_LIMIT: ${RPC_RATE_LIMIT:-500}        # Max RPC requests per second
+
+      # --- Tracing (optional) ---
+      # Enable to index internal transactions (debug_traceBlockByNumber)
+      # Requires an archive node or a node with debug/trace API enabled
+      # ENABLE_TRACING: "true"
+      # TRACE_WORKERS: "5"
+      # TRACE_RATE_LIMIT: "50"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Public API — Rate-limited read-only API for external consumers
+  # ---------------------------------------------------------------------------
+  public-api:
+    image: gatewayfm/block-explorer-public-api:${VERSION:-latest}
+    ports:
+      - "${PUBLIC_API_PORT:-8082}:8082"
+    environment:
+      # --- Required ---
+      DATABASE_URL: postgres://${POSTGRES_USER:-explorer}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-explorer}?sslmode=disable
+      RPC_URL: ${RPC_URL}
+
+      # --- Server ---
+      PUBLIC_API_PORT: "8082"                       # Internal port (mapped via Docker)
+
+      # --- Rate limiting ---
+      RATE_LIMIT: ${RATE_LIMIT:-100}                # Max requests per time window per IP
+      RATE_LIMIT_WINDOW: ${RATE_LIMIT_WINDOW:-1m}   # Time window (e.g. 30s, 1m, 5m)
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Frontend — React SPA served by nginx with runtime config injection
+  # ---------------------------------------------------------------------------
+  # The entrypoint.sh script generates /config.js from VITE_* env vars at
+  # container startup. No rebuild needed when configuration changes.
+  frontend:
+    image: gatewayfm/block-explorer-frontend:${VERSION:-latest}
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    environment:
+      # --- Runtime configuration (injected at container startup) ---
+
+      # --- API connection ---
+      VITE_API_URL: /api                            # Path to internal API (proxied via nginx/ingress)
+      VITE_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8082}  # Public API URL for API docs "Try it"
+
+      # --- Chain config ---
+      VITE_CHAIN_ID: ${CHAIN_ID:?Set CHAIN_ID}     # Chain ID (decimal) for MetaMask integration
+      VITE_NETWORK_NAME: ${NETWORK_NAME:-My Chain}  # Network name shown in MetaMask
+      VITE_NETWORK_CURRENCY: ${NETWORK_CURRENCY:-ETH}  # Native currency symbol
+      VITE_RPC_URL: ${RPC_URL}                      # RPC URL for MetaMask "Add Network"
+
+      # --- Branding (all optional — defaults to Gateway branding) ---
+      VITE_BRAND_NAME: ${BRAND_NAME:-Gateway Explorer}
+      VITE_BRAND_COMPANY: ${BRAND_COMPANY:-Gateway.fm AS}
+      VITE_BRAND_DESCRIPTION: ${BRAND_DESCRIPTION:-Block Explorer - Browse blocks, transactions, and accounts}
+      VITE_BRAND_LOGO: ${BRAND_LOGO:-/logo.svg}                    # Path or URL
+      VITE_BRAND_ICON: ${BRAND_ICON:-/mascot.png}                  # Path or URL (also used as favicon)
+      VITE_BRAND_FAVICON: ${BRAND_FAVICON:-}                       # Optional separate favicon
+      VITE_BRAND_COLOR_PRIMARY: ${BRAND_COLOR_PRIMARY:-#8950FA}    # Hex color for buttons, links, accents
+      VITE_BRAND_COLOR_HERO_BG: ${BRAND_COLOR_HERO_BG:-}           # Optional CSS gradient for hero section
+
+      # --- Branding links (set to empty string to hide) ---
+      VITE_BRAND_WEBSITE: ${BRAND_WEBSITE:-https://gateway.fm/}
+      VITE_BRAND_DOCS: ${BRAND_DOCS:-https://docs.gateway.fm/}
+      VITE_BRAND_LEGAL: ${BRAND_LEGAL:-https://gateway.fm/legal/}
+      VITE_BRAND_SECURITY: ${BRAND_SECURITY:-https://gateway.fm/security/}
+      VITE_BRAND_TRUST: ${BRAND_TRUST:-https://trust.gateway.fm}
+
+      # --- Branding social links (set to empty string to hide) ---
+      VITE_BRAND_TWITTER: ${BRAND_TWITTER:-https://x.com/gateway_eth}
+      VITE_BRAND_LINKEDIN: ${BRAND_LINKEDIN:-https://www.linkedin.com/company/gatewayfm}
+      VITE_BRAND_DISCORD: ${BRAND_DISCORD:-https://discord.gg/grPXnEbAyv}
+      VITE_BRAND_TELEGRAM: ${BRAND_TELEGRAM:-https://t.me/gateway_fm}
+    depends_on:
+      - api
+      - public-api
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
