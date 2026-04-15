@@ -22,7 +22,7 @@ const mobileNavItems = [
   { to: '/chain-info', label: 'Chain Info', icon: Info },
   { to: '/stats', label: 'Charts', icon: BarChart3 },
   { to: '/api-docs', label: 'API Docs', icon: BookOpen },
-  { to: '/privacy', label: 'Privacy', icon: Eye },
+  { to: '/privacy', label: 'Auditor', icon: Eye },
 ];
 
 export function Layout() {

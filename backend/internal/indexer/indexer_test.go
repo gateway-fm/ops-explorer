@@ -3,6 +3,8 @@ package indexer
 import (
 	"context"
 	"math/big"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -200,6 +202,11 @@ func (m *MockDatabase) BackfillDailyStats(ctx context.Context) error {
 	return args.Error(0)
 }
 
+func (m *MockDatabase) WipeAllData(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
 // MockRPCClient is a mock of the RPCClient interface
 type MockRPCClient struct {
 	mock.Mock
@@ -223,7 +230,7 @@ func (m *MockRPCClient) RawBlockHash(ctx context.Context, number uint64) (string
 	return args.String(0), args.Error(1)
 }
 
-func (m *MockRPCClient) FetchReceiptsBatch(ctx context.Context, txHashes []common.Hash, workers int, rateLimit int) (map[common.Hash]*rpclient.Receipt, error) {
+func (m *MockRPCClient) FetchReceiptsBatch(ctx context.Context, txHashes []common.Hash, workers int, rateLimit int, blockNumber ...uint64) (map[common.Hash]*rpclient.Receipt, error) {
 	args := m.Called(ctx, txHashes, workers, rateLimit)
 	return args.Get(0).(map[common.Hash]*rpclient.Receipt), args.Error(1)
 }
@@ -419,5 +426,131 @@ func TestIndexer_ProcessBlock(t *testing.T) {
 
 		mockDB.AssertExpectations(t)
 		mockRPC.AssertExpectations(t)
+	})
+}
+
+func TestChainResetDetection(t *testing.T) {
+	t.Run("detects chain reset and returns error without FORCE_REINDEX", func(t *testing.T) {
+		mockDB := new(MockDatabase)
+		mockRPC := new(MockRPCClient)
+		idx := New(mockDB, mockRPC, time.Second, 0)
+
+		// Simulate: DB says we indexed up to block 25000, but chain head is at 5.
+		mockDB.On("GetLatestBlockNumber", mock.Anything).Return(uint64(25000), nil)
+		mockDB.On("GetBlockCount", mock.Anything).Return(int64(25000), nil)
+		mockRPC.On("BlockNumber", mock.Anything).Return(uint64(5), nil)
+		mockRPC.On("CheckTracingSupport", mock.Anything).Return(false, nil).Maybe()
+		mockDB.On("GetAllTokenAddresses", mock.Anything).Return([]string{}, nil).Maybe()
+
+		// Ensure FORCE_REINDEX is not set
+		os.Unsetenv("FORCE_REINDEX")
+
+		err := idx.Start(context.Background())
+		assert.Error(t, err)
+		assert.True(t, strings.Contains(err.Error(), "chain reset detected"),
+			"error should mention chain reset, got: %s", err.Error())
+
+		// WipeAllData should NOT have been called
+		mockDB.AssertNotCalled(t, "WipeAllData", mock.Anything)
+	})
+
+	t.Run("detects chain reset and wipes with FORCE_REINDEX=true", func(t *testing.T) {
+		mockDB := new(MockDatabase)
+		mockRPC := new(MockRPCClient)
+		idx := New(mockDB, mockRPC, time.Second, 0)
+
+		// Simulate: DB says we indexed up to block 25000, but chain head is at 5.
+		mockDB.On("GetLatestBlockNumber", mock.Anything).Return(uint64(25000), nil)
+		mockDB.On("GetBlockCount", mock.Anything).Return(int64(25000), nil)
+		mockRPC.On("BlockNumber", mock.Anything).Return(uint64(5), nil)
+		mockRPC.On("CheckTracingSupport", mock.Anything).Return(false, nil).Maybe()
+		mockDB.On("GetAllTokenAddresses", mock.Anything).Return([]string{}, nil).Maybe()
+
+		// WipeAllData succeeds
+		mockDB.On("WipeAllData", mock.Anything).Return(nil).Once()
+
+		// After wipe, lastIndexed becomes 0, blocksToSync is 5 < catchupThreshold (100),
+		// so it goes into startStandardMode. We need UpdateSyncStatus and the poll loop.
+		mockDB.On("UpdateSyncStatus", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+		mockDB.On("BackfillDailyStats", mock.Anything).Return(nil).Maybe()
+
+		// Standard mode will poll; we just need to let it run briefly and cancel.
+		mockRPC.On("SubscribeNewHead", mock.Anything, mock.Anything).Return(newMockSubscription(), nil).Maybe()
+
+		os.Setenv("FORCE_REINDEX", "true")
+		defer os.Unsetenv("FORCE_REINDEX")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+
+		err := idx.Start(ctx)
+		// Should exit with context.DeadlineExceeded (from the poll loop), not chain reset error
+		assert.Error(t, err)
+		assert.False(t, strings.Contains(err.Error(), "chain reset detected"),
+			"should not return chain reset error when FORCE_REINDEX=true, got: %s", err.Error())
+
+		mockDB.AssertCalled(t, "WipeAllData", mock.Anything)
+	})
+
+	t.Run("no chain reset when delta is within reorg depth", func(t *testing.T) {
+		mockDB := new(MockDatabase)
+		mockRPC := new(MockRPCClient)
+		// Use NewWithConfig to disable catchup — this test only validates that
+		// the chain reset detection does NOT fire for small deltas.
+		cfg := &Config{
+			RPCWorkers:         50,
+			RPCRateLimit:       500,
+			DBBatchSize:        500,
+			BalanceWorkers:     0,
+			EnableAsyncBalance: false,
+			CatchupEnabled:     false,
+		}
+		idx := NewWithConfig(mockDB, mockRPC, time.Second, 0, cfg)
+
+		// Chain head at 900, last indexed at 1000 — delta of 100, within maxReorgDepth (128)
+		mockDB.On("GetLatestBlockNumber", mock.Anything).Return(uint64(1000), nil)
+		mockDB.On("GetBlockCount", mock.Anything).Return(int64(1000), nil)
+		mockRPC.On("BlockNumber", mock.Anything).Return(uint64(900), nil)
+		mockRPC.On("CheckTracingSupport", mock.Anything).Return(false, nil).Maybe()
+		mockDB.On("GetAllTokenAddresses", mock.Anything).Return([]string{}, nil).Maybe()
+		mockDB.On("UpdateSyncStatus", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+		mockDB.On("BackfillDailyStats", mock.Anything).Return(nil).Maybe()
+
+		os.Unsetenv("FORCE_REINDEX")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+
+		err := idx.Start(ctx)
+		// Should not fail with chain reset — it'll enter standard mode and time out
+		assert.Error(t, err)
+		assert.False(t, strings.Contains(err.Error(), "chain reset detected"),
+			"should NOT detect chain reset for small delta, got: %s", err.Error())
+
+		mockDB.AssertNotCalled(t, "WipeAllData", mock.Anything)
+	})
+
+	t.Run("realtime handleReorg rejects massive revert", func(t *testing.T) {
+		mockDB := new(MockDatabase)
+		mockRPC := new(MockRPCClient)
+
+		cfg := &RealtimeConfig{
+			ConfirmationBlocks: 1,
+			PollInterval:       100 * time.Millisecond,
+		}
+		idxCfg := &Config{}
+
+		rt := NewRealtimeIndexer(mockDB, mockRPC, cfg, idxCfg, NewTokenCache(), NewContractCache(), nil, false)
+
+		// lastIndexed=25000, fromBlock=5 → need to revert 24995 blocks
+		mockDB.On("GetLatestBlockNumber", mock.Anything).Return(uint64(25000), nil)
+
+		err := rt.handleReorg(context.Background(), 5)
+		assert.Error(t, err)
+		assert.True(t, strings.Contains(err.Error(), "chain reset detected"),
+			"should detect chain reset in handleReorg, got: %s", err.Error())
+
+		// Should NOT have deleted any blocks
+		mockDB.AssertNotCalled(t, "DeleteBlock", mock.Anything, mock.Anything)
 	})
 }
