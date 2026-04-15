@@ -84,12 +84,69 @@ make stop   # stop
 make logs   # tail logs
 ```
 
+## Custom Branding
+
+The explorer supports full whitelabel branding via environment variables — change the name, logo, colors, and footer links without touching any code.
+
+### Quick Example
+
+```bash
+# Dev mode with custom branding
+make dev BRAND=examples/branding/docker-compose.full.yml
+
+# Production with custom branding
+RPC_URL=https://rpc.example.com make run BRAND=examples/branding/docker-compose.l2-chain.yml
+```
+
+### Example Override Files
+
+| File | Description |
+|------|-------------|
+| `examples/branding/docker-compose.minimal.yml` | Just rename the explorer (2 variables) |
+| `examples/branding/docker-compose.full.yml` | Every branding option customised |
+| `examples/branding/docker-compose.no-socials.yml` | Internal deploy — no footer links |
+| `examples/branding/docker-compose.l2-chain.yml` | L2 chain — branding + network config |
+
+### Key Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `VITE_BRAND_NAME` | Explorer name | `Gateway Explorer` |
+| `VITE_BRAND_COMPANY` | Footer copyright | `Gateway.fm AS` |
+| `VITE_BRAND_COLOR_PRIMARY` | Primary color (hex) | `#8950FA` |
+| `VITE_BRAND_LOGO` | Logo path or URL | `/logo.svg` |
+| `VITE_BRAND_WEBSITE` | Company URL | `https://gateway.fm/` |
+
+Set any social or company link to `""` to hide it from the footer.
+
+See [docs/BRANDING.md](docs/BRANDING.md) for the full reference.
+
+## Public API
+
+The explorer includes a rate-limited public REST API for programmatic access to blockchain data. It runs as a separate service for isolation and independent scaling.
+
+```bash
+# Available at http://localhost:8082 by default
+curl http://localhost:8082/api/v1/blocks/latest
+curl http://localhost:8082/api/v1/transactions?page=1&pageSize=10
+curl http://localhost:8082/api/v1/search/suggestions?q=0xf39
+```
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PUBLIC_API_PORT` | `8082` | Public API port |
+| `RATE_LIMIT` | `100` | Requests per window |
+| `RATE_LIMIT_WINDOW` | `1m` | Rate limit window |
+
+Interactive API docs are available at `/api-docs` in the explorer UI. See [docs/PUBLIC_API.md](docs/PUBLIC_API.md) for the full reference.
+
 ## Docker Images
 
 Production images are published to Docker Hub on each release:
 
 - `gatewayfm/block-explorer-api`
 - `gatewayfm/block-explorer-indexer`
+- `gatewayfm/block-explorer-public-api`
 - `gatewayfm/block-explorer-frontend`
 
 ### Build Locally

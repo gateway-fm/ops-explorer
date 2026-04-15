@@ -5,12 +5,25 @@
 @tailwind utilities;
 
 :root {
-  /* Gateway Primary Purple */
+  /* Primary brand color — overridden at runtime by branding.ts */
   --primary: #8950FA;
   --primary-hover: #6B3DD4;
   --primary-light: #F5F3FF;
+  --primary-rgb: 137, 80, 250;
 
-  /* Neutrals */
+  /* Neutral palette — flipped in .dark */
+  --neutral-50: #FFFFFF;
+  --neutral-100: #F1F5F9;
+  --neutral-200: #E2E8F0;
+  --neutral-300: #CBD5E1;
+  --neutral-400: #94A3B8;
+  --neutral-500: #6B7280;
+  --neutral-600: #475569;
+  --neutral-700: #374151;
+  --neutral-800: #1A1A1A;
+  --neutral-900: #0F0F0F;
+
+  /* Semantic aliases */
   --background: #F1F5F9;
   --surface: #FFFFFF;
   --border: #E2E8F0;
@@ -30,6 +43,29 @@
   --radius: 12px;
   --radius-lg: 16px;
   --radius-xl: 24px;
+}
+
+.dark {
+  /* Flip the neutral scale: 900 becomes lightest, 50 becomes darkest */
+  --neutral-50: #0F1117;
+  --neutral-100: #1A1D27;
+  --neutral-200: #2A2D3A;
+  --neutral-300: #353849;
+  --neutral-400: #94A3B8;
+  --neutral-500: #6B7280;
+  --neutral-600: #CBD5E1;
+  --neutral-700: #E2E8F0;
+  --neutral-800: #F1F5F9;
+  --neutral-900: #FFFFFF;
+
+  --background: #0F1117;
+  --surface: #1A1D27;
+  --border: #2A2D3A;
+  --border-light: #353849;
+
+  --text-primary: #F1F5F9;
+  --text-secondary: #CBD5E1;
+  --text-muted: #94A3B8;
 }
 
 /* Base styles */
@@ -52,7 +88,7 @@ body {
 @layer components {
   /* Card component */
   .card {
-    @apply bg-white rounded-xl border border-neutral-200 shadow-card;
+    @apply bg-neutral-50 rounded-xl border border-neutral-200 shadow-card;
   }
 
   .card-hover {
@@ -65,7 +101,7 @@ body {
 
   /* Input component */
   .input {
-    @apply w-full px-4 py-3 bg-white border border-neutral-300 rounded-lg text-sm text-neutral-900;
+    @apply w-full px-4 py-3 bg-neutral-50 border border-neutral-300 rounded-lg text-sm text-neutral-900;
     @apply placeholder:text-neutral-400;
     @apply focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20;
     @apply transition-all duration-200;
@@ -89,7 +125,7 @@ body {
   }
 
   .btn-secondary {
-    @apply btn bg-white text-neutral-900 border border-neutral-300;
+    @apply btn bg-neutral-50 text-neutral-900 border border-neutral-300;
     @apply hover:bg-primary-50 hover:border-primary;
   }
 
@@ -104,23 +140,23 @@ body {
   }
 
   .badge-primary {
-    @apply badge bg-primary-50 text-primary-600;
+    @apply badge bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400;
   }
 
   .badge-success {
-    @apply badge bg-success-50 text-success-700;
+    @apply badge bg-success-50 dark:bg-success-500/10 text-success-700 dark:text-success-500;
   }
 
   .badge-warning {
-    @apply badge bg-warning-50 text-warning-700;
+    @apply badge bg-warning-50 dark:bg-warning-500/10 text-warning-700 dark:text-warning-500;
   }
 
   .badge-error {
-    @apply badge bg-error-50 text-error-700;
+    @apply badge bg-error-50 dark:bg-error-500/10 text-error-700 dark:text-error-500;
   }
 
   .badge-neutral {
-    @apply badge bg-neutral-100 text-neutral-600;
+    @apply badge bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400;
   }
 
   /* Table component */
@@ -156,7 +192,8 @@ body {
 
   /* Navigation */
   .nav {
-    @apply bg-white/80 backdrop-blur-md border border-neutral-200 sticky top-3 z-50 rounded-2xl shadow-sm mx-4 sm:mx-6;
+    background-color: color-mix(in srgb, var(--neutral-50) 80%, transparent);
+    @apply backdrop-blur-md border border-neutral-200 sticky top-3 z-50 rounded-2xl shadow-sm mx-4 sm:mx-6;
   }
 
   .nav-link {
@@ -269,7 +306,7 @@ body {
 
   /* Dropdown */
   .dropdown {
-    @apply absolute top-full right-0 mt-2 bg-white rounded-xl border border-neutral-200 shadow-elevated;
+    @apply absolute top-full right-0 mt-2 bg-neutral-50 rounded-xl border border-neutral-200 shadow-elevated;
     @apply overflow-hidden z-50;
   }
 
@@ -317,19 +354,19 @@ body {
   }
 
   .alert-info {
-    @apply alert bg-primary-50 text-primary-700 border border-primary-200;
+    @apply alert bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 border border-primary-200 dark:border-primary-800;
   }
 
   .alert-success {
-    @apply alert bg-success-50 text-success-700 border border-success-100;
+    @apply alert bg-success-50 dark:bg-success-500/10 text-success-700 dark:text-success-500 border border-success-100 dark:border-success-500/20;
   }
 
   .alert-warning {
-    @apply alert bg-warning-50 text-warning-700 border border-warning-100;
+    @apply alert bg-warning-50 dark:bg-warning-500/10 text-warning-700 dark:text-warning-500 border border-warning-100 dark:border-warning-500/20;
   }
 
   .alert-error {
-    @apply alert bg-error-50 text-error-700 border border-error-100;
+    @apply alert bg-error-50 dark:bg-error-500/10 text-error-700 dark:text-error-500 border border-error-100 dark:border-error-500/20;
   }
 
   /* Price display */
@@ -367,9 +404,13 @@ body {
   scrollbar-color: #CBD5E1 transparent;
 }
 
+.dark * {
+  scrollbar-color: #353849 transparent;
+}
+
 /* Selection */
 ::selection {
-  background: rgba(137, 80, 250, 0.2);
+  background: rgba(var(--primary-rgb), 0.2);
   color: inherit;
 }
 
@@ -393,24 +434,24 @@ body {
   0% {
     opacity: 0;
     transform: translateY(-10px);
-    background-color: rgba(137, 80, 250, 0.2);
+    background-color: rgba(var(--primary-rgb), 0.2);
   }
   50% {
     opacity: 1;
     transform: translateY(0);
-    background-color: rgba(137, 80, 250, 0.15);
+    background-color: rgba(var(--primary-rgb), 0.15);
   }
   100% {
     opacity: 1;
     transform: translateY(0);
-    background-color: rgba(137, 80, 250, 0.05);
+    background-color: rgba(var(--primary-rgb), 0.05);
   }
 }
 
 /* Feed item animation for new blocks/transactions */
 .feed-item-new {
   animation: slide-in-highlight 1s ease-out;
-  background-color: rgba(137, 80, 250, 0.05);
+  background-color: rgba(var(--primary-rgb), 0.05);
 }
 
 .feed-container {

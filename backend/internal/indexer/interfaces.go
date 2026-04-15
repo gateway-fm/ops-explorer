@@ -3,6 +3,7 @@ package indexer
 import (
 	"context"
 	"math/big"
+	"time"
 
 	"explorer/internal/db"
 	"explorer/internal/rpc"
@@ -46,13 +47,19 @@ type Database interface {
 
 	GetAllTokenAddresses(ctx context.Context) ([]string, error)
 	InsertBalancesBatch(ctx context.Context, balances []*types.Balance) error
+
+	ComputeDailyStats(ctx context.Context, date time.Time) (*types.DailyStats, error)
+	UpsertDailyStats(ctx context.Context, stats *types.DailyStats) error
+	BackfillDailyStats(ctx context.Context) error
+
+	WipeAllData(ctx context.Context) error
 }
 
 type RPCClient interface {
 	BlockNumber(ctx context.Context) (uint64, error)
 	RawBlockByNumber(ctx context.Context, number uint64) (*rpc.RawBlock, error)
 	RawBlockHash(ctx context.Context, number uint64) (string, error)
-	FetchReceiptsBatch(ctx context.Context, txHashes []common.Hash, workers int, rateLimit int) (map[common.Hash]*rpclient.Receipt, error)
+	FetchReceiptsBatch(ctx context.Context, txHashes []common.Hash, workers int, rateLimit int, blockNumber ...uint64) (map[common.Hash]*rpclient.Receipt, error)
 	GetTotalDifficulty(ctx context.Context, blockNumber uint64) string
 	CheckTracingSupport(ctx context.Context) (bool, error)
 	SubscribeNewHead(ctx context.Context, ch chan<- *rpclient.Header) (rpclient.Subscription, error)

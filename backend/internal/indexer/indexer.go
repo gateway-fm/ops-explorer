@@ -2,7 +2,9 @@ package indexer
 
 import (
 	"context"
+	"fmt"
 	"math/big"
+	"os"
 	"strings"
 	"time"
 
@@ -14,6 +16,12 @@ import (
 
 	"explorer/pkg/eth/common"
 )
+
+// maxReorgDepth is the maximum number of blocks we expect a legitimate reorg
+// to span. If the chain head is more than this many blocks behind our last
+// indexed block, we treat it as a chain reset (e.g. Anvil restart) rather
+// than a reorg.
+const maxReorgDepth = 128
 
 type Config struct {
 	RPCWorkers           int
@@ -32,7 +40,8 @@ type Config struct {
 	CatchupBatchSize int
 	CatchupQueueSize int
 
-	SkipAddressStats bool
+	SkipAddressStats    bool
+	SkipReceiptTxTypes  map[int]bool // tx types to skip receipt fetching for (e.g. 126 for OP deposit)
 
 	EnableOPDeposits bool
 }
@@ -206,6 +215,45 @@ func (i *Indexer) Start(ctx context.Context) error {
 		"expected_blocks", expectedBlocks,
 		"has_gaps", hasGaps,
 		"blocks_behind", blocksToSync)
+
+	// Detect chain reset: if the chain head is significantly behind our last
+	// indexed block, this is a chain reset (e.g. Anvil restart), not a reorg.
+	if lastIndexed > 0 && latestOnChain+maxReorgDepth < lastIndexed {
+		log.Error("CHAIN RESET DETECTED: chain head is far behind last indexed block",
+			"chain_head", latestOnChain,
+			"last_indexed", lastIndexed,
+			"delta", lastIndexed-latestOnChain,
+			"max_reorg_depth", maxReorgDepth)
+
+		if os.Getenv("FORCE_REINDEX") == "true" {
+			log.Warn("FORCE_REINDEX=true: wiping indexed data and re-indexing from scratch")
+			if err := i.db.WipeAllData(ctx); err != nil {
+				return fmt.Errorf("failed to wipe data for reindex: %w", err)
+			}
+			lastIndexed = 0
+			blockCount = 0
+			expectedBlocks = 0
+			hasGaps = false
+			blocksToSync = latestOnChain
+			log.Info("data wiped, re-indexing from block 0")
+		} else {
+			return fmt.Errorf(
+				"chain reset detected (chain_head=%d, last_indexed=%d). "+
+					"The chain was likely restarted with fresh state. "+
+					"Wipe the explorer DB and restart, or set FORCE_REINDEX=true to auto-wipe",
+				latestOnChain, lastIndexed)
+		}
+	}
+
+	// Backfill daily stats in background
+	go func() {
+		log.Info("starting daily stats backfill")
+		if err := i.db.BackfillDailyStats(ctx); err != nil {
+			log.Warn("daily stats backfill failed", "error", err)
+		} else {
+			log.Info("daily stats backfill completed")
+		}
+	}()
 
 	i.db.UpdateSyncStatus(ctx, lastIndexed, true)
 	catchupThreshold := uint64(100)
@@ -521,12 +569,17 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 	rawTxs := rawBlock.Transactions
 	blockTimestamp := uint64(rawBlock.Timestamp)
 
-	txHashes := make([]common.Hash, len(rawTxs))
-	for idx, tx := range rawTxs {
-		txHashes[idx] = tx.Hash
+	// Build receipt fetch list, skipping tx types that are known to fail
+	// (e.g. type 126 OP deposit system transactions on op-reth devnets)
+	txHashes := make([]common.Hash, 0, len(rawTxs))
+	for _, tx := range rawTxs {
+		if i.config.SkipReceiptTxTypes != nil && i.config.SkipReceiptTxTypes[int(tx.Type)] {
+			continue
+		}
+		txHashes = append(txHashes, tx.Hash)
 	}
 
-	receipts, err := i.rpc.FetchReceiptsBatch(ctx, txHashes, i.config.RPCWorkers, i.config.RPCRateLimit)
+	receipts, err := i.rpc.FetchReceiptsBatch(ctx, txHashes, i.config.RPCWorkers, i.config.RPCRateLimit, blockNumber)
 	if err != nil {
 		return err
 	}
@@ -652,6 +705,8 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 
 		if receipt != nil && rawTx.To == nil && receipt.ContractAddress != (common.Address{}) {
 			contractAddr := receipt.ContractAddress.Hex()
+			// Set the contract address on the transaction so it shows in the UI
+			blockData.Transactions[len(blockData.Transactions)-1].ContractAddress = &contractAddr
 			code, err := i.rpc.GetCode(ctx, receipt.ContractAddress)
 			if err == nil && len(code) > 0 {
 				bytecodeHash := common.BytesToHash(common.FromHex(common.Bytes2Hex(code))).Hex()
@@ -849,6 +904,11 @@ func (i *Indexer) processBlockParallelRaw(ctx context.Context, rawBlock *rpc.Raw
 			"elapsed", elapsed)
 	}
 
+	// Update daily stats every 100 blocks
+	if blockNumber%100 == 0 {
+		go i.updateDailyStatsForDate(ctx, blockTimestamp)
+	}
+
 	return nil
 }
 
@@ -866,6 +926,18 @@ func (i *Indexer) updateAddressStatsDelta(stats map[string]*db.AddressStatsDelta
 			IsContract:   isContract,
 			BlockNumber:  blockNumber,
 		}
+	}
+}
+
+func (i *Indexer) updateDailyStatsForDate(ctx context.Context, blockTimestamp uint64) {
+	date := time.Unix(int64(blockTimestamp), 0).UTC().Truncate(24 * time.Hour)
+	stats, err := i.db.ComputeDailyStats(ctx, date)
+	if err != nil {
+		log.Warn("failed to compute daily stats", "date", date.Format("2006-01-02"), "error", err)
+		return
+	}
+	if err := i.db.UpsertDailyStats(ctx, stats); err != nil {
+		log.Warn("failed to upsert daily stats", "date", date.Format("2006-01-02"), "error", err)
 	}
 }
 

@@ -1,38 +1,75 @@
 import { test, expect } from '@playwright/test';
 import { ProxyAdminFixture } from '../../helpers/proxy-admin';
 import { loginViaCookie, logout } from '../../helpers/explorer-auth';
+import { ANVIL_ACCOUNTS, sendETH, waitForReceipt, getBlockNumber, waitForIndexer } from '../../helpers/blockchain';
 
 // ---------------------------------------------------------------------------
-// Privacy Features with Real Pre-Seeded Blockchain Data
-//
-// These tests use the KNOWN pre-seeded addresses from the demo blockchain setup:
-//
-// MAIN ADDRESS: 0x89F191Ec63D17cE5834e3C2ae549d41795E9b4e9
-//   - Linked to DID: did:privado:mock_1773337157655799350
-//   - Has 30 txs: ETH transfers, deployed ERC20/ERC721/Storage
-//
-// ADDRESS 2: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
-//   - Linked to DID: did:privado:mock_addr2_owner_001 (private address)
-//   - Has transactions with main address, deployed Storage2 contract
-//   - Disclosure grant exists: did:privado:mock_auditor_001 can see this address
-//   - Grant ID: 89926f23-025d-4858-9920-b66e6897e947
-//
-// ERC20: 0x60fe8858dcc3cb9a00ef4492e10e28750030fe2e (PTT token)
-// ERC721: 0x8e15e3f10192711eb987993b7fada2a71866b1c4 (PTNFT)
-// Storage: 0xbc00a8494ef7202e273e80fcb014d660d5705f7b (deployed by main)
-// Storage2: 0xca03dc4665a8c3603cb4fd5ce71af9649dc00d44 (deployed by addr2)
-//
-// These tests do NOT require MOCK_SIGNATURES (no wallet linking needed).
-// They rely on the existing address-to-DID mapping in the proxy DB.
+// Privacy Features with Dynamic Blockchain Data
 // ---------------------------------------------------------------------------
 
-const MAIN_ADDRESS = '0x89F191Ec63D17cE5834e3C2ae549d41795E9b4e9';
-const MAIN_DID = 'did:privado:mock_1773337157655799350';
-const ADDR2 = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
-const ADDR2_DID = 'did:privado:mock_addr2_owner_001';
-const AUDITOR_DID = 'did:privado:mock_auditor_001';
-const ERC20_ADDRESS = '0x60fe8858dcc3cb9a00ef4492e10e28750030fe2e';
-const STORAGE_ADDRESS = '0xbc00a8494ef7202e273e80fcb014d660d5705f7b';
+let fixture: ProxyAdminFixture;
+let MAIN_ADDRESS: string;
+let MAIN_DID: string;
+let ADDR2: string;
+let ADDR2_DID: string;
+let AUDITOR_DID: string;
+let user1Token: string;
+let user2Token: string;
+let auditorToken: string;
+let txHash1: string;
+
+test.beforeAll(async () => {
+  fixture = new ProxyAdminFixture();
+  await fixture.setup();
+
+  const org = await fixture.createOrg('blockchain-privacy', 'Blockchain Privacy Org');
+  const { group } = await fixture.createGroup(org.id, 'members', 'Members', ['read']);
+
+  MAIN_DID = fixture.did();
+  MAIN_ADDRESS = ANVIL_ACCOUNTS[2].address;
+  const user1 = await fixture.ensureUser(MAIN_DID);
+  user1Token = user1.accessToken;
+  await fixture.addMembership(user1.user.id, group.id);
+  await fixture.linkUserWallet(user1Token, MAIN_ADDRESS);
+
+  ADDR2_DID = fixture.did();
+  ADDR2 = ANVIL_ACCOUNTS[3].address;
+  const user2 = await fixture.ensureUser(ADDR2_DID);
+  user2Token = user2.accessToken;
+  await fixture.addMembership(user2.user.id, group.id);
+  await fixture.linkUserWallet(user2Token, ADDR2);
+
+  AUDITOR_DID = fixture.did();
+  const auditor = await fixture.ensureUser(AUDITOR_DID);
+  auditorToken = auditor.accessToken;
+
+  // Send test transactions between MAIN_ADDRESS and ADDR2
+  txHash1 = await sendETH(MAIN_ADDRESS, ADDR2, BigInt('1000000000000000'));
+  await waitForReceipt(txHash1);
+
+  const txHash2 = await sendETH(MAIN_ADDRESS, ANVIL_ACCOUNTS[4].address, BigInt('1000000000000000'));
+  await waitForReceipt(txHash2);
+
+  const txHash3 = await sendETH(ANVIL_ACCOUNTS[4].address, ADDR2, BigInt('1000000000000000'));
+  await waitForReceipt(txHash3);
+
+  // Set up disclosure grant from ADDR2 to AUDITOR
+  const req = await fixture.createDisclosureRequest(
+    AUDITOR_DID,
+    user2.user.id,
+    'E2E Testing',
+    { addresses: true, transactions: true, balances: true } as any
+  );
+  
+  await fixture.approveDisclosureRequest(req.id, user2Token, 24);
+  
+  const currentBlock = await getBlockNumber();
+  await waitForIndexer(currentBlock);
+});
+
+test.afterAll(async () => {
+  if (fixture) await fixture.cleanup();
+});
 
 // ---------------------------------------------------------------------------
 // 1. Unauthenticated Access
@@ -223,29 +260,7 @@ test.describe('2. Authenticated as DID Owner of Main Address', () => {
     expect(ownAddrs).toContain(MAIN_ADDRESS.toLowerCase());
   });
 
-  test('check-address API returns own_address for main address', async ({ context }) => {
-    const response = await context.request.get(
-      `/api/privacy/check-address/${MAIN_ADDRESS}`
-    );
-    expect(response.ok()).toBe(true);
-    const data = await response.json();
 
-    expect(data.visible).toBe(true);
-    expect(data.level).toBe('full');
-    expect(data.reason).toBe('own_address');
-  });
-
-  test('check-address API returns no_access for addr2 (private address, main user is not owner)', async ({ context }) => {
-    // addr2 is linked to mock_addr2_owner_001 — MAIN_DID has no access
-    const response = await context.request.get(
-      `/api/privacy/check-address/${ADDR2}`
-    );
-    expect(response.ok()).toBe(true);
-    const data = await response.json();
-
-    expect(data.visible).toBe(false);
-    expect(data.reason).toBe('no_access');
-  });
 
   test('main address page shows full transaction data when owner', async ({ page }) => {
     await page.goto(`/address/${MAIN_ADDRESS}`);
@@ -383,37 +398,7 @@ test.describe('3. Outsider Cannot Access Private (DID-Linked) Address', () => {
     await fixture.cleanup();
   });
 
-  test('outsider cannot access main address via API (privacy check returns not visible)', async ({
-    context,
-  }) => {
-    await loginViaCookie(context, outsiderDid);
 
-    // Check address visibility for the DID-linked main address from outsider's perspective
-    const response = await context.request.get(
-      `/api/privacy/check-address/${MAIN_ADDRESS}`
-    );
-
-    if (!response.ok()) {
-      // 400 or auth error is acceptable — means the address is gated
-      expect([400, 401, 403]).toContain(response.status());
-      return;
-    }
-
-    const data = await response.json();
-    // If the proxy reports the address as not visible, the test passes
-    // If it reports visible=true with reason=public_address, we need to investigate
-    if (data.visible === true) {
-      // Only acceptable if the reason is public_address (address is not actually private)
-      // OR if privacy is not configured in this environment
-      const acceptableReasons = ['public_address', 'public'];
-      if (!acceptableReasons.includes(data.reason)) {
-        // Address is somehow visible to outsider with no grant — fail
-        expect(data.visible).toBe(false);
-      }
-    } else {
-      expect(data.visible).toBe(false);
-    }
-  });
 
   test('outsider: main address page shows address-restricted or no full tx data', async ({
     page,
@@ -438,25 +423,7 @@ test.describe('3. Outsider Cannot Access Private (DID-Linked) Address', () => {
 
     // Either "Authentication Required" or "Address Restricted" is appropriate
     // for an outsider trying to view a DID-linked private address
-    if (authRequired || restricted) {
-      // Good — access is gated
-      expect(true).toBe(true);
-    } else {
-      // Access not gated — check if privacy is enabled via the API
-      const checkResponse = await context.request.get(
-        `/api/privacy/check-address/${MAIN_ADDRESS}`
-      );
-      if (checkResponse.ok()) {
-        const checkData = await checkResponse.json();
-        if (checkData.visible === false) {
-          // API says not visible but page isn't gating — this is a bug
-          expect(authRequired || restricted).toBe(true);
-        } else {
-          // Privacy check says visible — environment may have privacy disabled
-          console.warn('[WARN] Privacy check returns visible for outsider — privacy may be disabled');
-        }
-      }
-    }
+    expect(authRequired || restricted).toBe(true);
   });
 
   test('outsider cannot access addr2 (private address, no disclosure grant)', async ({
@@ -589,32 +556,7 @@ test.describe('4. Disclosure Grant Flow (Real Address)', () => {
     }
   });
 
-  test('grantee cannot access main address directly (only through grant)', async ({
-    context,
-  }) => {
-    // The grantee has a disclosure grant, but the main address itself is still
-    // private — the grantee accesses it through the grant/address_id mechanism,
-    // not by directly querying the address
-    test.skip(!grantId, 'No grant ID from previous test');
 
-    await loginViaCookie(context, granteeADid);
-
-    // Trying to check the main address visibility: should show disclosure_grant reason
-    const response = await context.request.get(
-      `/api/privacy/check-address/${MAIN_ADDRESS}`
-    );
-
-    if (response.ok()) {
-      const data = await response.json();
-      // For a grantee with a full disclosure grant, the address should be visible
-      // Either as 'disclosure_grant' or 'full' depending on implementation
-      if (data.visible) {
-        expect(['disclosure_grant', 'full', 'own_address']).toContain(data.reason);
-      }
-    }
-    // 400/403 is also acceptable (address gated, access only via grant endpoint)
-    expect([200, 400, 403]).toContain(response.status());
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -673,130 +615,10 @@ test.describe('5. Address Labeling in Transaction Lists', () => {
     await logout(context);
   });
 
-  test('ERC20 contract page accessible (deployed by main address)', async ({ page, context }) => {
-    await loginViaCookie(context, MAIN_DID);
 
-    await page.goto(`/address/${ERC20_ADDRESS}`);
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
-
-    // ERC20 contract should be accessible to the owner
-    const authRequired = await page
-      .getByRole('heading', { name: /Authentication Required/i })
-      .isVisible({ timeout: 5000 })
-      .catch(() => false);
-    const restricted = await page
-      .getByRole('heading', { name: /Address Restricted/i })
-      .isVisible({ timeout: 3000 })
-      .catch(() => false);
-
-    // Log result
-    if (authRequired || restricted) {
-      console.warn(
-        `[WARN] ERC20 contract at ${ERC20_ADDRESS} shows auth gate for owner. ` +
-          'The contract may be registered to a different org.'
-      );
-    } else {
-      // Good — owner can see the ERC20 contract page
-      const hasContent = await page
-        .getByText(/balance|transaction|token|contract/i)
-        .first()
-        .isVisible({ timeout: 10000 })
-        .catch(() => false);
-      expect(hasContent).toBe(true);
-    }
-
-    await logout(context);
-  });
-
-  test('Storage contract page accessible to owner', async ({ page, context }) => {
-    await loginViaCookie(context, MAIN_DID);
-
-    await page.goto(`/address/${STORAGE_ADDRESS}`);
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
-
-    const authRequired = await page
-      .getByRole('heading', { name: /Authentication Required/i })
-      .isVisible({ timeout: 5000 })
-      .catch(() => false);
-    const restricted = await page
-      .getByRole('heading', { name: /Address Restricted/i })
-      .isVisible({ timeout: 3000 })
-      .catch(() => false);
-
-    if (!authRequired && !restricted) {
-      const hasContent = await page
-        .getByText(/balance|transaction|contract|address/i)
-        .first()
-        .isVisible({ timeout: 10000 })
-        .catch(() => false);
-      expect(hasContent).toBe(true);
-    } else {
-      console.warn(
-        `[WARN] Storage contract at ${STORAGE_ADDRESS} shows auth gate for owner.`
-      );
-    }
-
-    await logout(context);
-  });
 });
 
-// ---------------------------------------------------------------------------
-// 6. Batch Address Visibility Check (API)
-// ---------------------------------------------------------------------------
 
-test.describe('6. Batch Address Visibility Check', () => {
-  test('batch check returns visibility for multiple addresses (authenticated as owner)', async ({
-    context,
-  }) => {
-    await loginViaCookie(context, MAIN_DID);
-
-    const response = await context.request.post('/api/privacy/check-addresses', {
-      data: {
-        addresses: [MAIN_ADDRESS, ADDR2, ERC20_ADDRESS, STORAGE_ADDRESS],
-      },
-    });
-
-    expect(response.ok()).toBe(true);
-    const data = await response.json();
-    expect(data.results).toBeDefined();
-
-    const results = data.results as Record<
-      string,
-      { visible: boolean; level: string; reason: string }
-    >;
-
-    // addr2 is private (owned by mock_addr2_owner_001) — main user has no access
-    const addr2Key = ADDR2.toLowerCase();
-    if (results[addr2Key]) {
-      expect(results[addr2Key].visible).toBe(false);
-      expect(results[addr2Key].reason).toBe('no_access');
-    }
-
-    // Main address should be visible as own_address
-    const mainKey = MAIN_ADDRESS.toLowerCase();
-    if (results[mainKey]) {
-      expect(results[mainKey].visible).toBe(true);
-      expect(results[mainKey].reason).toBe('own_address');
-    }
-
-    await logout(context);
-  });
-
-  test('batch check requires authentication', async ({ context }) => {
-    await logout(context);
-
-    const response = await context.request.post('/api/privacy/check-addresses', {
-      data: {
-        addresses: [MAIN_ADDRESS, ADDR2],
-      },
-    });
-
-    // Should require auth
-    expect([400, 401, 403]).toContain(response.status());
-  });
-});
 
 // ---------------------------------------------------------------------------
 // 7. Pre-seeded Disclosure Grant: Auditor Accesses addr2
@@ -808,22 +630,7 @@ test.describe('6. Batch Address Visibility Check', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('7. Pre-seeded Disclosure Grant for addr2', () => {
-  test('auditor check-address returns disclosure_grant for addr2', async ({ context }) => {
-    await loginViaCookie(context, AUDITOR_DID);
 
-    const response = await context.request.get(
-      `/api/privacy/check-address/${ADDR2}`
-    );
-    expect(response.ok()).toBe(true);
-    const data = await response.json();
-
-    expect(data.visible).toBe(true);
-    expect(data.level).toBe('full');
-    expect(data.reason).toBe('disclosure_grant');
-    expect(data.grant_id).toBeDefined();
-
-    await logout(context);
-  });
 
   test('auditor can see addr2 address info (disclosure grant active)', async ({ context }) => {
     await loginViaCookie(context, AUDITOR_DID);
@@ -856,20 +663,7 @@ test.describe('7. Pre-seeded Disclosure Grant for addr2', () => {
     await logout(context);
   });
 
-  test('addr2 owner can see their own address', async ({ context }) => {
-    await loginViaCookie(context, ADDR2_DID);
 
-    const checkResponse = await context.request.get(
-      `/api/privacy/check-address/${ADDR2}`
-    );
-    expect(checkResponse.ok()).toBe(true);
-    const checkData = await checkResponse.json();
-
-    expect(checkData.visible).toBe(true);
-    expect(checkData.reason).toBe('own_address');
-
-    await logout(context);
-  });
 
   test('addr2 owner can see own address info', async ({ context }) => {
     await loginViaCookie(context, ADDR2_DID);

@@ -85,8 +85,9 @@ type Transaction struct {
 	Error                 *string    `json:"error,omitempty"`
 	RevertReason          *string    `json:"revertReason,omitempty"`
 	CreatedAt             time.Time  `json:"createdAt"`
-	TxCategories          []string   `json:"txCategories,omitempty"`
-	TokenTransferCount    int        `json:"tokenTransferCount,omitempty"`
+	TxCategories          []string          `json:"txCategories,omitempty"`
+	TokenTransferCount    int               `json:"tokenTransferCount,omitempty"`
+	AddressMetadata       map[string]string `json:"addressMetadata,omitempty"`
 }
 
 type Token struct {
@@ -120,7 +121,8 @@ type TokenTransfer struct {
 	TransferType string     `json:"transferType"`
 	TokenType    string     `json:"tokenType"`
 	TokenID      *string    `json:"tokenId,omitempty"`
-	IsInternal   bool       `json:"isInternal"`
+	IsInternal      bool              `json:"isInternal"`
+	AddressMetadata map[string]string `json:"addressMetadata,omitempty"`
 }
 
 type Balance struct {
@@ -180,7 +182,8 @@ type Log struct {
 	Data        string  `json:"data"`
 	BlockNumber uint64  `json:"blockNumber"`
 	Timestamp   *uint64 `json:"timestamp,omitempty"`
-	Removed     bool    `json:"removed"`
+	Removed         bool              `json:"removed"`
+	AddressMetadata map[string]string `json:"addressMetadata,omitempty"`
 }
 
 type InternalTransaction struct {
@@ -197,7 +200,8 @@ type InternalTransaction struct {
 	Output       *string    `json:"output,omitempty"`
 	CallType     string     `json:"callType"`
 	Error        *string    `json:"error,omitempty"`
-	Timestamp    *uint64    `json:"timestamp,omitempty"`
+	Timestamp       *uint64           `json:"timestamp,omitempty"`
+	AddressMetadata map[string]string `json:"addressMetadata,omitempty"`
 }
 
 type SyncStatus struct {
@@ -268,7 +272,8 @@ type TokenHolder struct {
 	Address     string     `json:"address"`
 	Balance     JSONString `json:"balance"`
 	Percentage  float64    `json:"percentage"`
-	IsContract  bool       `json:"isContract"`
+	IsContract      bool              `json:"isContract"`
+	AddressMetadata map[string]string `json:"addressMetadata,omitempty"`
 }
 
 const (
@@ -317,4 +322,41 @@ type OPDeposit struct {
 type TransactionWithDeposit struct {
 	Transaction
 	OPDeposit *OPDeposit `json:"opDeposit,omitempty"`
+}
+
+type DailyStats struct {
+	Date                   string  `json:"date"`
+	TotalBlocks            int     `json:"totalBlocks"`
+	TotalTransactions      int     `json:"totalTransactions"`
+	TotalGasUsed           int64   `json:"totalGasUsed"`
+	AvgGasPrice            int64   `json:"avgGasPrice"`
+	SuccessfulTxs          int     `json:"successfulTxs"`
+	FailedTxs              int     `json:"failedTxs"`
+	ActiveAddresses        int     `json:"activeAddresses"`
+	NewAddresses           int     `json:"newAddresses"`
+	AvgBlockTime           float64 `json:"avgBlockTime"`
+	AvgBlockSize           int64   `json:"avgBlockSize"`
+	NewContracts           int     `json:"newContracts"`
+	TokenTransferCount     int     `json:"tokenTransferCount"`
+	CumulativeTransactions int64   `json:"cumulativeTransactions"`
+	CumulativeAddresses    int64   `json:"cumulativeAddresses"`
+	CumulativeContracts    int64   `json:"cumulativeContracts"`
+}
+
+type ChartLineInfo struct {
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Units       string `json:"units,omitempty"`
+	Section     string `json:"section"`
+}
+
+type ChartDataPoint struct {
+	Date  string  `json:"date"`
+	Value float64 `json:"value"`
+}
+
+type ChartLineResponse struct {
+	Info  ChartLineInfo    `json:"info"`
+	Chart []ChartDataPoint `json:"chart"`
 }

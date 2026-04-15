@@ -60,9 +60,34 @@ func main() {
 		log.Fatal("failed to run migrations", "error", err)
 	}
 
+	// Parse and apply hidden tx types to DB for query filtering
+	if cfg.HiddenTxTypes != "" {
+		var hidden []int
+		for _, s := range strings.Split(cfg.HiddenTxTypes, ",") {
+			s = strings.TrimSpace(s)
+			if n, err := strconv.Atoi(s); err == nil {
+				hidden = append(hidden, n)
+			}
+		}
+		if len(hidden) > 0 {
+			database.HiddenTxTypes = hidden
+		}
+	}
+
 	rpcClient, err := rpc.New(cfg.RPCURL)
 	if err != nil {
 		log.Fatal("failed to create rpc client", "error", err)
+	}
+
+	// Parse hidden tx types into a set for skipping receipt fetches
+	skipReceipts := make(map[int]bool)
+	if cfg.HiddenTxTypes != "" {
+		for _, s := range strings.Split(cfg.HiddenTxTypes, ",") {
+			s = strings.TrimSpace(s)
+			if n, err := strconv.Atoi(s); err == nil {
+				skipReceipts[n] = true
+			}
+		}
 	}
 
 	idxCfg := &indexer.Config{
@@ -79,6 +104,7 @@ func main() {
 		CatchupWorkers:       cfg.CatchupWorkers,
 		CatchupBatchSize:     cfg.CatchupBatchSize,
 		CatchupQueueSize:     cfg.CatchupQueueSize,
+		SkipReceiptTxTypes:   skipReceipts,
 	}
 	idx := indexer.NewWithConfig(database, rpcClient, cfg.PollInterval, cfg.StartBlock, idxCfg)
 

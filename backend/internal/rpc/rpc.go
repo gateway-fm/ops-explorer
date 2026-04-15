@@ -4,6 +4,7 @@ import (
 	"context"
 	"math/big"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -156,11 +157,51 @@ type ReceiptResult struct {
 	Err     error
 }
 
-func (c *Client) FetchReceiptsBatch(ctx context.Context, txHashes []common.Hash, workers int, rateLimit int) (map[common.Hash]*rpclient.Receipt, error) {
+// FetchBlockReceipts fetches all receipts for a block in a single RPC call
+// using eth_getBlockReceipts. Returns nil if the method is not supported.
+func (c *Client) FetchBlockReceipts(ctx context.Context, blockNumber uint64) ([]*rpclient.Receipt, error) {
+	var receipts []*rpclient.Receipt
+	err := c.raw.CallContext(ctx, &receipts, "eth_getBlockReceipts", toHex(blockNumber))
+	if err != nil {
+		return nil, err
+	}
+	return receipts, nil
+}
+
+func (c *Client) FetchReceiptsBatch(ctx context.Context, txHashes []common.Hash, workers int, rateLimit int, blockNumber ...uint64) (map[common.Hash]*rpclient.Receipt, error) {
 	if len(txHashes) == 0 {
 		return make(map[common.Hash]*rpclient.Receipt), nil
 	}
 
+	// Try eth_getBlockReceipts first (single RPC call for all receipts)
+	if len(blockNumber) > 0 {
+		receipts, err := c.FetchBlockReceipts(ctx, blockNumber[0])
+		if err == nil && receipts != nil {
+			results := make(map[common.Hash]*rpclient.Receipt, len(receipts))
+			for _, r := range receipts {
+				results[r.TxHash] = r
+			}
+			log.Info("fetched receipts via eth_getBlockReceipts",
+				"block", blockNumber[0], "count", len(results))
+			return results, nil
+		}
+		if err != nil {
+			// If the error indicates the method doesn't exist, fall through to per-TX.
+			// For any other error (data errors, node issues), return empty receipts
+			// rather than hammering the node with N individual calls that will also fail.
+			errMsg := err.Error()
+			if strings.Contains(errMsg, "method not found") || strings.Contains(errMsg, "not supported") || strings.Contains(errMsg, "does not exist") {
+				log.Warn("eth_getBlockReceipts not supported, falling back to per-TX fetch",
+					"block", blockNumber[0], "error", err)
+			} else {
+				log.Warn("eth_getBlockReceipts failed, skipping receipts for block",
+					"block", blockNumber[0], "error", err, "txs", len(txHashes))
+				return make(map[common.Hash]*rpclient.Receipt), nil
+			}
+		}
+	}
+
+	// Fallback: fetch receipts individually per transaction (only when eth_getBlockReceipts is not supported)
 	limiter := rate.NewLimiter(rate.Limit(rateLimit), rateLimit/10+1)
 
 	results := make(map[common.Hash]*rpclient.Receipt)

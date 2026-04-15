@@ -13,9 +13,10 @@ interface AddressLinkProps {
   label?: string; // Override label (won't fetch if provided)
   showLabel?: boolean; // Whether to auto-fetch and show contract name (default: true)
   visibility?: AddressVisibility; // Privacy visibility info
+  reason?: import('../lib/api').VisibilityReason;
 }
 
-export function AddressLink({ address, chars = 6, full = false, className = '', label, showLabel = true, visibility }: AddressLinkProps) {
+export function AddressLink({ address, chars = 6, full = false, className = '', label, showLabel = true, visibility, reason }: AddressLinkProps) {
   // Auto-fetch contract name if showLabel is true and no label is provided
   // Hook must be called unconditionally before any early returns
   const isPrivatePlaceholder = address === '[PRIVATE]' || address.startsWith('[PRIVATE');
@@ -29,6 +30,15 @@ export function AddressLink({ address, chars = 6, full = false, className = '', 
       <span className={`inline-flex items-center gap-1 text-neutral-400 italic ${className}`}>
         <Lock className="w-3 h-3" />
         <span>Private</span>
+      </span>
+    );
+  }
+
+  // Handle participant override from backend redactor (render 'Private Counterparty' with a disabled link instead of 'Public')
+  if (reason === 'participant_override') {
+    return (
+      <span className={`inline-flex items-center gap-1 text-neutral-500 font-mono ${className}`}>
+        {formatAddress(address, chars)}
       </span>
     );
   }
@@ -103,9 +113,10 @@ interface TokenAddressLinkProps {
   label?: string;
   showLabel?: boolean;
   visibility?: AddressVisibility; // Privacy visibility info
+  reason?: import('../lib/api').VisibilityReason;
 }
 
-export function TokenAddressLink({ address, chars = 4, className = '', label, showLabel = true, visibility }: TokenAddressLinkProps) {
+export function TokenAddressLink({ address, chars = 4, className = '', label, showLabel = true, visibility, reason }: TokenAddressLinkProps) {
   // Hook must be called unconditionally before any early returns
   const isPrivatePlaceholder = address === '[PRIVATE]' || address.startsWith('[PRIVATE');
   const shouldFetch = showLabel && !label && !isPrivatePlaceholder && !(visibility && !visibility.visible) && !(visibility?.level === 'pseudonymous' && visibility.pseudonym);
@@ -118,6 +129,15 @@ export function TokenAddressLink({ address, chars = 4, className = '', label, sh
       <span className={`inline-flex items-center gap-1 text-neutral-400 italic ${className}`}>
         <Lock className="w-3 h-3" />
         <span>Private</span>
+      </span>
+    );
+  }
+
+  // Handle participant override from backend redactor (render 'Private Counterparty' with a disabled link instead of 'Public')
+  if (reason === 'participant_override') {
+    return (
+      <span className={`inline-flex items-center gap-1 text-neutral-500 font-mono ${className}`}>
+        {formatAddress(address, chars)}
       </span>
     );
   }

@@ -30,7 +30,7 @@ func New(databaseURL string) (*DB, error) {
 	if err := pool.Ping(context.Background()); err != nil {
 		return nil, err
 	}
-	return &DB{pool: pool}, nil
+	return &DB{pool: pool, HiddenTxTypes: []int{}}, nil
 }
 
 func (d *DB) Close() {

@@ -2,6 +2,7 @@ package indexer
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -305,6 +306,15 @@ func (r *RealtimeIndexer) handleReorg(ctx context.Context, fromBlock uint64) err
 	lastIndexed, err := r.db.GetLatestBlockNumber(ctx)
 	if err != nil {
 		return err
+	}
+
+	// Detect chain reset: if we need to revert more than maxReorgDepth blocks,
+	// this is not a reorg, it is a chain reset.
+	if lastIndexed > fromBlock && lastIndexed-fromBlock > maxReorgDepth {
+		return fmt.Errorf(
+			"chain reset detected: need to revert %d blocks (max reorg depth: %d). "+
+				"Restart with FORCE_REINDEX=true to auto-wipe",
+			lastIndexed-fromBlock, maxReorgDepth)
 	}
 
 	for blockNum := lastIndexed; blockNum >= fromBlock; blockNum-- {

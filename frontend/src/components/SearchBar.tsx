@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { api } from '../lib/api';
 import type { SearchSuggestion } from '../lib/api';
+import { branding } from '../lib/branding';
 
 interface SearchBarProps {
   variant?: 'hero' | 'default';
@@ -166,10 +167,10 @@ export function SearchBar({ variant = 'default', autoFocus }: SearchBarProps) {
             onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
             onKeyDown={handleKeyDown}
             autoFocus={autoFocus}
-            placeholder="Search by address, tx hash, or block number..."
+            placeholder={`Search ${branding.name} by address, tx hash, or block number...`}
             className={
               isHero
-                ? 'w-full h-[50px] pl-12 pr-14 bg-white border border-neutral-200 rounded-xl text-base text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all duration-200 shadow-card'
+                ? 'w-full h-[50px] pl-12 pr-14 bg-neutral-50 border border-neutral-200 rounded-xl text-base text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all duration-200 shadow-card'
                 : 'input pl-11 pr-12'
             }
           />
@@ -181,7 +182,7 @@ export function SearchBar({ variant = 'default', autoFocus }: SearchBarProps) {
 
       {/* Suggestions dropdown */}
       {showSuggestions && suggestions.length > 0 && (
-        <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl border border-neutral-200 overflow-hidden z-50 shadow-elevated max-h-80 overflow-y-auto">
+        <div className="absolute top-full left-0 right-0 mt-2 bg-neutral-50 rounded-xl border border-neutral-200 overflow-hidden z-50 shadow-elevated max-h-80 overflow-y-auto">
           {suggestions.map((suggestion, index) => (
             <button
               key={`${suggestion.type}-${suggestion.value}`}
