@@ -230,7 +230,7 @@ func (m *MockRPCClient) RawBlockHash(ctx context.Context, number uint64) (string
 	return args.String(0), args.Error(1)
 }
 
-func (m *MockRPCClient) FetchReceiptsBatch(ctx context.Context, txHashes []common.Hash, workers int, rateLimit int) (map[common.Hash]*rpclient.Receipt, error) {
+func (m *MockRPCClient) FetchReceiptsBatch(ctx context.Context, txHashes []common.Hash, workers int, rateLimit int, blockNumber ...uint64) (map[common.Hash]*rpclient.Receipt, error) {
 	args := m.Called(ctx, txHashes, workers, rateLimit)
 	return args.Get(0).(map[common.Hash]*rpclient.Receipt), args.Error(1)
 }
