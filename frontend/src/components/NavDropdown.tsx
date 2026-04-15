@@ -205,7 +205,7 @@ function AuthButton() {
               className="flex items-center gap-3 px-4 py-3 hover:bg-primary-50 transition-colors"
             >
               <Shield className="w-4 h-4 text-neutral-500" />
-              <span className="text-sm text-neutral-700">Privacy</span>
+              <span className="text-sm text-neutral-700">Auditor</span>
             </Link>
             <button
               onClick={() => { logout(); setShowMenu(false); }}
