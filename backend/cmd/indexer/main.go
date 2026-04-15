@@ -37,6 +37,25 @@ func main() {
 	}
 	defer database.Close()
 
+	// Parse hidden transaction types from config
+	if cfg.HiddenTxTypes != "" {
+		for _, s := range strings.Split(cfg.HiddenTxTypes, ",") {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			n, err := strconv.Atoi(s)
+			if err != nil {
+				log.Warn("invalid hidden_tx_types value, skipping", "value", s, "error", err)
+				continue
+			}
+			database.HiddenTxTypes = append(database.HiddenTxTypes, n)
+		}
+		if len(database.HiddenTxTypes) > 0 {
+			log.Info("hiding transaction types from listings", "types", database.HiddenTxTypes)
+		}
+	}
+
 	if err := database.Migrate(); err != nil {
 		log.Fatal("failed to run migrations", "error", err)
 	}
