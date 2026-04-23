@@ -34,10 +34,8 @@ services:
       SSO_REDIRECT_URI: ${SSO_REDIRECT_URI:-}
     ports: !reset []   # Not exposed directly — sit behind a reverse proxy
 
-  indexer:
-    environment:
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      RPC_URL: ${RPC_URL:?RPC_URL is required}
+  # indexer service removed — chain data comes from gateway-fm/chain-indexer
+  # (RD-855 Phase 6). Set INDEXER_URL on the api service to point at it.
 
   # Replace dev server with compiled nginx image
   frontend:

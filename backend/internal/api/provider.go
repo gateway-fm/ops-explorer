@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"explorer/internal/db"
-	"explorer/internal/indexer"
 	"explorer/internal/rpc"
 	"explorer/internal/types"
 
@@ -76,16 +75,21 @@ type DataProvider interface {
 }
 
 type DirectDBProvider struct {
-	db      APIDatabase
-	rpc     *rpc.Client
-	indexer *indexer.Indexer
+	db  APIDatabase
+	rpc *rpc.Client
 }
 
-func NewDirectDBProvider(db APIDatabase, rpc *rpc.Client, idx *indexer.Indexer) *DirectDBProvider {
+// NewDirectDBProvider constructs the SQL-backed DataProvider. The idx
+// parameter is retained for backwards compatibility with existing callers
+// but is ignored — block-explorer no longer runs its own indexer
+// (RD-855 Phase 6). Chain data comes from chain-indexer via
+// indexerclient.Provider; this direct-DB path now serves only the
+// block-explorer-specific state (ABI/verification) via fall-through.
+func NewDirectDBProvider(db APIDatabase, rpc *rpc.Client, idx any) *DirectDBProvider {
+	_ = idx
 	return &DirectDBProvider{
-		db:      db,
-		rpc:     rpc,
-		indexer: idx,
+		db:  db,
+		rpc: rpc,
 	}
 }
 
@@ -117,11 +121,11 @@ func (p *DirectDBProvider) GetIndexerProgress(ctx context.Context) (*db.IndexerP
 }
 
 func (p *DirectDBProvider) GetCatchupProgress(ctx context.Context) (processed int64, total uint64, percentComplete float64, isRunning bool, err error) {
-	if p.indexer == nil {
-		return 0, 0, 0, false, nil
-	}
-	processed, total, percentComplete, isRunning = p.indexer.GetCatchupProgress()
-	return
+	// Block-explorer no longer runs its own indexer; catchup progress is
+	// served by chain-indexer's GetSyncStatus. Callers that need it should
+	// read from GetSyncStatus directly; this method exists to satisfy
+	// DataProvider and returns "not running".
+	return 0, 0, 0, false, nil
 }
 
 func (p *DirectDBProvider) GetBlocks(ctx context.Context, limit int, beforeBlock *uint64) ([]types.Block, error) {
@@ -276,10 +280,10 @@ func (p *DirectDBProvider) SearchSuggestions(ctx context.Context, query string, 
 }
 
 func (p *DirectDBProvider) IndexBlock(ctx context.Context, number uint64) error {
-	if p.indexer == nil {
-		return fmt.Errorf("indexer not available")
-	}
-	return p.indexer.IndexBlock(ctx, number)
+	// Admin re-index trigger. Block-explorer doesn't own the indexer
+	// anymore; to force a re-index, hit chain-indexer directly (or wait
+	// for its regular poll). Kept here to satisfy DataProvider.
+	return fmt.Errorf("block-explorer does not own the indexer; re-index via chain-indexer")
 }
 
 func (p *DirectDBProvider) VerifyContract(ctx context.Context, address string, name string, compilerVersion string, optimizationUsed bool, sourceCode string, abi json.RawMessage, evmVersion string, licenseType string, constructorArgs string, optimizationRuns int) error {

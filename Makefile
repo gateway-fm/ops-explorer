@@ -9,7 +9,7 @@ IMAGE_PREFIX ?= block-explorer
 
 .PHONY: dev dev-stop dev-destroy dev-logs dev-rebuild-backend
 .PHONY: run run-privacy stop destroy logs rebuild-backend dev-stack
-.PHONY: version docker-build docker-build-api docker-build-indexer docker-build-public-api docker-build-frontend docker-build-dry-run
+.PHONY: version docker-build docker-build-api docker-build-public-api docker-build-frontend docker-build-dry-run
 .PHONY: lint test build clean clean-build
 
 # Default RPC URL (use host.docker.internal to reach host from Docker)
@@ -75,7 +75,7 @@ dev-logs:
 	docker compose -f docker-compose.dev.yml logs -f
 
 dev-rebuild-backend:
-	docker compose -f docker-compose.dev.yml build --no-cache api indexer && docker compose -f docker-compose.dev.yml up -d api indexer
+	docker compose -f docker-compose.dev.yml build --no-cache api && docker compose -f docker-compose.dev.yml up -d api
 
 # =============================================================================
 # Parallel Dev Stacks (worktrees)
@@ -162,7 +162,7 @@ logs:
 	docker compose -f docker-compose.yml logs -f
 
 rebuild-backend:
-	docker compose -f docker-compose.yml build --no-cache api indexer && docker compose -f docker-compose.yml up -d api indexer
+	docker compose -f docker-compose.yml build --no-cache api && docker compose -f docker-compose.yml up -d api
 
 # Clean Docker environment (stop services, remove volumes)
 clean:
@@ -203,7 +203,6 @@ test:
 build:
 	@echo "--- Backend ---"
 	cd backend && CGO_ENABLED=0 go build -o /dev/null ./cmd/api
-	cd backend && CGO_ENABLED=0 go build -o /dev/null ./cmd/indexer
 	@echo "--- Frontend ---"
 	cd frontend && npm run build
 
@@ -211,15 +210,11 @@ build:
 # Docker Builds
 # =============================================================================
 
-docker-build: docker-build-api docker-build-indexer docker-build-public-api docker-build-frontend
+docker-build: docker-build-api docker-build-public-api docker-build-frontend
 
 docker-build-api:
 	@echo "Building $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-api:$(VERSION)"
 	docker build -f backend/Dockerfile.api -t $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-api:$(VERSION) backend/
-
-docker-build-indexer:
-	@echo "Building $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-indexer:$(VERSION)"
-	docker build -f backend/Dockerfile.indexer -t $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-indexer:$(VERSION) backend/
 
 docker-build-public-api:
 	@echo "Building $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-public-api:$(VERSION)"
@@ -234,26 +229,10 @@ docker-build-dry-run:
 	@echo ""
 	@$(MAKE) docker-build-api
 	@echo ""
-	@$(MAKE) docker-build-indexer
+	@$(MAKE)
 	@echo ""
 	@$(MAKE) docker-build-public-api
 	@echo ""
 	@$(MAKE) docker-build-frontend
 	@echo ""
 	@echo "All images built successfully."
-
-## proto-gen: Regenerate Go stubs from vendored chain-indexer .proto files.
-##            We do NOT depend on chain-indexer's Go module — we carry our
-##            own copy of the .proto contract and build stubs here. When
-##            chain-indexer's proto surface changes, copy updated files
-##            from chain-indexer/proto/chain_indexer/v1/*.proto and re-run.
-.PHONY: proto-gen
-proto-gen:
-	@which buf > /dev/null || (echo "buf not installed: https://buf.build/docs/installation"; exit 1)
-	cd backend && buf generate
-
-## proto-lint: Lint vendored .proto files.
-.PHONY: proto-lint
-proto-lint:
-	@which buf > /dev/null || (echo "buf not installed"; exit 1)
-	cd backend && buf lint

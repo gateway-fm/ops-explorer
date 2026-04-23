@@ -11,7 +11,6 @@ import (
 	"explorer/internal/chaininfo"
 	"explorer/internal/events"
 	"explorer/internal/gas"
-	"explorer/internal/indexer"
 	"explorer/internal/price"
 	"explorer/internal/privacy"
 	"explorer/internal/rpc"
@@ -26,7 +25,6 @@ import (
 type Server struct {
 	db            APIDatabase
 	rpc           *rpc.Client
-	indexer       *indexer.Indexer
 	provider      DataProvider
 	price         *price.Service
 	eventBus      *events.Bus
@@ -49,11 +47,15 @@ type ServerConfig struct {
 	MetricsEnabled      bool
 }
 
-func New(database APIDatabase, rpcClient *rpc.Client, idx *indexer.Indexer, priceService *price.Service, eventBus *events.Bus, port int, cfg *ServerConfig, privacyClient *privacy.Client, ssoClient *auth.SSOClient, provider DataProvider) *Server {
+// New constructs the api Server. The idx parameter is retained for
+// backwards compatibility with existing callers but is ignored —
+// block-explorer no longer runs its own indexer (RD-855 Phase 6).
+// Chain data comes from chain-indexer via the DataProvider.
+func New(database APIDatabase, rpcClient *rpc.Client, idx any, priceService *price.Service, eventBus *events.Bus, port int, cfg *ServerConfig, privacyClient *privacy.Client, ssoClient *auth.SSOClient, provider DataProvider) *Server {
+	_ = idx
 	s := &Server{
 		db:            database,
 		rpc:           rpcClient,
-		indexer:       idx,
 		provider:      provider,
 		price:         priceService,
 		eventBus:      eventBus,

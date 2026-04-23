@@ -83,17 +83,24 @@ func main() {
 	var privacyClient *privacy.Client
 	var ssoClient *auth.SSOClient
 	var dataProvider api.DataProvider
-	if cfg.PrivacyProxyURL != "" && cfg.IndexerURL == "" {
+
+	// Block-explorer no longer runs its own indexer (RD-855 Phase 6).
+	// A chain-data source — either chain-indexer over gRPC (INDEXER_URL)
+	// or privacy-proxy's explorer REST surface (PRIVACY_PROXY_URL) — is
+	// required. Fail fast with a clear message if neither is set.
+	switch {
+	case cfg.PrivacyProxyURL != "" && cfg.IndexerURL == "":
 		// Classic proxy mode: block-explorer gets chain data by calling
 		// privacy-proxy's REST API (privacy-proxy applies redaction).
 		privacyClient = privacy.NewClient(cfg.PrivacyProxyURL)
 		ssoClient = auth.NewSSOClient(cfg.PrivacyProxyURL, cfg.PrivacyProxyPublicURL, cfg.SSOClientID, cfg.SSORedirectURI)
 		dataProvider = api.NewProxyDataProvider(cfg.PrivacyProxyURL)
 		log.Info("proxy mode enabled", "proxy_url", cfg.PrivacyProxyURL)
-	} else if cfg.IndexerURL != "" {
-		// Standalone + chain-indexer: reads go to the indexer over gRPC;
-		// writes and unported methods keep hitting the local postgres via
-		// the embedded DirectDBProvider. See internal/api/indexerclient.
+
+	case cfg.IndexerURL != "":
+		// Standalone + chain-indexer: reads go to the indexer over gRPC.
+		// The embedded DirectDBProvider now serves only block-explorer's
+		// own state (ABI/verification), no chain data.
 		if cfg.PrivacyProxyURL != "" {
 			privacyClient = privacy.NewClient(cfg.PrivacyProxyURL)
 			ssoClient = auth.NewSSOClient(cfg.PrivacyProxyURL, cfg.PrivacyProxyPublicURL, cfg.SSOClientID, cfg.SSORedirectURI)
@@ -105,9 +112,9 @@ func main() {
 		}
 		dataProvider = ip
 		log.Info("indexer-backed standalone mode", "indexer_url", cfg.IndexerURL)
-	} else {
-		dataProvider = api.NewDirectDBProvider(database, rpcClient, nil)
-		log.Info("standalone mode")
+
+	default:
+		log.Fatal("neither INDEXER_URL nor PRIVACY_PROXY_URL is set — block-explorer needs a chain-data source. Point INDEXER_URL at a chain-indexer gRPC endpoint (standalone mode) or PRIVACY_PROXY_URL at a privacy-proxy instance (privacy mode).")
 	}
 
 	server := api.New(database, rpcClient, nil, priceService, eventBus, cfg.APIPort, serverCfg, privacyClient, ssoClient, dataProvider)
