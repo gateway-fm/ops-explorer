@@ -1,17 +1,12 @@
 FROM golang:1.25-alpine AS builder
 
-RUN apk update --no-cache && apk upgrade --no-cache && apk add --no-cache git
+# Upgrade system packages
+RUN apk update --no-cache && apk upgrade --no-cache
 
 WORKDIR /app
 
-ENV GOPRIVATE=github.com/gateway-fm/*
-
 COPY go.mod go.sum ./
-RUN --mount=type=secret,id=gh_token,required=false \
-    if [ -f /run/secrets/gh_token ]; then \
-      git config --global url."https://x-access-token:$(cat /run/secrets/gh_token)@github.com/".insteadOf "https://github.com/"; \
-    fi && \
-    go mod download
+RUN go mod download
 
 COPY . .
 

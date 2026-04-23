@@ -3,7 +3,7 @@ package indexerclient
 import (
 	"strconv"
 
-	indexerv1 "github.com/gateway-fm/chain-indexer/gen/go/chain_indexer/v1"
+	indexerv1 "explorer/gen/go/chain_indexer/v1"
 	"explorer/internal/types"
 )
 
