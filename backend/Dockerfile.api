@@ -1,12 +1,22 @@
 FROM golang:1.25-alpine AS builder
 
-# Upgrade system packages
-RUN apk update --no-cache && apk upgrade --no-cache
+# Upgrade system packages and install git for Go private-module fetches.
+RUN apk update --no-cache && apk upgrade --no-cache && apk add --no-cache git
 
 WORKDIR /app
 
+# Private Go modules (e.g. github.com/gateway-fm/chain-indexer) require a
+# token. It is passed in from CI via `docker buildx --secret id=gh_token`
+# and mounted here as a file. The file is only present during this RUN
+# step; it does not end up in the final image.
+ENV GOPRIVATE=github.com/gateway-fm/*
+
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=secret,id=gh_token,required=false \
+    if [ -f /run/secrets/gh_token ]; then \
+      git config --global url."https://x-access-token:$(cat /run/secrets/gh_token)@github.com/".insteadOf "https://github.com/"; \
+    fi && \
+    go mod download
 
 COPY . .
 

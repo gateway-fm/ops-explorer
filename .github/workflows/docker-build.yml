@@ -13,8 +13,20 @@ jobs:
   build-api:
     name: Build API Image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Token for private Go modules (gateway-fm/chain-indexer etc.). Same
+      # GitHub App as ci.yml — see README § CI setup.
+      - name: Generate token for private Go modules
+        id: app-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
+        with:
+          app-id: ${{ vars.GOMOD_BOT_APP_ID }}
+          private-key: ${{ secrets.GOMOD_BOT_PRIVATE_KEY }}
+          owner: gateway-fm
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
@@ -28,12 +40,27 @@ jobs:
           tags: gatewayfm/block-explorer-api:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # Forward the token as a build-time secret. The Dockerfile mounts
+          # it via RUN --mount=type=secret,id=gh_token for the go mod
+          # download step. The token never lands in the final image.
+          secrets: |
+            gh_token=${{ steps.app-token.outputs.token }}
 
   build-indexer:
     name: Build Indexer Image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Generate token for private Go modules
+        id: app-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
+        with:
+          app-id: ${{ vars.GOMOD_BOT_APP_ID }}
+          private-key: ${{ secrets.GOMOD_BOT_PRIVATE_KEY }}
+          owner: gateway-fm
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
@@ -47,12 +74,24 @@ jobs:
           tags: gatewayfm/block-explorer-indexer:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          secrets: |
+            gh_token=${{ steps.app-token.outputs.token }}
 
   build-public-api:
     name: Build Public API Image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Generate token for private Go modules
+        id: app-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
+        with:
+          app-id: ${{ vars.GOMOD_BOT_APP_ID }}
+          private-key: ${{ secrets.GOMOD_BOT_PRIVATE_KEY }}
+          owner: gateway-fm
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
@@ -66,6 +105,8 @@ jobs:
           tags: gatewayfm/block-explorer-public-api:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          secrets: |
+            gh_token=${{ steps.app-token.outputs.token }}
 
   build-frontend:
     name: Build Frontend Image

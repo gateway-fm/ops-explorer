@@ -17,8 +17,26 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Mint a token that can clone other private gateway-fm repos (e.g.
+      # github.com/gateway-fm/chain-indexer). Requires a GitHub App
+      # installed on the target repo; see README § CI setup.
+      - name: Generate token for private Go modules
+        id: app-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
+        with:
+          app-id: ${{ vars.GOMOD_BOT_APP_ID }}
+          private-key: ${{ secrets.GOMOD_BOT_PRIVATE_KEY }}
+          owner: gateway-fm
+
+      - name: Configure git for private Go modules
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
+          echo "GOPRIVATE=github.com/gateway-fm/*" >> "$GITHUB_ENV"
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
@@ -42,8 +60,23 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Generate token for private Go modules
+        id: app-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
+        with:
+          app-id: ${{ vars.GOMOD_BOT_APP_ID }}
+          private-key: ${{ secrets.GOMOD_BOT_PRIVATE_KEY }}
+          owner: gateway-fm
+
+      - name: Configure git for private Go modules
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
+          echo "GOPRIVATE=github.com/gateway-fm/*" >> "$GITHUB_ENV"
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
