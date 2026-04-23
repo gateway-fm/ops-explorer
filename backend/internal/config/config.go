@@ -42,6 +42,12 @@ type Config struct {
 	// Set PRIVACY_PROXY_URL to enable proxy mode (auth + privacy enforcement).
 	// Leave empty for standalone mode (direct DB/RPC access).
 	PrivacyProxyURL       string `mapstructure:"privacy_proxy_url"`
+	// IndexerURL, when non-empty, wires the block-explorer api to read
+	// chain data from a chain-indexer gRPC service instead of hitting the
+	// local postgres directly. Methods not yet ported fall back to the
+	// embedded DirectDBProvider. Standalone-mode deployments can share
+	// the chain-indexer with privacy-proxy over this setting.
+	IndexerURL            string `mapstructure:"indexer_url"`
 	// PrivacyProxyPublicURL is the browser-facing URL for OAuth redirects.
 	// Defaults to PrivacyProxyURL if not set. Set this when the proxy is on a
 	// Docker-internal hostname (e.g. privacy-proxy-proxy-backend-1) but the
@@ -158,6 +164,7 @@ func Load() (*Config, error) {
 	cfg.CatchupQueueSize = v.GetInt("catchup_queue_size")
 
 	cfg.PrivacyProxyURL = v.GetString("privacy_proxy_url")
+	cfg.IndexerURL = v.GetString("indexer_url")
 	cfg.PrivacyProxyPublicURL = v.GetString("privacy_proxy_public_url")
 	if cfg.PrivacyProxyPublicURL == "" {
 		cfg.PrivacyProxyPublicURL = cfg.PrivacyProxyURL

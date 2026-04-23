@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"explorer/internal/api"
+	"explorer/internal/api/indexerclient"
 	"explorer/internal/auth"
 	"explorer/internal/config"
 	"explorer/internal/db"
@@ -82,11 +83,28 @@ func main() {
 	var privacyClient *privacy.Client
 	var ssoClient *auth.SSOClient
 	var dataProvider api.DataProvider
-	if cfg.PrivacyProxyURL != "" {
+	if cfg.PrivacyProxyURL != "" && cfg.IndexerURL == "" {
+		// Classic proxy mode: block-explorer gets chain data by calling
+		// privacy-proxy's REST API (privacy-proxy applies redaction).
 		privacyClient = privacy.NewClient(cfg.PrivacyProxyURL)
 		ssoClient = auth.NewSSOClient(cfg.PrivacyProxyURL, cfg.PrivacyProxyPublicURL, cfg.SSOClientID, cfg.SSORedirectURI)
 		dataProvider = api.NewProxyDataProvider(cfg.PrivacyProxyURL)
 		log.Info("proxy mode enabled", "proxy_url", cfg.PrivacyProxyURL)
+	} else if cfg.IndexerURL != "" {
+		// Standalone + chain-indexer: reads go to the indexer over gRPC;
+		// writes and unported methods keep hitting the local postgres via
+		// the embedded DirectDBProvider. See internal/api/indexerclient.
+		if cfg.PrivacyProxyURL != "" {
+			privacyClient = privacy.NewClient(cfg.PrivacyProxyURL)
+			ssoClient = auth.NewSSOClient(cfg.PrivacyProxyURL, cfg.PrivacyProxyPublicURL, cfg.SSOClientID, cfg.SSORedirectURI)
+		}
+		fallback := api.NewDirectDBProvider(database, rpcClient, nil)
+		ip, err := indexerclient.New(indexerclient.Config{IndexerURL: cfg.IndexerURL}, fallback)
+		if err != nil {
+			log.Fatal("failed to construct indexerclient provider", "error", err)
+		}
+		dataProvider = ip
+		log.Info("indexer-backed standalone mode", "indexer_url", cfg.IndexerURL)
 	} else {
 		dataProvider = api.NewDirectDBProvider(database, rpcClient, nil)
 		log.Info("standalone mode")
