@@ -49,18 +49,25 @@ func (s *Server) handleGetPrice(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetGasPrices(w http.ResponseWriter, r *http.Request) {
-	if s.gasTracker == nil {
-		http.Error(w, "gas tracker not available", http.StatusServiceUnavailable)
-		return
-	}
-
-	prices, err := s.gasTracker.GetGasPrices(r.Context())
+	// Sample size mirrors the legacy gas.Tracker default (20 blocks).
+	slow, normal, fast, baseFee, err := s.provider.GetGasPrices(r.Context(), 20)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	writeJSON(w, map[string]any{
+		"slow":    derefUint64(slow),
+		"normal":  derefUint64(normal),
+		"fast":    derefUint64(fast),
+		"baseFee": derefUint64(baseFee),
+	})
+}
 
-	writeJSON(w, prices)
+func derefUint64(p *uint64) uint64 {
+	if p == nil {
+		return 0
+	}
+	return *p
 }
 
 func (s *Server) handleGetBlocks(w http.ResponseWriter, r *http.Request) {
@@ -1618,7 +1625,7 @@ func (s *Server) handleGetChartLine(w http.ResponseWriter, r *http.Request) {
 
 	from, to := parseChartDateRange(r)
 
-	stats, err := s.db.GetDailyStats(r.Context(), from, to)
+	stats, err := s.provider.GetDailyStats(r.Context(), from, to)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1637,7 +1644,7 @@ func (s *Server) handleGetChartCounters(w http.ResponseWriter, r *http.Request) 
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	yesterday := today.AddDate(0, 0, -1)
 
-	stats, err := s.db.GetDailyStats(r.Context(), yesterday, today)
+	stats, err := s.provider.GetDailyStats(r.Context(), yesterday, today)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

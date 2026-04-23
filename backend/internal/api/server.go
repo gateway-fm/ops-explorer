@@ -10,7 +10,6 @@ import (
 	"explorer/internal/auth"
 	"explorer/internal/chaininfo"
 	"explorer/internal/events"
-	"explorer/internal/gas"
 	"explorer/internal/price"
 	"explorer/internal/privacy"
 	"explorer/internal/rpc"
@@ -29,7 +28,6 @@ type Server struct {
 	price         *price.Service
 	eventBus      *events.Bus
 	verifier      *verifier.Verifier
-	gasTracker    *gas.Tracker
 	chainInfo     *chaininfo.Service
 	metrics       *Metrics
 	wsHub         *ws.Hub
@@ -81,7 +79,7 @@ func New(database APIDatabase, rpcClient *rpc.Client, idx any, priceService *pri
 		})
 	}
 
-	s.gasTracker = gas.NewTracker(database, nil)
+	// gas prices are served via provider.GetGasPrices; no in-process tracker.
 	s.chainInfo = chaininfo.NewService(rpcClient, 10*time.Minute)
 
 	s.setupRoutes()

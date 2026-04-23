@@ -1,3 +1,12 @@
+// Package db is block-explorer's own postgres access layer. It is now
+// radically smaller than it used to be: chain data (blocks, transactions,
+// logs, transfers, balances, etc.) lives in chain-indexer's postgres and
+// is read over gRPC. Block-explorer's DB stores only what is genuinely
+// block-explorer-specific — contract verification metadata.
+//
+// RD-855 Phase 6 deleted all chain-data tables and queries. Any remaining
+// methods here are verification-related, or low-level helpers the api
+// package keeps using.
 package db
 
 import (
@@ -15,10 +24,11 @@ import (
 //go:embed migrations/*.sql
 var migrations embed.FS
 
+// DB holds the pool handle. The HiddenTxTypes field was preserved so the
+// api package's existing code compiles; it no longer affects any query
+// since this DB doesn't serve chain data anymore.
 type DB struct {
 	pool          *pgxpool.Pool
-	// HiddenTxTypes are transaction type numbers excluded from default listings
-	// (e.g. 126 for OP deposit system transactions). Set via HIDDEN_TX_TYPES env var.
 	HiddenTxTypes []int
 }
 
@@ -56,8 +66,7 @@ func (d *DB) Migrate() error {
 		return fmt.Errorf("failed to get migrations sub-fs: %w", err)
 	}
 
-	err = migrator.LoadMigrations(migrationsFS)
-	if err != nil {
+	if err := migrator.LoadMigrations(migrationsFS); err != nil {
 		return fmt.Errorf("failed to load migrations: %w", err)
 	}
 
@@ -65,12 +74,10 @@ func (d *DB) Migrate() error {
 		log.Info(fmt.Sprintf("running migration %d: %s %s", seq, name, direction))
 	}
 
-	count := len(migrator.Migrations)
-	log.Info("migrations loaded", "count", count)
+	log.Info("migrations loaded", "count", len(migrator.Migrations))
 
-	if err = migrator.Migrate(ctx); err != nil {
+	if err := migrator.Migrate(ctx); err != nil {
 		return fmt.Errorf("failed to run migrations: %w", err)
 	}
-
 	return nil
 }
