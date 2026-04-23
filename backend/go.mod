@@ -3,7 +3,7 @@ module explorer
 go 1.25.0
 
 require (
-	github.com/gateway-fm/chain-indexer v0.1.0
+	github.com/gateway-fm/chain-indexer v0.1.1
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.9.2
