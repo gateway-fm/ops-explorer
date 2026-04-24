@@ -324,14 +324,14 @@ func (p *DirectDBProvider) GetTransactionByHashRPC(ctx context.Context, hash str
 // (block-explorer in privacy mode). Chain data, addresses, contracts —
 // all come from the upstream proxy REST API.
 type ProxyDataProvider struct {
-	baseURL    string
-	httpClient *http.Client
+	baseURL string
+	client  *http.Client
 }
 
 func NewProxyDataProvider(baseURL string) *ProxyDataProvider {
 	return &ProxyDataProvider{
-		baseURL:    strings.TrimRight(baseURL, "/"),
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		baseURL: strings.TrimSuffix(baseURL, "/"),
+		client:  &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -339,185 +339,391 @@ func (p *ProxyDataProvider) doRequest(ctx context.Context, method, path string, 
 	url := p.baseURL + path
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
-		return fmt.Errorf("create request: %w", err)
+		return err
 	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	if token, ok := ctx.Value(rpc.ContextKeyAuthToken).(string); ok && token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := p.httpClient.Do(req)
+	resp, err := p.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("request: %w", err)
+		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("upstream %d: %s", resp.StatusCode, string(b))
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("resource not found")
 	}
-	if result != nil {
-		if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
-			return fmt.Errorf("decode: %w", err)
-		}
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("proxy request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
-	return nil
+	if result == nil {
+		return nil
+	}
+	return json.NewDecoder(resp.Body).Decode(result)
 }
 
-// Most methods on ProxyDataProvider return ErrChainDataNotAvailable too,
-// because routing each one through the proxy REST API is out of scope for
-// RD-855 Phase 6 — the privacy-proxy integration path used ProxyDataProvider
-// only for a handful of endpoints prior. When running in privacy mode
-// today, block-explorer's api is not deployed at all (see
-// privacy-proxy/deployments/privacy/).
 func (p *ProxyDataProvider) GetChainStats(ctx context.Context) (*types.ChainStats, error) {
-	var s types.ChainStats
-	if err := p.doRequest(ctx, "GET", "/api/stats", nil, &s); err != nil {
-		return nil, err
-	}
-	return &s, nil
+	var stats types.ChainStats
+	err := p.doRequest(ctx, "GET", "/api/v1/explorer/stats", nil, &stats)
+	return &stats, err
 }
-
-// Remaining ProxyDataProvider methods: return ErrChainDataNotAvailable.
-// Block-explorer in privacy mode is frontend-only; the api doesn't run.
-// Kept as stubs only to satisfy DataProvider.
 
 func (p *ProxyDataProvider) GetChainID(ctx context.Context) (uint64, error) {
-	return 0, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetSyncStatus(ctx context.Context) (*types.SyncStatus, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetTransactionHistory(ctx context.Context, intervalSeconds int, limit int) ([]types.TxHistoryPoint, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetCatchupProgress(ctx context.Context) (int64, uint64, float64, bool, error) {
-	return 0, 0, 0, false, nil
-}
-func (p *ProxyDataProvider) GetBlocks(ctx context.Context, limit int, beforeBlock *uint64) ([]types.Block, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetBlock(ctx context.Context, number uint64) (*types.Block, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetBlockByHash(ctx context.Context, hash string) (*types.Block, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetLatestBlockNumber(ctx context.Context) (uint64, error) {
-	return 0, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetInternalTransactionsByBlock(ctx context.Context, blockNumber uint64) ([]types.InternalTransaction, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetTransactions(ctx context.Context, limit int, beforeBlock *uint64) ([]types.Transaction, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetTransactionsPaginated(ctx context.Context, page, pageSize int) ([]types.Transaction, int64, error) {
-	return nil, 0, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetTransactionsByBlock(ctx context.Context, blockNumber uint64) ([]types.Transaction, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetTransactionsWithCategories(ctx context.Context, limit int, beforeBlock *uint64) ([]types.Transaction, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetTransactionsPaginatedWithCategories(ctx context.Context, page, pageSize int) ([]types.Transaction, int64, error) {
-	return nil, 0, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetTransactionWithCategories(ctx context.Context, hash string) (*types.Transaction, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetTransaction(ctx context.Context, hash string) (*types.Transaction, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetTransactionsByAddress(ctx context.Context, address string, limit int, beforeBlock *uint64) ([]types.Transaction, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetInternalTransactionsByTx(ctx context.Context, txHash string) ([]types.InternalTransaction, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetTransfersByTransaction(ctx context.Context, txHash string) ([]types.TokenTransfer, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetLogsByTransaction(ctx context.Context, txHash string) ([]types.Log, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetOPDeposit(ctx context.Context, txHash string) (*types.OPDeposit, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetAddressStats(ctx context.Context, address string) (*types.AddressStats, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetBalance(ctx context.Context, address string) (*types.JSONString, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetCode(ctx context.Context, address string) ([]byte, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetTokenBalances(ctx context.Context, address string) ([]types.Balance, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetTransfersByAddress(ctx context.Context, address string, limit int, beforeBlock *uint64) ([]types.TokenTransfer, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetInternalTransactionsByAddress(ctx context.Context, address string, limit int, offset int) ([]types.InternalTransaction, int64, error) {
-	return nil, 0, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetLogsByAddress(ctx context.Context, address string, limit int, offset int) ([]types.Log, int64, error) {
-	return nil, 0, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetLogs(ctx context.Context, address *string, topic0 *string, fromBlock *uint64, toBlock *uint64, limit int) ([]types.Log, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetContract(ctx context.Context, address string) (*types.Contract, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) IsContract(ctx context.Context, address string) (bool, error) {
-	return false, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) UpdateContractABI(ctx context.Context, address string, abi json.RawMessage) error {
-	return ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) VerifyContract(ctx context.Context, address, name, compilerVersion string, optimizationUsed bool, sourceCode string, abi json.RawMessage, evmVersion, licenseType, constructorArgs string, optimizationRuns int) error {
-	return ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetTokens(ctx context.Context, limit int, offset int, tokenType string) ([]types.Token, int64, error) {
-	return nil, 0, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetToken(ctx context.Context, address string) (*types.Token, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetTokenHolders(ctx context.Context, address string, limit int, offset int) ([]types.TokenHolder, int64, error) {
-	return nil, 0, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetTransfersByToken(ctx context.Context, tokenAddress string, limit int, offset int) ([]types.TokenTransfer, int64, error) {
-	return nil, 0, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetAllTransfers(ctx context.Context, limit int, offset int) ([]types.TokenTransfer, int64, error) {
-	return nil, 0, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetAccountsPaginated(ctx context.Context, page, pageSize int) ([]types.AddressStats, int64, error) {
-	return nil, 0, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) SearchSuggestions(ctx context.Context, query string, limit int) ([]types.SearchSuggestion, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) IndexBlock(ctx context.Context, number uint64) error {
-	return ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetTransactionByHashRPC(ctx context.Context, hash string) (*types.Transaction, *uint64, error) {
-	return nil, nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetDailyStats(ctx context.Context, from, to time.Time) ([]types.DailyStats, error) {
-	return nil, ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) BackfillDailyStats(ctx context.Context) error {
-	return ErrChainDataNotAvailable
-}
-func (p *ProxyDataProvider) GetGasPrices(ctx context.Context, numBlocks int) (*uint64, *uint64, *uint64, *uint64, error) {
-	return nil, nil, nil, nil, ErrChainDataNotAvailable
+	var res struct {
+		ChainID uint64 `json:"chain_id"`
+	}
+	err := p.doRequest(ctx, "GET", "/api/v1/explorer/chain-id", nil, &res)
+	return res.ChainID, err
 }
 
+func (p *ProxyDataProvider) GetSyncStatus(ctx context.Context) (*types.SyncStatus, error) {
+	var ss types.SyncStatus
+	err := p.doRequest(ctx, "GET", "/api/v1/explorer/sync/status", nil, &ss)
+	return &ss, err
+}
+
+func (p *ProxyDataProvider) GetTransactionHistory(ctx context.Context, intervalSeconds int, limit int) ([]types.TxHistoryPoint, error) {
+	var h []types.TxHistoryPoint
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/stats/tx-history?interval=%d&limit=%d", intervalSeconds, limit), nil, &h)
+	return h, err
+}
+
+func (p *ProxyDataProvider) GetCatchupProgress(ctx context.Context) (processed int64, total uint64, percentComplete float64, isRunning bool, err error) {
+	var res struct {
+		Processed       int64   `json:"processed"`
+		Total           uint64  `json:"total"`
+		PercentComplete float64 `json:"percentComplete"`
+		IsRunning       bool    `json:"isRunning"`
+	}
+	err = p.doRequest(ctx, "GET", "/api/v1/explorer/sync/catchup", nil, &res)
+	return res.Processed, res.Total, res.PercentComplete, res.IsRunning, err
+}
+
+func (p *ProxyDataProvider) GetBlocks(ctx context.Context, limit int, beforeBlock *uint64) ([]types.Block, error) {
+	q := fmt.Sprintf("?limit=%d", limit)
+	if beforeBlock != nil {
+		q += fmt.Sprintf("&before=%d", *beforeBlock)
+	}
+	var b []types.Block
+	err := p.doRequest(ctx, "GET", "/api/v1/explorer/blocks"+q, nil, &b)
+	return b, err
+}
+
+func (p *ProxyDataProvider) GetBlock(ctx context.Context, number uint64) (*types.Block, error) {
+	var b types.Block
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/blocks/%d", number), nil, &b)
+	return &b, err
+}
+
+func (p *ProxyDataProvider) GetBlockByHash(ctx context.Context, hash string) (*types.Block, error) {
+	var b types.Block
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/blocks/hash/%s", hash), nil, &b)
+	return &b, err
+}
+
+func (p *ProxyDataProvider) GetLatestBlockNumber(ctx context.Context) (uint64, error) {
+	var r struct {
+		Number uint64 `json:"number"`
+	}
+	err := p.doRequest(ctx, "GET", "/api/v1/explorer/blocks/latest/number", nil, &r)
+	return r.Number, err
+}
+
+func (p *ProxyDataProvider) GetInternalTransactionsByBlock(ctx context.Context, blockNumber uint64) ([]types.InternalTransaction, error) {
+	var t []types.InternalTransaction
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/blocks/%d/internal", blockNumber), nil, &t)
+	return t, err
+}
+
+func (p *ProxyDataProvider) GetTransactions(ctx context.Context, limit int, beforeBlock *uint64) ([]types.Transaction, error) {
+	q := fmt.Sprintf("?limit=%d", limit)
+	if beforeBlock != nil {
+		q += fmt.Sprintf("&before=%d", *beforeBlock)
+	}
+	var t []types.Transaction
+	err := p.doRequest(ctx, "GET", "/api/v1/explorer/transactions"+q, nil, &t)
+	return t, err
+}
+
+func (p *ProxyDataProvider) GetTransactionsPaginated(ctx context.Context, page, pageSize int) ([]types.Transaction, int64, error) {
+	var res struct {
+		Data  []types.Transaction `json:"data"`
+		Total int64               `json:"total"`
+	}
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/transactions/paginated?page=%d&pageSize=%d", page, pageSize), nil, &res)
+	return res.Data, res.Total, err
+}
+
+func (p *ProxyDataProvider) GetTransactionsByBlock(ctx context.Context, blockNumber uint64) ([]types.Transaction, error) {
+	var t []types.Transaction
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/blocks/%d/transactions", blockNumber), nil, &t)
+	return t, err
+}
+
+func (p *ProxyDataProvider) GetTransactionsWithCategories(ctx context.Context, limit int, beforeBlock *uint64) ([]types.Transaction, error) {
+	q := fmt.Sprintf("?limit=%d&with_categories=true", limit)
+	if beforeBlock != nil {
+		q += fmt.Sprintf("&before=%d", *beforeBlock)
+	}
+	var t []types.Transaction
+	err := p.doRequest(ctx, "GET", "/api/v1/explorer/transactions"+q, nil, &t)
+	return t, err
+}
+
+func (p *ProxyDataProvider) GetTransactionsPaginatedWithCategories(ctx context.Context, page, pageSize int) ([]types.Transaction, int64, error) {
+	var res struct {
+		Data  []types.Transaction `json:"data"`
+		Total int64               `json:"total"`
+	}
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/transactions/paginated?page=%d&pageSize=%d&with_categories=true", page, pageSize), nil, &res)
+	return res.Data, res.Total, err
+}
+
+func (p *ProxyDataProvider) GetTransactionWithCategories(ctx context.Context, hash string) (*types.Transaction, error) {
+	var t types.Transaction
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/transactions/%s?with_categories=true", hash), nil, &t)
+	return &t, err
+}
+
+func (p *ProxyDataProvider) GetTransaction(ctx context.Context, hash string) (*types.Transaction, error) {
+	var t types.Transaction
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/transactions/%s", hash), nil, &t)
+	return &t, err
+}
+
+func (p *ProxyDataProvider) GetTransactionsByAddress(ctx context.Context, address string, limit int, beforeBlock *uint64) ([]types.Transaction, error) {
+	q := fmt.Sprintf("?limit=%d", limit)
+	if beforeBlock != nil {
+		q += fmt.Sprintf("&before=%d", *beforeBlock)
+	}
+	var t []types.Transaction
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/addresses/%s/transactions", address)+q, nil, &t)
+	return t, err
+}
+
+func (p *ProxyDataProvider) GetInternalTransactionsByTx(ctx context.Context, txHash string) ([]types.InternalTransaction, error) {
+	var t []types.InternalTransaction
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/transactions/%s/internal", txHash), nil, &t)
+	return t, err
+}
+
+func (p *ProxyDataProvider) GetTransfersByTransaction(ctx context.Context, txHash string) ([]types.TokenTransfer, error) {
+	var t []types.TokenTransfer
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/transactions/%s/transfers", txHash), nil, &t)
+	return t, err
+}
+
+func (p *ProxyDataProvider) GetLogsByTransaction(ctx context.Context, txHash string) ([]types.Log, error) {
+	var l []types.Log
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/transactions/%s/logs", txHash), nil, &l)
+	return l, err
+}
+
+func (p *ProxyDataProvider) GetOPDeposit(ctx context.Context, txHash string) (*types.OPDeposit, error) {
+	var d types.OPDeposit
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/transactions/%s/op-deposit", txHash), nil, &d)
+	return &d, err
+}
+
+func (p *ProxyDataProvider) GetAddressStats(ctx context.Context, address string) (*types.AddressStats, error) {
+	var s types.AddressStats
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/addresses/%s/stats", address), nil, &s)
+	return &s, err
+}
+
+func (p *ProxyDataProvider) GetBalance(ctx context.Context, address string) (*types.JSONString, error) {
+	var b types.JSONString
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/addresses/%s/balance", address), nil, &b)
+	return &b, err
+}
+
+func (p *ProxyDataProvider) GetCode(ctx context.Context, address string) ([]byte, error) {
+	var c []byte
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/addresses/%s/code", address), nil, &c)
+	return c, err
+}
+
+func (p *ProxyDataProvider) GetTokenBalances(ctx context.Context, address string) ([]types.Balance, error) {
+	var b []types.Balance
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/addresses/%s/balances", address), nil, &b)
+	return b, err
+}
+
+func (p *ProxyDataProvider) GetTransfersByAddress(ctx context.Context, address string, limit int, beforeBlock *uint64) ([]types.TokenTransfer, error) {
+	q := fmt.Sprintf("?limit=%d", limit)
+	if beforeBlock != nil {
+		q += fmt.Sprintf("&before=%d", *beforeBlock)
+	}
+	var t []types.TokenTransfer
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/addresses/%s/transfers", address)+q, nil, &t)
+	return t, err
+}
+
+func (p *ProxyDataProvider) GetInternalTransactionsByAddress(ctx context.Context, address string, limit int, offset int) ([]types.InternalTransaction, int64, error) {
+	var res struct {
+		Data  []types.InternalTransaction `json:"data"`
+		Total int64                       `json:"total"`
+	}
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/addresses/%s/internal?limit=%d&offset=%d", address, limit, offset), nil, &res)
+	return res.Data, res.Total, err
+}
+
+func (p *ProxyDataProvider) GetLogsByAddress(ctx context.Context, address string, limit int, offset int) ([]types.Log, int64, error) {
+	var res struct {
+		Data  []types.Log `json:"data"`
+		Total int64       `json:"total"`
+	}
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/addresses/%s/logs?limit=%d&offset=%d", address, limit, offset), nil, &res)
+	return res.Data, res.Total, err
+}
+
+func (p *ProxyDataProvider) GetLogs(ctx context.Context, address *string, topic0 *string, fromBlock *uint64, toBlock *uint64, limit int) ([]types.Log, error) {
+	q := fmt.Sprintf("?limit=%d", limit)
+	if address != nil {
+		q += "&address=" + *address
+	}
+	if topic0 != nil {
+		q += "&topic0=" + *topic0
+	}
+	if fromBlock != nil {
+		q += fmt.Sprintf("&from=%d", *fromBlock)
+	}
+	if toBlock != nil {
+		q += fmt.Sprintf("&to=%d", *toBlock)
+	}
+	var l []types.Log
+	err := p.doRequest(ctx, "GET", "/api/v1/explorer/logs"+q, nil, &l)
+	return l, err
+}
+
+func (p *ProxyDataProvider) GetContract(ctx context.Context, address string) (*types.Contract, error) {
+	var c types.Contract
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/addresses/%s/contract", address), nil, &c)
+	return &c, err
+}
+
+func (p *ProxyDataProvider) IsContract(ctx context.Context, address string) (bool, error) {
+	var r struct {
+		IsContract bool `json:"is_contract"`
+	}
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/addresses/%s/is-contract", address), nil, &r)
+	return r.IsContract, err
+}
+
+func (p *ProxyDataProvider) UpdateContractABI(ctx context.Context, address string, abi json.RawMessage) error {
+	return p.doRequest(ctx, "POST", fmt.Sprintf("/api/v1/explorer/addresses/%s/abi", address), bytes.NewReader(abi), nil)
+}
+
+func (p *ProxyDataProvider) GetTokens(ctx context.Context, limit int, offset int, tokenType string) ([]types.Token, int64, error) {
+	q := fmt.Sprintf("?limit=%d&offset=%d&type=%s", limit, offset, tokenType)
+	var res struct {
+		Data  []types.Token `json:"data"`
+		Total int64         `json:"total"`
+	}
+	err := p.doRequest(ctx, "GET", "/api/v1/explorer/tokens"+q, nil, &res)
+	return res.Data, res.Total, err
+}
+
+func (p *ProxyDataProvider) GetToken(ctx context.Context, address string) (*types.Token, error) {
+	var t types.Token
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/tokens/%s", address), nil, &t)
+	return &t, err
+}
+
+func (p *ProxyDataProvider) GetTokenHolders(ctx context.Context, address string, limit int, offset int) ([]types.TokenHolder, int64, error) {
+	var res struct {
+		Data  []types.TokenHolder `json:"data"`
+		Total int64               `json:"total"`
+	}
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/tokens/%s/holders?limit=%d&offset=%d", address, limit, offset), nil, &res)
+	return res.Data, res.Total, err
+}
+
+func (p *ProxyDataProvider) GetTransfersByToken(ctx context.Context, tokenAddress string, limit int, offset int) ([]types.TokenTransfer, int64, error) {
+	var res struct {
+		Data  []types.TokenTransfer `json:"data"`
+		Total int64                 `json:"total"`
+	}
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/tokens/%s/transfers?limit=%d&offset=%d", tokenAddress, limit, offset), nil, &res)
+	return res.Data, res.Total, err
+}
+
+func (p *ProxyDataProvider) GetAllTransfers(ctx context.Context, limit int, offset int) ([]types.TokenTransfer, int64, error) {
+	var res struct {
+		Data  []types.TokenTransfer `json:"data"`
+		Total int64                 `json:"total"`
+	}
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/transfers?limit=%d&offset=%d", limit, offset), nil, &res)
+	return res.Data, res.Total, err
+}
+
+func (p *ProxyDataProvider) GetAccountsPaginated(ctx context.Context, page, pageSize int) ([]types.AddressStats, int64, error) {
+	var res struct {
+		Data  []types.AddressStats `json:"data"`
+		Total int64                `json:"total"`
+	}
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/accounts?page=%d&pageSize=%d", page, pageSize), nil, &res)
+	return res.Data, res.Total, err
+}
+
+func (p *ProxyDataProvider) SearchSuggestions(ctx context.Context, query string, limit int) ([]types.SearchSuggestion, error) {
+	var s []types.SearchSuggestion
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/search/suggestions?q=%s&limit=%d", query, limit), nil, &s)
+	return s, err
+}
+
+func (p *ProxyDataProvider) IndexBlock(ctx context.Context, number uint64) error {
+	return p.doRequest(ctx, "POST", fmt.Sprintf("/api/v1/explorer/index/block/%d", number), nil, nil)
+}
+
+func (p *ProxyDataProvider) VerifyContract(ctx context.Context, address string, name string, compilerVersion string, optimizationUsed bool, sourceCode string, abi json.RawMessage, evmVersion string, licenseType string, constructorArgs string, optimizationRuns int) error {
+	reqBody := map[string]any{
+		"address":          address,
+		"name":             name,
+		"compilerVersion":  compilerVersion,
+		"optimizationUsed": optimizationUsed,
+		"sourceCode":       sourceCode,
+		"abi":              abi,
+		"evmVersion":       evmVersion,
+		"licenseType":      licenseType,
+		"constructorArgs":  constructorArgs,
+		"optimizationRuns": optimizationRuns,
+	}
+	body, _ := json.Marshal(reqBody)
+	return p.doRequest(ctx, "POST", "/api/v1/explorer/contracts/verify", bytes.NewReader(body), nil)
+}
+
+func (p *ProxyDataProvider) GetTransactionByHashRPC(ctx context.Context, hash string) (*types.Transaction, *uint64, error) {
+	var res struct {
+		Transaction *types.Transaction `json:"transaction"`
+		BlockNumber *uint64            `json:"block_number"`
+	}
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/transactions/%s/rpc", hash), nil, &res)
+	return res.Transaction, res.BlockNumber, err
+}
+
+func (p *ProxyDataProvider) GetDailyStats(ctx context.Context, from, to time.Time) ([]types.DailyStats, error) {
+	var stats []types.DailyStats
+	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/charts/lines/new_txns?from=%s&to=%s", from.Format("2006-01-02"), to.Format("2006-01-02")), nil, &stats)
+	return stats, err
+}
+
+func (p *ProxyDataProvider) BackfillDailyStats(ctx context.Context) error {
+	return p.doRequest(ctx, "POST", "/api/v1/explorer/charts/backfill", nil, nil)
+}
 // Compile-time assertions.
 var (
 	_ DataProvider = (*DirectDBProvider)(nil)
 	_ DataProvider = (*ProxyDataProvider)(nil)
 	_ = bytes.Buffer{}
 )
+
+
+// GetGasPrices: privacy-proxy does not expose a gas-prices endpoint on
+// its REST explorer surface, so the BFF cannot forward it. Returning
+// ErrChainDataNotAvailable is correct — the /api/gas endpoint in
+// privacy-mode block-explorer returns 500 with the explanation. If
+// privacy-proxy grows this endpoint, implement a doRequest here.
+func (p *ProxyDataProvider) GetGasPrices(ctx context.Context, numBlocks int) (*uint64, *uint64, *uint64, *uint64, error) {
+	return nil, nil, nil, nil, ErrChainDataNotAvailable
+}
