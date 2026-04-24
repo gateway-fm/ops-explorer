@@ -40,10 +40,16 @@ services:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/explorer?sslmode=disable
       RPC_URL: http://anvil:8545
       API_PORT: "8080"
-      # Chain data is served by chain-indexer (RD-855 Phase 6). Clone
+      # Dev compose uses standalone mode — chain data comes direct from
+      # chain-indexer over gRPC (RD-855 Phase 6). Clone
       # gateway-fm/chain-indexer as a sibling and bring up its
       # docker-compose alongside this one; that stack exposes a service
       # at chain-indexer:50051 reachable on this shared network.
+      #
+      # Do NOT also set PRIVACY_PROXY_URL here — the api rejects having
+      # both INDEXER_URL and PRIVACY_PROXY_URL set. For privacy-mode dev,
+      # unset INDEXER_URL and use the compose-override pattern to point
+      # PRIVACY_PROXY_URL at a running privacy-proxy instead.
       INDEXER_URL: ${INDEXER_URL:-chain-indexer:50051}
     volumes:
       - solc_binaries:/opt/solc

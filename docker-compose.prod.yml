@@ -9,14 +9,21 @@
 #   - DATABASE_URL and RPC_URL must be provided via environment — no hardcoded defaults
 #   - SSO redirect URI and public URLs must be set for the real domain (privacy mode only)
 #
-# Standalone mode — required env vars:
+# Always required:
 #   DATABASE_URL  postgres://user:pass@host:5432/explorer?sslmode=require
 #   RPC_URL       https://rpc.yourdomain.com
 #
-# Privacy mode — additional required env vars:
-#   PRIVACY_PROXY_URL         http://privacy-proxy-backend:8080
-#   PRIVACY_PROXY_PUBLIC_URL  https://proxy.yourdomain.com
-#   SSO_REDIRECT_URI          https://explorer.yourdomain.com/api/auth/callback
+# Chain-data source — pick EXACTLY ONE. Setting both is rejected at
+# startup (privacy footgun: chain data would bypass privacy-proxy's
+# redaction). Setting neither is also rejected.
+#
+#   Standalone mode — chain-indexer direct, raw chain data:
+#     INDEXER_URL  chain-indexer:50051   # or host:port of the gRPC endpoint
+#
+#   Privacy mode — reads routed through privacy-proxy, redaction applied:
+#     PRIVACY_PROXY_URL         http://privacy-proxy-backend:8080
+#     PRIVACY_PROXY_PUBLIC_URL  https://proxy.yourdomain.com
+#     SSO_REDIRECT_URI          https://explorer.yourdomain.com/api/auth/callback
 #
 # Note: if deploying alongside privacy-proxy, the external network must exist first:
 #   docker network create privacy-proxy_proxy-network
@@ -29,6 +36,9 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       RPC_URL: ${RPC_URL:?RPC_URL is required}
+      # Pick exactly one of INDEXER_URL / PRIVACY_PROXY_URL — the api
+      # process rejects having both set.
+      INDEXER_URL: ${INDEXER_URL:-}
       PRIVACY_PROXY_URL: ${PRIVACY_PROXY_URL:-}
       PRIVACY_PROXY_PUBLIC_URL: ${PRIVACY_PROXY_PUBLIC_URL:-}
       SSO_REDIRECT_URI: ${SSO_REDIRECT_URI:-}

@@ -1,24 +1,48 @@
 # Production Readiness
 
-Last updated: 2026-03-17
+Last updated: 2026-04-24
 
 ## Deployment Modes
 
-### Standalone
-Explorer connects directly to an RPC node. No authentication, all data public.
+Block-explorer no longer runs its own indexer. Chain data comes from
+`gateway-fm/chain-indexer` over gRPC, either directly (standalone mode)
+or mediated by privacy-proxy (privacy mode).
+
+Pick **exactly one** chain-data source. The api process rejects having
+both `INDEXER_URL` and `PRIVACY_PROXY_URL` set at startup, because the
+combination would silently route chain data around privacy-proxy's
+redaction while still wiring SSO through it — a privacy footgun.
+
+### Standalone mode — `INDEXER_URL`
+
+Block-explorer reads chain data direct from chain-indexer. Raw chain
+data, no redaction, no per-user visibility. Use for public explorers on
+open chains.
 
 ```
-RPC Node → Indexer → PostgreSQL → API → Frontend
+chain-indexer (gRPC :50051) ──► block-explorer api ──► frontend
+                                    │
+                                    ├─ postgres (verification only)
+                                    └─ RPC node (contract verification)
 ```
 
-### Privacy Mode
-Explorer connects via Privacy Proxy. Address visibility is enforced per-user based on ZK-proof authentication and RBAC grants. Set `PRIVACY_PROXY_URL` to enable.
+### Privacy mode — `PRIVACY_PROXY_URL`
+
+Block-explorer api is a thin frontend over privacy-proxy's REST
+explorer API. Privacy-proxy applies RBAC-based redaction before data
+reaches block-explorer. Auth/SSO flows through privacy-proxy too.
 
 ```
-RPC Node → Privacy Proxy → Indexer → PostgreSQL → API (proxy mode) → Frontend
+chain-indexer (gRPC) ──► privacy-proxy ──► block-explorer api ──► frontend
+                          (redaction,              │
+                           auth, RBAC)             └─ postgres (verification only)
 ```
 
-In privacy mode the indexer's `RPC_URL` should point at the Privacy Proxy RPC endpoint (not the raw node) so indexed data flows through the same access control layer.
+> In practice, in privacy mode the block-explorer api is typically
+> **not deployed at all** — `privacy-proxy`'s own `docker-compose.privacy.yml`
+> ships only the block-explorer frontend, which proxies `/api/*` direct
+> to privacy-proxy. This mode exists in the api binary for mixed
+> deployments.
 
 ---
 
@@ -28,25 +52,25 @@ In privacy mode the indexer's `RPC_URL` should point at the Privacy Proxy RPC en
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DATABASE_URL` | Yes | `postgres://user:pass@host:5432/explorer?sslmode=require` |
-| `RPC_URL` | Yes | RPC endpoint (raw node or privacy proxy) |
-| `API_PORT` | No | Default: `8080` |
-| `PRIVACY_PROXY_URL` | Privacy mode | Internal URL of privacy proxy backend, e.g. `http://privacy-proxy-backend:8080` |
-| `PRIVACY_PROXY_PUBLIC_URL` | Privacy mode | Browser-facing URL of privacy proxy, e.g. `https://proxy.yourdomain.com` |
-| `SSO_REDIRECT_URI` | Privacy mode | OAuth callback URI, e.g. `https://explorer.yourdomain.com/api/auth/callback` |
-| `SSO_CLIENT_ID` | No | Default: `explorer` — must match the client ID registered in Privacy Proxy |
-| `CATCHUP_WORKERS` | No | Parallel workers for historical sync (default: `10`) |
-| `RPC_WORKERS` | No | Parallel RPC fetch workers (default: `50`) |
-| `RPC_RATE_LIMIT` | No | Max RPC requests/sec (default: `500`) |
+| `DATABASE_URL` | Yes | `postgres://user:pass@host:5432/explorer?sslmode=require`. Used for contract-verification writes only. |
+| `RPC_URL` | Yes | RPC endpoint used by the contract verifier. |
+| `API_PORT` | No | Default: `8080`. |
+| **Chain data — pick one:** | | |
+| `INDEXER_URL` | One required | Standalone mode. `host:port` of a chain-indexer gRPC endpoint, e.g. `chain-indexer:50051`. |
+| `PRIVACY_PROXY_URL` | One required | Privacy mode. Internal URL of privacy-proxy backend, e.g. `http://privacy-proxy-backend:8080`. |
+| `PRIVACY_PROXY_PUBLIC_URL` | Privacy mode | Browser-facing URL of privacy-proxy, e.g. `https://proxy.yourdomain.com`. |
+| `SSO_REDIRECT_URI` | Privacy mode | OAuth callback URI, e.g. `https://explorer.yourdomain.com/api/auth/callback`. |
+| `SSO_CLIENT_ID` | No | Default: `explorer` — must match the client ID registered in privacy-proxy. |
 
-### Indexer Service
+**Validation rules (enforced in `cmd/api/main.go` at startup):**
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DATABASE_URL` | Yes | Same database as API |
-| `RPC_URL` | Yes | RPC endpoint to index from |
-| `POLL_INTERVAL` | No | Default: `2s` |
-| `START_BLOCK` | No | Block to start indexing from (default: `0`) |
+- Neither `INDEXER_URL` nor `PRIVACY_PROXY_URL` set → `log.Fatal`.
+- Both set → `log.Fatal`. No mixed-mode is supported.
+- Exactly one set → starts in the corresponding mode.
+
+There is no longer a block-explorer indexer service — the separate
+`Indexer Service` section has been removed. Run chain-indexer as a
+sibling deployment; see its repo for its own env vars.
 
 ---
 
@@ -57,6 +81,8 @@ In privacy mode the indexer's `RPC_URL` should point at the Privacy Proxy RPC en
 ```bash
 export DATABASE_URL="postgres://user:pass@host:5432/explorer?sslmode=require"
 export RPC_URL="https://rpc.yourdomain.com"
+export INDEXER_URL="chain-indexer:50051"     # or your chain-indexer host:port
+# Do NOT set PRIVACY_PROXY_URL — the api rejects both being set.
 
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
@@ -72,6 +98,7 @@ export RPC_URL="http://privacy-proxy-backend:8080"
 export PRIVACY_PROXY_URL="http://privacy-proxy-backend:8080"
 export PRIVACY_PROXY_PUBLIC_URL="https://proxy.yourdomain.com"
 export SSO_REDIRECT_URI="https://explorer.yourdomain.com/api/auth/callback"
+# Do NOT set INDEXER_URL — the api rejects both being set.
 
 # The external privacy-proxy network must exist before starting
 docker network create privacy-proxy_proxy-network 2>/dev/null || true

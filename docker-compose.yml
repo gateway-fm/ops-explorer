@@ -34,11 +34,26 @@ services:
       RPC_URL: ${RPC_URL:-http://${PROXY_HOST:-privacy-proxy-backend}:8080}
       API_PORT: "8080"
       SOLC_PATH: /opt/solc
-      # Chain-data source — point at chain-indexer's gRPC port. Required
-      # (along with PRIVACY_PROXY_URL for proxy mode); api/main.go fails
-      # at startup if neither is set.
-      INDEXER_URL: ${INDEXER_URL:-chain-indexer:50051}
-      PRIVACY_PROXY_URL: ${PRIVACY_PROXY_URL:-http://${PROXY_HOST:-privacy-proxy-backend}:8080}
+      # Chain-data source — pick EXACTLY ONE of the two below by
+      # setting it in your environment / .env. This base compose
+      # deliberately does NOT default either: the operator must make
+      # an explicit mode choice.
+      #
+      #   INDEXER_URL        standalone mode: reads go direct to
+      #                      chain-indexer over gRPC. Raw chain data,
+      #                      no privacy redaction. Use for standalone
+      #                      deployments of block-explorer.
+      #
+      #   PRIVACY_PROXY_URL  privacy mode: reads routed through
+      #                      privacy-proxy's REST explorer API.
+      #                      Privacy-proxy applies RBAC-based redaction
+      #                      before returning data.
+      #
+      # The api process rejects both-set and neither-set at startup.
+      # For a zero-config standalone dev stack, layer
+      # docker-compose.dev.yml on top — it defaults INDEXER_URL.
+      INDEXER_URL: ${INDEXER_URL:-}
+      PRIVACY_PROXY_URL: ${PRIVACY_PROXY_URL:-}
       PRIVACY_PROXY_PUBLIC_URL: ${PRIVACY_PROXY_PUBLIC_URL:-http://localhost:${HOST_PORT_PROXY:-8080}}
       SSO_CLIENT_ID: ${SSO_CLIENT_ID:-explorer}
       SSO_REDIRECT_URI: ${SSO_REDIRECT_URI:-http://localhost:${FRONTEND_PORT:-3001}/api/auth/callback}

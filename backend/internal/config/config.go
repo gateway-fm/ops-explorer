@@ -39,14 +39,17 @@ type Config struct {
 	CatchupBatchSize int  `mapstructure:"catchup_batch_size"`
 	CatchupQueueSize int  `mapstructure:"catchup_queue_size"`
 
-	// Set PRIVACY_PROXY_URL to enable proxy mode (auth + privacy enforcement).
-	// Leave empty for standalone mode (direct DB/RPC access).
+	// Chain-data source — set EXACTLY ONE of PrivacyProxyURL and
+	// IndexerURL. The api startup rejects having both set (privacy
+	// footgun: chain data would bypass privacy-proxy's redaction).
+	// Setting neither is also rejected.
+	//
+	// PrivacyProxyURL — privacy mode: reads routed through privacy-proxy's
+	// REST explorer API, which applies RBAC-based redaction before
+	// returning. Auth/SSO also flows through privacy-proxy.
 	PrivacyProxyURL       string `mapstructure:"privacy_proxy_url"`
-	// IndexerURL, when non-empty, wires the block-explorer api to read
-	// chain data from a chain-indexer gRPC service instead of hitting the
-	// local postgres directly. Methods not yet ported fall back to the
-	// embedded DirectDBProvider. Standalone-mode deployments can share
-	// the chain-indexer with privacy-proxy over this setting.
+	// IndexerURL — standalone mode: reads go direct to a chain-indexer
+	// gRPC service. Raw chain data, no redaction. No auth coupling.
 	IndexerURL            string `mapstructure:"indexer_url"`
 	// PrivacyProxyPublicURL is the browser-facing URL for OAuth redirects.
 	// Defaults to PrivacyProxyURL if not set. Set this when the proxy is on a
