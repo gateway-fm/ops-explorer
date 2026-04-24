@@ -1,6 +1,12 @@
+//go:build !privacy
+
 // Package indexerclient provides an api.DataProvider backed by the
 // chain-indexer gRPC service. It embeds *api.DirectDBProvider so methods
 // that are not yet ported to gRPC keep hitting the SQL path unchanged.
+//
+// Build tag: this package is excluded from -tags privacy builds so the
+// privacy-mode block-explorer-api binary cannot link against the
+// chain-indexer gRPC client at all. See cmd/api/provider_privacy.go.
 //
 // This is the block-explorer equivalent of privacy-proxy's
 // internal/explorer/indexerclient. Same pattern: gRPC-backed reads for

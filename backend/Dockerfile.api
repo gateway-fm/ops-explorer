@@ -10,12 +10,35 @@ RUN go mod download
 
 COPY . .
 
+# Default (standalone) build — supports both INDEXER_URL (chain-indexer
+# gRPC) and PRIVACY_PROXY_URL (privacy-proxy REST) modes.
+FROM builder AS builder-standalone
 RUN CGO_ENABLED=0 GOOS=linux go build -o /api ./cmd/api
 
-FROM gcr.io/distroless/static-debian12:nonroot@sha256:a9329520abc449e3b14d5bc3a6ffae065bdde0f02667fa10880c49b35c109fd1
+# Privacy build — compiles out internal/api/indexerclient via the
+# "privacy" build tag so the binary cannot speak chain-indexer gRPC at
+# all. See cmd/api/provider_privacy.go. Use for privacy-mode
+# deployments where direct chain-indexer access would bypass
+# privacy-proxy's redaction layer.
+FROM builder AS builder-privacy
+RUN CGO_ENABLED=0 GOOS=linux go build -tags privacy -o /api ./cmd/api
 
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-COPY --from=builder /api /api
+# Default runtime image — standalone build.
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:a9329520abc449e3b14d5bc3a6ffae065bdde0f02667fa10880c49b35c109fd1 AS standalone
+
+COPY --from=builder-standalone /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=builder-standalone /api /api
+
+USER nonroot:nonroot
+
+ENTRYPOINT ["/api"]
+
+# Privacy-mode runtime image — indexerclient package excluded at
+# compile time. Select this target with --target privacy.
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:a9329520abc449e3b14d5bc3a6ffae065bdde0f02667fa10880c49b35c109fd1 AS privacy
+
+COPY --from=builder-privacy /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=builder-privacy /api /api
 
 USER nonroot:nonroot
 

@@ -1,3 +1,5 @@
+//go:build !privacy
+
 // Stage 2 handler overrides for block-explorer api. Ports the remaining
 // DataProvider surface from SQL to chain-indexer gRPC. Methods not listed
 // here still fall through to DirectDBProvider (e.g. ABI upload, indexer
