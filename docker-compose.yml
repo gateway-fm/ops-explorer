@@ -34,7 +34,26 @@ services:
       RPC_URL: ${RPC_URL:-http://${PROXY_HOST:-privacy-proxy-backend}:8080}
       API_PORT: "8080"
       SOLC_PATH: /opt/solc
-      PRIVACY_PROXY_URL: ${PRIVACY_PROXY_URL:-http://${PROXY_HOST:-privacy-proxy-backend}:8080}
+      # Chain-data source — pick EXACTLY ONE of the two below by
+      # setting it in your environment / .env. This base compose
+      # deliberately does NOT default either: the operator must make
+      # an explicit mode choice.
+      #
+      #   INDEXER_URL        standalone mode: reads go direct to
+      #                      chain-indexer over gRPC. Raw chain data,
+      #                      no privacy redaction. Use for standalone
+      #                      deployments of block-explorer.
+      #
+      #   PRIVACY_PROXY_URL  privacy mode: reads routed through
+      #                      privacy-proxy's REST explorer API.
+      #                      Privacy-proxy applies RBAC-based redaction
+      #                      before returning data.
+      #
+      # The api process rejects both-set and neither-set at startup.
+      # For a zero-config standalone dev stack, layer
+      # docker-compose.dev.yml on top — it defaults INDEXER_URL.
+      INDEXER_URL: ${INDEXER_URL:-}
+      PRIVACY_PROXY_URL: ${PRIVACY_PROXY_URL:-}
       PRIVACY_PROXY_PUBLIC_URL: ${PRIVACY_PROXY_PUBLIC_URL:-http://localhost:${HOST_PORT_PROXY:-8080}}
       SSO_CLIENT_ID: ${SSO_CLIENT_ID:-explorer}
       SSO_REDIRECT_URI: ${SSO_REDIRECT_URI:-http://localhost:${FRONTEND_PORT:-3001}/api/auth/callback}
@@ -46,31 +65,12 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  indexer:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    entrypoint: ["/indexer"]
-    networks:
-      - default
-      - privacy-proxy
-    environment:
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/explorer?sslmode=disable
-      RPC_URL: ${RPC_URL:-http://${ANVIL_HOST:-privacy-proxy-anvil}:8545}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      POLL_INTERVAL: "2s"
-      START_BLOCK: ${START_BLOCK:-0}
-      # Set to "true" to auto-wipe the DB when a chain reset is detected
-      # (e.g. Anvil restarted with fresh state)
-      FORCE_REINDEX: ${FORCE_REINDEX:-false}
-      # Tuning - reduce these if your RPC gets overwhelmed (EOF errors)
-      CATCHUP_WORKERS: ${CATCHUP_WORKERS:-10}
-      RPC_WORKERS: ${RPC_WORKERS:-50}
-      RPC_RATE_LIMIT: ${RPC_RATE_LIMIT:-500}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
+  # Block-explorer's own indexer was retired in RD-855 Phase 6. Chain
+  # data now comes from gateway-fm/chain-indexer. This compose expects
+  # chain-indexer to be reachable at INDEXER_URL (default:
+  # chain-indexer:50051 on the shared privacy-proxy network). For a
+  # fully standalone local dev stack, clone chain-indexer as a sibling
+  # and bring up its docker-compose alongside this one.
 
   public-api:
     platform: linux/amd64

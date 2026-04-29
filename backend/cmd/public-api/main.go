@@ -1,3 +1,5 @@
+//go:build !privacy
+
 package main
 
 import (
@@ -9,9 +11,9 @@ import (
 	"time"
 
 	"explorer/internal/api"
+	"explorer/internal/api/indexerclient"
 	"explorer/internal/chaininfo"
 	"explorer/internal/db"
-	"explorer/internal/gas"
 	"explorer/internal/log"
 	"explorer/internal/publicapi"
 	"explorer/internal/rpc"
@@ -64,11 +66,18 @@ func main() {
 		log.Fatal("failed to create rpc client", "error", err)
 	}
 
-	dataProvider := api.NewDirectDBProvider(database, rpcClient, nil)
-	gasTracker := gas.NewTracker(database, nil)
+	indexerURL := os.Getenv("INDEXER_URL")
+	if indexerURL == "" {
+		log.Fatal("INDEXER_URL is required — public-api reads chain data from chain-indexer (RD-855 Phase 6)")
+	}
+	fallback := api.NewDirectDBProvider(database, rpcClient, nil)
+	dataProvider, err := indexerclient.New(indexerclient.Config{IndexerURL: indexerURL}, fallback)
+	if err != nil {
+		log.Fatal("failed to construct indexerclient provider", "error", err)
+	}
 	chainInfo := chaininfo.NewService(rpcClient, 10*time.Minute)
 
-	server := publicapi.NewServer(dataProvider, gasTracker, chainInfo, port, rateLimit, rateWindow)
+	server := publicapi.NewServer(dataProvider, nil, chainInfo, port, rateLimit, rateWindow)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

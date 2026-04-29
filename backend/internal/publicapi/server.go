@@ -8,7 +8,6 @@ import (
 
 	"explorer/internal/api"
 	"explorer/internal/chaininfo"
-	"explorer/internal/gas"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -18,24 +17,24 @@ import (
 // Server is the public API server that exposes read-only endpoints.
 type Server struct {
 	provider    api.DataProvider
-	gasTracker  *gas.Tracker
 	chainInfo   *chaininfo.Service
 	port        int
 	rateLimiter *RateLimiter
 	router      *chi.Mux
 }
 
-// NewServer creates a new public API server.
-func NewServer(provider api.DataProvider, gasTracker *gas.Tracker, chainInfo *chaininfo.Service, port int, rateLimit int, rateWindow time.Duration) *Server {
+// NewServer creates a new public API server. The gasTracker parameter
+// is retained for call-site compatibility but is ignored — gas prices
+// are served via provider.GetGasPrices now.
+func NewServer(provider api.DataProvider, gasTracker any, chainInfo *chaininfo.Service, port int, rateLimit int, rateWindow time.Duration) *Server {
+	_ = gasTracker
 	s := &Server{
 		provider:    provider,
-		gasTracker:  gasTracker,
 		chainInfo:   chainInfo,
 		port:        port,
 		rateLimiter: NewRateLimiter(rateLimit, rateWindow),
 		router:      chi.NewRouter(),
 	}
-
 	s.setupRoutes()
 	return s
 }

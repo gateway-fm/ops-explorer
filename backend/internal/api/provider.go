@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,19 +12,28 @@ import (
 	"time"
 
 	"explorer/internal/db"
-	"explorer/internal/indexer"
 	"explorer/internal/rpc"
 	"explorer/internal/types"
 
 	"explorer/pkg/eth/common"
 )
 
+// DataProvider is the read surface the api handlers depend on. Implementations:
+//
+//   - *DirectDBProvider  — minimal SQL-backed provider that only answers
+//                          the block-explorer-local concerns (contract
+//                          verification write paths, node-RPC helpers).
+//                          Chain-data reads return ErrChainDataNotAvailable.
+//                          NEVER use this alone in production; pair with
+//                          indexerclient.Provider or use ProxyDataProvider.
+//   - *ProxyDataProvider — proxies to privacy-proxy's REST API.
+//   - *indexerclient.Provider — gRPC to chain-indexer for reads, embeds
+//                               *DirectDBProvider for writes + verification.
 type DataProvider interface {
 	GetChainStats(ctx context.Context) (*types.ChainStats, error)
 	GetChainID(ctx context.Context) (uint64, error)
 	GetSyncStatus(ctx context.Context) (*types.SyncStatus, error)
 	GetTransactionHistory(ctx context.Context, intervalSeconds int, limit int) ([]types.TxHistoryPoint, error)
-	GetIndexerProgress(ctx context.Context) (*db.IndexerProgress, error)
 	GetCatchupProgress(ctx context.Context) (processed int64, total uint64, percentComplete float64, isRunning bool, err error)
 
 	GetBlocks(ctx context.Context, limit int, beforeBlock *uint64) ([]types.Block, error)
@@ -68,30 +78,197 @@ type DataProvider interface {
 	SearchSuggestions(ctx context.Context, query string, limit int) ([]types.SearchSuggestion, error)
 
 	IndexBlock(ctx context.Context, number uint64) error
-
 	GetTransactionByHashRPC(ctx context.Context, hash string) (*types.Transaction, *uint64, error)
 
 	GetDailyStats(ctx context.Context, from, to time.Time) ([]types.DailyStats, error)
 	BackfillDailyStats(ctx context.Context) error
+
+	GetGasPrices(ctx context.Context, numBlocks int) (slow, normal, fast *uint64, baseFee *uint64, err error)
 }
 
+// ErrChainDataNotAvailable is returned by DirectDBProvider for any chain-
+// data read — the method signatures still exist so DirectDBProvider
+// satisfies DataProvider, but chain data lives in chain-indexer now and
+// needs the indexerclient.Provider wrapper (or ProxyDataProvider).
+var ErrChainDataNotAvailable = errors.New("chain-data requires chain-indexer (INDEXER_URL) or privacy-proxy (PRIVACY_PROXY_URL); direct-DB mode no longer serves chain reads")
+
+// DirectDBProvider implements the verification + node-RPC methods directly
+// against block-explorer's DB and RPC client. All chain-data read methods
+// return ErrChainDataNotAvailable — those must be served by a wrapping
+// provider (indexerclient.Provider) or a routed provider (ProxyDataProvider).
 type DirectDBProvider struct {
-	db      APIDatabase
-	rpc     *rpc.Client
-	indexer *indexer.Indexer
+	db  *db.DB
+	rpc *rpc.Client
 }
 
-func NewDirectDBProvider(db APIDatabase, rpc *rpc.Client, idx *indexer.Indexer) *DirectDBProvider {
-	return &DirectDBProvider{
-		db:      db,
-		rpc:     rpc,
-		indexer: idx,
-	}
+// NewDirectDBProvider constructs the SQL+RPC-backed provider. The idx
+// parameter is retained for call-site compatibility but ignored.
+func NewDirectDBProvider(database *db.DB, rpcClient *rpc.Client, idx any) *DirectDBProvider {
+	_ = idx
+	return &DirectDBProvider{db: database, rpc: rpcClient}
 }
+
+// ----- Chain-data reads: all return ErrChainDataNotAvailable. -----
 
 func (p *DirectDBProvider) GetChainStats(ctx context.Context) (*types.ChainStats, error) {
-	return p.db.GetChainStats(ctx)
+	return nil, ErrChainDataNotAvailable
 }
+func (p *DirectDBProvider) GetSyncStatus(ctx context.Context) (*types.SyncStatus, error) {
+	return nil, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetTransactionHistory(ctx context.Context, intervalSeconds int, limit int) ([]types.TxHistoryPoint, error) {
+	return nil, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetCatchupProgress(ctx context.Context) (int64, uint64, float64, bool, error) {
+	// Not an error; block-explorer's own indexer is retired and a running
+	// chain-indexer is cared for elsewhere. Report "not running" cleanly.
+	return 0, 0, 0, false, nil
+}
+func (p *DirectDBProvider) GetBlocks(ctx context.Context, limit int, beforeBlock *uint64) ([]types.Block, error) {
+	return nil, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetBlock(ctx context.Context, number uint64) (*types.Block, error) {
+	return nil, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetBlockByHash(ctx context.Context, hash string) (*types.Block, error) {
+	return nil, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetLatestBlockNumber(ctx context.Context) (uint64, error) {
+	return 0, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetInternalTransactionsByBlock(ctx context.Context, blockNumber uint64) ([]types.InternalTransaction, error) {
+	return nil, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetTransactions(ctx context.Context, limit int, beforeBlock *uint64) ([]types.Transaction, error) {
+	return nil, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetTransactionsPaginated(ctx context.Context, page, pageSize int) ([]types.Transaction, int64, error) {
+	return nil, 0, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetTransactionsByBlock(ctx context.Context, blockNumber uint64) ([]types.Transaction, error) {
+	return nil, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetTransactionsWithCategories(ctx context.Context, limit int, beforeBlock *uint64) ([]types.Transaction, error) {
+	return nil, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetTransactionsPaginatedWithCategories(ctx context.Context, page, pageSize int) ([]types.Transaction, int64, error) {
+	return nil, 0, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetTransactionWithCategories(ctx context.Context, hash string) (*types.Transaction, error) {
+	return nil, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetTransaction(ctx context.Context, hash string) (*types.Transaction, error) {
+	return nil, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetTransactionsByAddress(ctx context.Context, address string, limit int, beforeBlock *uint64) ([]types.Transaction, error) {
+	return nil, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetInternalTransactionsByTx(ctx context.Context, txHash string) ([]types.InternalTransaction, error) {
+	return nil, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetTransfersByTransaction(ctx context.Context, txHash string) ([]types.TokenTransfer, error) {
+	return nil, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetLogsByTransaction(ctx context.Context, txHash string) ([]types.Log, error) {
+	return nil, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetOPDeposit(ctx context.Context, txHash string) (*types.OPDeposit, error) {
+	return nil, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetAddressStats(ctx context.Context, address string) (*types.AddressStats, error) {
+	return nil, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetTokenBalances(ctx context.Context, address string) ([]types.Balance, error) {
+	return nil, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetTransfersByAddress(ctx context.Context, address string, limit int, beforeBlock *uint64) ([]types.TokenTransfer, error) {
+	return nil, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetInternalTransactionsByAddress(ctx context.Context, address string, limit int, offset int) ([]types.InternalTransaction, int64, error) {
+	return nil, 0, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetLogsByAddress(ctx context.Context, address string, limit int, offset int) ([]types.Log, int64, error) {
+	return nil, 0, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetLogs(ctx context.Context, address *string, topic0 *string, fromBlock *uint64, toBlock *uint64, limit int) ([]types.Log, error) {
+	return nil, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) IsContract(ctx context.Context, address string) (bool, error) {
+	return false, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetTokens(ctx context.Context, limit int, offset int, tokenType string) ([]types.Token, int64, error) {
+	return nil, 0, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetToken(ctx context.Context, address string) (*types.Token, error) {
+	return nil, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetTokenHolders(ctx context.Context, address string, limit int, offset int) ([]types.TokenHolder, int64, error) {
+	return nil, 0, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetTransfersByToken(ctx context.Context, tokenAddress string, limit int, offset int) ([]types.TokenTransfer, int64, error) {
+	return nil, 0, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetAllTransfers(ctx context.Context, limit int, offset int) ([]types.TokenTransfer, int64, error) {
+	return nil, 0, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetAccountsPaginated(ctx context.Context, page, pageSize int) ([]types.AddressStats, int64, error) {
+	return nil, 0, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) SearchSuggestions(ctx context.Context, query string, limit int) ([]types.SearchSuggestion, error) {
+	return nil, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetDailyStats(ctx context.Context, from, to time.Time) ([]types.DailyStats, error) {
+	return nil, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetGasPrices(ctx context.Context, numBlocks int) (*uint64, *uint64, *uint64, *uint64, error) {
+	return nil, nil, nil, nil, ErrChainDataNotAvailable
+}
+
+// ----- Admin / indexer triggers: not supported in this mode. -----
+
+func (p *DirectDBProvider) IndexBlock(ctx context.Context, number uint64) error {
+	return fmt.Errorf("block-explorer does not own the indexer; trigger re-index via chain-indexer")
+}
+func (p *DirectDBProvider) BackfillDailyStats(ctx context.Context) error {
+	return fmt.Errorf("daily-stats backfill is owned by chain-indexer")
+}
+
+// ----- Contract verification: real implementations backed by db -----
+
+// GetContract returns the verification metadata for an address. Chain
+// facts (bytecode, creator, creation tx, block) come from chain-indexer
+// via indexerclient.Provider's override; this method sets only the
+// verification fields. Returns nil, nil if not verified.
+func (p *DirectDBProvider) GetContract(ctx context.Context, address string) (*types.Contract, error) {
+	if p.db == nil {
+		return nil, ErrChainDataNotAvailable
+	}
+	return p.db.GetContractVerification(ctx, address)
+}
+
+func (p *DirectDBProvider) UpdateContractABI(ctx context.Context, address string, abi json.RawMessage) error {
+	if p.db == nil {
+		return ErrChainDataNotAvailable
+	}
+	return p.db.SetContractABI(ctx, address, abi)
+}
+
+func (p *DirectDBProvider) VerifyContract(
+	ctx context.Context,
+	address, name, compilerVersion string,
+	optimizationUsed bool,
+	sourceCode string,
+	abi json.RawMessage,
+	evmVersion, licenseType, constructorArgs string,
+	optimizationRuns int,
+) error {
+	if p.db == nil {
+		return ErrChainDataNotAvailable
+	}
+	return p.db.VerifyContract(ctx, address, name, compilerVersion, optimizationUsed, sourceCode, abi, evmVersion, licenseType, constructorArgs, optimizationRuns)
+}
+
+// ----- Node-RPC helpers: call the EVM node directly. -----
 
 func (p *DirectDBProvider) GetChainID(ctx context.Context) (uint64, error) {
 	if p.rpc == nil {
@@ -104,98 +281,6 @@ func (p *DirectDBProvider) GetChainID(ctx context.Context) (uint64, error) {
 	return id.Uint64(), nil
 }
 
-func (p *DirectDBProvider) GetSyncStatus(ctx context.Context) (*types.SyncStatus, error) {
-	return p.db.GetSyncStatus(ctx)
-}
-
-func (p *DirectDBProvider) GetTransactionHistory(ctx context.Context, intervalSeconds int, limit int) ([]types.TxHistoryPoint, error) {
-	return p.db.GetTransactionHistory(ctx, intervalSeconds, limit)
-}
-
-func (p *DirectDBProvider) GetIndexerProgress(ctx context.Context) (*db.IndexerProgress, error) {
-	return p.db.GetIndexerProgress(ctx)
-}
-
-func (p *DirectDBProvider) GetCatchupProgress(ctx context.Context) (processed int64, total uint64, percentComplete float64, isRunning bool, err error) {
-	if p.indexer == nil {
-		return 0, 0, 0, false, nil
-	}
-	processed, total, percentComplete, isRunning = p.indexer.GetCatchupProgress()
-	return
-}
-
-func (p *DirectDBProvider) GetBlocks(ctx context.Context, limit int, beforeBlock *uint64) ([]types.Block, error) {
-	return p.db.GetBlocks(ctx, limit, beforeBlock)
-}
-
-func (p *DirectDBProvider) GetBlock(ctx context.Context, number uint64) (*types.Block, error) {
-	return p.db.GetBlock(ctx, number)
-}
-
-func (p *DirectDBProvider) GetBlockByHash(ctx context.Context, hash string) (*types.Block, error) {
-	return p.db.GetBlockByHash(ctx, hash)
-}
-
-func (p *DirectDBProvider) GetLatestBlockNumber(ctx context.Context) (uint64, error) {
-	return p.db.GetLatestBlockNumber(ctx)
-}
-
-func (p *DirectDBProvider) GetInternalTransactionsByBlock(ctx context.Context, blockNumber uint64) ([]types.InternalTransaction, error) {
-	return p.db.GetInternalTransactionsByBlock(ctx, blockNumber)
-}
-
-func (p *DirectDBProvider) GetTransactions(ctx context.Context, limit int, beforeBlock *uint64) ([]types.Transaction, error) {
-	return p.db.GetTransactions(ctx, limit, beforeBlock)
-}
-
-func (p *DirectDBProvider) GetTransactionsPaginated(ctx context.Context, page, pageSize int) ([]types.Transaction, int64, error) {
-	return p.db.GetTransactionsPaginated(ctx, page, pageSize)
-}
-
-func (p *DirectDBProvider) GetTransactionsByBlock(ctx context.Context, blockNumber uint64) ([]types.Transaction, error) {
-	return p.db.GetTransactionsByBlock(ctx, blockNumber)
-}
-
-func (p *DirectDBProvider) GetTransactionsWithCategories(ctx context.Context, limit int, beforeBlock *uint64) ([]types.Transaction, error) {
-	return p.db.GetTransactionsWithCategories(ctx, limit, beforeBlock)
-}
-
-func (p *DirectDBProvider) GetTransactionsPaginatedWithCategories(ctx context.Context, page, pageSize int) ([]types.Transaction, int64, error) {
-	return p.db.GetTransactionsPaginatedWithCategories(ctx, page, pageSize)
-}
-
-func (p *DirectDBProvider) GetTransactionWithCategories(ctx context.Context, hash string) (*types.Transaction, error) {
-	return p.db.GetTransactionWithCategories(ctx, hash)
-}
-
-func (p *DirectDBProvider) GetTransaction(ctx context.Context, hash string) (*types.Transaction, error) {
-	return p.db.GetTransaction(ctx, hash)
-}
-
-func (p *DirectDBProvider) GetTransactionsByAddress(ctx context.Context, address string, limit int, beforeBlock *uint64) ([]types.Transaction, error) {
-	return p.db.GetTransactionsByAddress(ctx, address, limit, beforeBlock)
-}
-
-func (p *DirectDBProvider) GetInternalTransactionsByTx(ctx context.Context, txHash string) ([]types.InternalTransaction, error) {
-	return p.db.GetInternalTransactionsByTx(ctx, txHash)
-}
-
-func (p *DirectDBProvider) GetTransfersByTransaction(ctx context.Context, txHash string) ([]types.TokenTransfer, error) {
-	return p.db.GetTransfersByTransaction(ctx, txHash)
-}
-
-func (p *DirectDBProvider) GetLogsByTransaction(ctx context.Context, txHash string) ([]types.Log, error) {
-	return p.db.GetLogsByTransaction(ctx, txHash)
-}
-
-func (p *DirectDBProvider) GetOPDeposit(ctx context.Context, txHash string) (*types.OPDeposit, error) {
-	return p.db.GetOPDeposit(ctx, txHash)
-}
-
-func (p *DirectDBProvider) GetAddressStats(ctx context.Context, address string) (*types.AddressStats, error) {
-	return p.db.GetAddressStats(ctx, address)
-}
-
 func (p *DirectDBProvider) GetBalance(ctx context.Context, address string) (*types.JSONString, error) {
 	if p.rpc == nil {
 		return nil, fmt.Errorf("rpc not available")
@@ -204,8 +289,8 @@ func (p *DirectDBProvider) GetBalance(ctx context.Context, address string) (*typ
 	if err != nil {
 		return nil, err
 	}
-	js := types.JSONString(bal.String())
-	return &js, nil
+	s := types.JSONString(bal.String())
+	return &s, nil
 }
 
 func (p *DirectDBProvider) GetCode(ctx context.Context, address string) ([]byte, error) {
@@ -215,109 +300,29 @@ func (p *DirectDBProvider) GetCode(ctx context.Context, address string) ([]byte,
 	return p.rpc.GetCode(ctx, common.HexToAddress(address))
 }
 
-func (p *DirectDBProvider) GetTokenBalances(ctx context.Context, address string) ([]types.Balance, error) {
-	return p.db.GetTokenBalances(ctx, address)
-}
-
-func (p *DirectDBProvider) GetTransfersByAddress(ctx context.Context, address string, limit int, beforeBlock *uint64) ([]types.TokenTransfer, error) {
-	return p.db.GetTransfersByAddress(ctx, address, limit, beforeBlock)
-}
-
-func (p *DirectDBProvider) GetInternalTransactionsByAddress(ctx context.Context, address string, limit int, offset int) ([]types.InternalTransaction, int64, error) {
-	return p.db.GetInternalTransactionsByAddress(ctx, address, limit, offset)
-}
-
-func (p *DirectDBProvider) GetLogsByAddress(ctx context.Context, address string, limit int, offset int) ([]types.Log, int64, error) {
-	return p.db.GetLogsByAddress(ctx, address, limit, offset)
-}
-
-func (p *DirectDBProvider) GetLogs(ctx context.Context, address *string, topic0 *string, fromBlock *uint64, toBlock *uint64, limit int) ([]types.Log, error) {
-	return p.db.GetLogs(ctx, address, topic0, fromBlock, toBlock, limit)
-}
-
-func (p *DirectDBProvider) GetContract(ctx context.Context, address string) (*types.Contract, error) {
-	return p.db.GetContract(ctx, address)
-}
-
-func (p *DirectDBProvider) IsContract(ctx context.Context, address string) (bool, error) {
-	return p.db.IsContract(ctx, address)
-}
-
-func (p *DirectDBProvider) UpdateContractABI(ctx context.Context, address string, abi json.RawMessage) error {
-	return p.db.SetContractABI(ctx, address, abi)
-}
-
-func (p *DirectDBProvider) GetTokens(ctx context.Context, limit int, offset int, tokenType string) ([]types.Token, int64, error) {
-	return p.db.GetTokens(ctx, limit, offset, tokenType)
-}
-
-func (p *DirectDBProvider) GetToken(ctx context.Context, address string) (*types.Token, error) {
-	return p.db.GetToken(ctx, address)
-}
-
-func (p *DirectDBProvider) GetTokenHolders(ctx context.Context, address string, limit int, offset int) ([]types.TokenHolder, int64, error) {
-	return p.db.GetTokenHolders(ctx, address, limit, offset)
-}
-
-func (p *DirectDBProvider) GetTransfersByToken(ctx context.Context, tokenAddress string, limit int, offset int) ([]types.TokenTransfer, int64, error) {
-	return p.db.GetTransfersByToken(ctx, tokenAddress, limit, offset)
-}
-
-func (p *DirectDBProvider) GetAllTransfers(ctx context.Context, limit int, offset int) ([]types.TokenTransfer, int64, error) {
-	return p.db.GetAllTransfers(ctx, limit, offset)
-}
-
-func (p *DirectDBProvider) GetAccountsPaginated(ctx context.Context, page, pageSize int) ([]types.AddressStats, int64, error) {
-	return p.db.GetAccountsPaginated(ctx, page, pageSize)
-}
-
-func (p *DirectDBProvider) SearchSuggestions(ctx context.Context, query string, limit int) ([]types.SearchSuggestion, error) {
-	return p.db.SearchSuggestions(ctx, query, limit)
-}
-
-func (p *DirectDBProvider) IndexBlock(ctx context.Context, number uint64) error {
-	if p.indexer == nil {
-		return fmt.Errorf("indexer not available")
-	}
-	return p.indexer.IndexBlock(ctx, number)
-}
-
-func (p *DirectDBProvider) VerifyContract(ctx context.Context, address string, name string, compilerVersion string, optimizationUsed bool, sourceCode string, abi json.RawMessage, evmVersion string, licenseType string, constructorArgs string, optimizationRuns int) error {
-	return p.db.VerifyContract(ctx, address, name, compilerVersion, optimizationUsed, sourceCode, abi, evmVersion, licenseType, constructorArgs, optimizationRuns)
-}
-
 func (p *DirectDBProvider) GetTransactionByHashRPC(ctx context.Context, hash string) (*types.Transaction, *uint64, error) {
 	if p.rpc == nil {
 		return nil, nil, fmt.Errorf("rpc not available")
 	}
-	tx, _, err := p.rpc.TransactionByHash(ctx, common.HexToHash(hash))
+	tx, err := p.rpc.GetTransactionByHash(ctx, common.HexToHash(hash))
 	if err != nil {
 		return nil, nil, err
 	}
-	receipt, err := p.rpc.TransactionReceipt(ctx, common.HexToHash(hash))
-	if err != nil {
-		return nil, nil, err
+	if tx == nil {
+		return nil, nil, nil
 	}
-
-	t := &types.Transaction{
-		Hash: tx.Hash.Hex(),
-	}
-	var blockNumber *uint64
-	if receipt.BlockNumber != nil {
-		bn := receipt.BlockNumber.Uint64()
-		blockNumber = &bn
-	}
-	return t, blockNumber, nil
+	// Pending txs don't have a block number; rpc leaves BlockNumber zero.
+	bn := tx.BlockNumber
+	return tx, &bn, nil
 }
 
-func (p *DirectDBProvider) GetDailyStats(ctx context.Context, from, to time.Time) ([]types.DailyStats, error) {
-	return p.db.GetDailyStats(ctx, from, to)
-}
+// ----- ProxyDataProvider unchanged ----- everything below was the existing
+// implementation for "proxy mode" where block-explorer calls privacy-proxy's
+// REST API for chain data. It's preserved verbatim.
 
-func (p *DirectDBProvider) BackfillDailyStats(ctx context.Context) error {
-	return p.db.BackfillDailyStats(ctx)
-}
-
+// ProxyDataProvider proxies all data requests to the privacy-proxy
+// (block-explorer in privacy mode). Chain data, addresses, contracts —
+// all come from the upstream proxy REST API.
 type ProxyDataProvider struct {
 	baseURL string
 	client  *http.Client
@@ -381,12 +386,6 @@ func (p *ProxyDataProvider) GetTransactionHistory(ctx context.Context, intervalS
 	var h []types.TxHistoryPoint
 	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/stats/tx-history?interval=%d&limit=%d", intervalSeconds, limit), nil, &h)
 	return h, err
-}
-
-func (p *ProxyDataProvider) GetIndexerProgress(ctx context.Context) (*db.IndexerProgress, error) {
-	var pr db.IndexerProgress
-	err := p.doRequest(ctx, "GET", "/api/v1/explorer/sync/indexer-progress", nil, &pr)
-	return &pr, err
 }
 
 func (p *ProxyDataProvider) GetCatchupProgress(ctx context.Context) (processed int64, total uint64, percentComplete float64, isRunning bool, err error) {
@@ -711,4 +710,20 @@ func (p *ProxyDataProvider) GetDailyStats(ctx context.Context, from, to time.Tim
 
 func (p *ProxyDataProvider) BackfillDailyStats(ctx context.Context) error {
 	return p.doRequest(ctx, "POST", "/api/v1/explorer/charts/backfill", nil, nil)
+}
+// Compile-time assertions.
+var (
+	_ DataProvider = (*DirectDBProvider)(nil)
+	_ DataProvider = (*ProxyDataProvider)(nil)
+	_ = bytes.Buffer{}
+)
+
+
+// GetGasPrices: privacy-proxy does not expose a gas-prices endpoint on
+// its REST explorer surface, so the BFF cannot forward it. Returning
+// ErrChainDataNotAvailable is correct — the /api/gas endpoint in
+// privacy-mode block-explorer returns 500 with the explanation. If
+// privacy-proxy grows this endpoint, implement a doRequest here.
+func (p *ProxyDataProvider) GetGasPrices(ctx context.Context, numBlocks int) (*uint64, *uint64, *uint64, *uint64, error) {
+	return nil, nil, nil, nil, ErrChainDataNotAvailable
 }

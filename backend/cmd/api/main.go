@@ -10,13 +10,11 @@ import (
 	"time"
 
 	"explorer/internal/api"
-	"explorer/internal/auth"
 	"explorer/internal/config"
 	"explorer/internal/db"
 	"explorer/internal/events"
 	"explorer/internal/log"
 	"explorer/internal/price"
-	"explorer/internal/privacy"
 	"explorer/internal/rpc"
 )
 
@@ -79,18 +77,21 @@ func main() {
 		MetricsEnabled:      cfg.MetricsEnabled,
 	}
 
-	var privacyClient *privacy.Client
-	var ssoClient *auth.SSOClient
-	var dataProvider api.DataProvider
-	if cfg.PrivacyProxyURL != "" {
-		privacyClient = privacy.NewClient(cfg.PrivacyProxyURL)
-		ssoClient = auth.NewSSOClient(cfg.PrivacyProxyURL, cfg.PrivacyProxyPublicURL, cfg.SSOClientID, cfg.SSORedirectURI)
-		dataProvider = api.NewProxyDataProvider(cfg.PrivacyProxyURL)
-		log.Info("proxy mode enabled", "proxy_url", cfg.PrivacyProxyURL)
-	} else {
-		dataProvider = api.NewDirectDBProvider(database, rpcClient, nil)
-		log.Info("standalone mode")
-	}
+	// chooseProvider decides which chain-data source the api will serve
+	// out of. It has two build-tagged implementations:
+	//   provider_standalone.go  (default)  — supports both INDEXER_URL
+	//                                         (chain-indexer gRPC) and
+	//                                         PRIVACY_PROXY_URL modes.
+	//   provider_privacy.go     (-tags privacy) — supports ONLY
+	//                                         PRIVACY_PROXY_URL; the
+	//                                         indexerclient package is
+	//                                         not compiled into the
+	//                                         binary. Used for
+	//                                         privacy-mode deployments
+	//                                         where direct chain-indexer
+	//                                         access would bypass
+	//                                         redaction.
+	privacyClient, ssoClient, dataProvider := chooseProvider(cfg, database, rpcClient)
 
 	server := api.New(database, rpcClient, nil, priceService, eventBus, cfg.APIPort, serverCfg, privacyClient, ssoClient, dataProvider)
 

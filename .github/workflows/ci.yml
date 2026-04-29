@@ -31,7 +31,7 @@ jobs:
       - name: Build binaries
         run: |
           CGO_ENABLED=0 go build -o /dev/null ./cmd/api
-          CGO_ENABLED=0 go build -o /dev/null ./cmd/indexer
+          CGO_ENABLED=0 go build -o /dev/null ./cmd/public-api
 
       - name: Vet
         run: go vet ./...
