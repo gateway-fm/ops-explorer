@@ -63,7 +63,7 @@ function Dropdown({ label, items }: DropdownProps) {
                 key={item.to}
                 to={item.to}
                 onClick={() => setIsOpen(false)}
-                className="flex items-center gap-3 px-4 py-3 hover:bg-primary-50 transition-colors"
+                className="flex items-center gap-3 px-4 py-3 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
               >
                 <Icon className="w-4 h-4 text-neutral-500" />
                 <span className="text-sm text-neutral-700">{item.label}</span>
@@ -202,14 +202,14 @@ function AuthButton() {
             <Link
               to="/privacy"
               onClick={() => setShowMenu(false)}
-              className="flex items-center gap-3 px-4 py-3 hover:bg-primary-50 transition-colors"
+              className="flex items-center gap-3 px-4 py-3 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
             >
               <Shield className="w-4 h-4 text-neutral-500" />
               <span className="text-sm text-neutral-700">Auditor</span>
             </Link>
             <button
               onClick={() => { logout(); setShowMenu(false); }}
-              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-primary-50 transition-colors"
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
             >
               <LogOut className="w-4 h-4 text-neutral-500" />
               <span className="text-sm text-neutral-700">Sign out</span>
