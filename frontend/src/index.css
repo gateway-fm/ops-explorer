@@ -312,7 +312,7 @@ body {
 
   .dropdown-item {
     @apply flex items-center gap-3 px-4 py-3 text-sm text-neutral-700;
-    @apply hover:bg-primary-50 transition-colors;
+    @apply hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors;
   }
 
   /* Tooltip overrides for light theme */

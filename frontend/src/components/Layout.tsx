@@ -360,7 +360,7 @@ export function Layout() {
                       key={item.to}
                       to={item.to}
                       onClick={() => setMobileMenuOpen(false)}
-                      className="flex items-center gap-3 px-4 py-3 hover:bg-primary-50 transition-colors border-b border-neutral-100 last:border-b-0"
+                      className="flex items-center gap-3 px-4 py-3 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors border-b border-neutral-100 last:border-b-0"
                     >
                       <Icon className="w-5 h-5 text-neutral-500" />
                       <span className="text-sm text-neutral-700">{item.label}</span>
