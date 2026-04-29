@@ -8,13 +8,16 @@ import (
 	"explorer/pkg/eth/common"
 )
 
+// Database is the narrow slice of block-explorer's DB that verifier needs.
+// Kept minimal because Phase 6 removed almost everything else from the DB
+// package — this is the only block-explorer-local write path left.
 type Database interface {
-	InsertContract(ctx context.Context, c *types.Contract) error
-	GetContract(ctx context.Context, address string) (*types.Contract, error)
-	IsContract(ctx context.Context, address string) (bool, error)
 	VerifyContract(ctx context.Context, address string, name string, compilerVersion string, optimizationUsed bool, sourceCode string, abi json.RawMessage, evmVersion string, licenseType string, constructorArgs string, optimizationRuns int) error
-	SetContractABI(ctx context.Context, address string, abi json.RawMessage) error
 }
+
+// _ = types.Contract — placeholder retained so the types import stays live
+// if the interface shape grows again.
+var _ = types.Contract{}
 
 type RPCClient interface {
 	GetCode(ctx context.Context, address common.Address) ([]byte, error)

@@ -727,18 +727,23 @@ func (s *Server) handleGetTransactionHistory(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleGetGasPrices(w http.ResponseWriter, r *http.Request) {
-	if s.gasTracker == nil {
-		writeError(w, "gas tracker not available", http.StatusServiceUnavailable)
-		return
-	}
-
-	prices, err := s.gasTracker.GetGasPrices(r.Context())
+	slow, normal, fast, baseFee, err := s.provider.GetGasPrices(r.Context(), 20)
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	writeJSON(w, prices)
+	d := func(p *uint64) uint64 {
+		if p == nil {
+			return 0
+		}
+		return *p
+	}
+	writeJSON(w, map[string]any{
+		"slow":    d(slow),
+		"normal":  d(normal),
+		"fast":    d(fast),
+		"baseFee": d(baseFee),
+	})
 }
 
 func (s *Server) handleGetChainInfo(w http.ResponseWriter, r *http.Request) {

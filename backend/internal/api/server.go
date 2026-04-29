@@ -10,8 +10,6 @@ import (
 	"explorer/internal/auth"
 	"explorer/internal/chaininfo"
 	"explorer/internal/events"
-	"explorer/internal/gas"
-	"explorer/internal/indexer"
 	"explorer/internal/price"
 	"explorer/internal/privacy"
 	"explorer/internal/rpc"
@@ -26,12 +24,10 @@ import (
 type Server struct {
 	db            APIDatabase
 	rpc           *rpc.Client
-	indexer       *indexer.Indexer
 	provider      DataProvider
 	price         *price.Service
 	eventBus      *events.Bus
 	verifier      *verifier.Verifier
-	gasTracker    *gas.Tracker
 	chainInfo     *chaininfo.Service
 	metrics       *Metrics
 	wsHub         *ws.Hub
@@ -49,11 +45,15 @@ type ServerConfig struct {
 	MetricsEnabled      bool
 }
 
-func New(database APIDatabase, rpcClient *rpc.Client, idx *indexer.Indexer, priceService *price.Service, eventBus *events.Bus, port int, cfg *ServerConfig, privacyClient *privacy.Client, ssoClient *auth.SSOClient, provider DataProvider) *Server {
+// New constructs the api Server. The idx parameter is retained for
+// backwards compatibility with existing callers but is ignored —
+// block-explorer no longer runs its own indexer (RD-855 Phase 6).
+// Chain data comes from chain-indexer via the DataProvider.
+func New(database APIDatabase, rpcClient *rpc.Client, idx any, priceService *price.Service, eventBus *events.Bus, port int, cfg *ServerConfig, privacyClient *privacy.Client, ssoClient *auth.SSOClient, provider DataProvider) *Server {
+	_ = idx
 	s := &Server{
 		db:            database,
 		rpc:           rpcClient,
-		indexer:       idx,
 		provider:      provider,
 		price:         priceService,
 		eventBus:      eventBus,
@@ -79,7 +79,7 @@ func New(database APIDatabase, rpcClient *rpc.Client, idx *indexer.Indexer, pric
 		})
 	}
 
-	s.gasTracker = gas.NewTracker(database, nil)
+	// gas prices are served via provider.GetGasPrices; no in-process tracker.
 	s.chainInfo = chaininfo.NewService(rpcClient, 10*time.Minute)
 
 	s.setupRoutes()

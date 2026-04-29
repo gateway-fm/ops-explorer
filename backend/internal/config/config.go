@@ -39,9 +39,18 @@ type Config struct {
 	CatchupBatchSize int  `mapstructure:"catchup_batch_size"`
 	CatchupQueueSize int  `mapstructure:"catchup_queue_size"`
 
-	// Set PRIVACY_PROXY_URL to enable proxy mode (auth + privacy enforcement).
-	// Leave empty for standalone mode (direct DB/RPC access).
+	// Chain-data source — set EXACTLY ONE of PrivacyProxyURL and
+	// IndexerURL. The api startup rejects having both set (privacy
+	// footgun: chain data would bypass privacy-proxy's redaction).
+	// Setting neither is also rejected.
+	//
+	// PrivacyProxyURL — privacy mode: reads routed through privacy-proxy's
+	// REST explorer API, which applies RBAC-based redaction before
+	// returning. Auth/SSO also flows through privacy-proxy.
 	PrivacyProxyURL       string `mapstructure:"privacy_proxy_url"`
+	// IndexerURL — standalone mode: reads go direct to a chain-indexer
+	// gRPC service. Raw chain data, no redaction. No auth coupling.
+	IndexerURL            string `mapstructure:"indexer_url"`
 	// PrivacyProxyPublicURL is the browser-facing URL for OAuth redirects.
 	// Defaults to PrivacyProxyURL if not set. Set this when the proxy is on a
 	// Docker-internal hostname (e.g. privacy-proxy-proxy-backend-1) but the
@@ -158,6 +167,7 @@ func Load() (*Config, error) {
 	cfg.CatchupQueueSize = v.GetInt("catchup_queue_size")
 
 	cfg.PrivacyProxyURL = v.GetString("privacy_proxy_url")
+	cfg.IndexerURL = v.GetString("indexer_url")
 	cfg.PrivacyProxyPublicURL = v.GetString("privacy_proxy_public_url")
 	if cfg.PrivacyProxyPublicURL == "" {
 		cfg.PrivacyProxyPublicURL = cfg.PrivacyProxyURL
