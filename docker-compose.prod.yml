@@ -25,12 +25,61 @@
 #     PRIVACY_PROXY_PUBLIC_URL  https://proxy.yourdomain.com
 #     SSO_REDIRECT_URI          https://explorer.yourdomain.com/api/auth/callback
 #
+# Standalone deployment helper — opt in with `--profile standalone`:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#     --profile standalone up -d
+#
+# That brings up `indexer-postgres` and `chain-indexer` (pulled from
+# ghcr.io/gateway-fm/chain-indexer, pinned via INDEXER_VERSION)
+# alongside the api/frontend so the standalone path is self-contained.
+# Set INDEXER_URL=chain-indexer:50051 on api when using this profile.
+# Operators running block-explorer alongside privacy-proxy SHOULD NOT
+# enable this profile — chain-indexer comes from privacy-proxy's
+# compose network in that mode, and running a second copy would split
+# the indexed state.
+#
 # Note: if deploying alongside privacy-proxy, the external network must exist first:
 #   docker network create privacy-proxy_proxy-network
 
 services:
   postgres:
     ports: !reset []   # Internal only — not exposed to host in production
+
+  # Standalone-profile: chain-indexer + its postgres. Only started with
+  # `--profile standalone`. The privacy-mode deployment leaves these off
+  # and points api at privacy-proxy instead.
+  indexer-postgres:
+    image: postgres:16-alpine
+    profiles: [standalone]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${INDEXER_POSTGRES_PASSWORD:?INDEXER_POSTGRES_PASSWORD is required for the standalone profile}
+      POSTGRES_DB: chain_indexer
+    volumes:
+      - indexer_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chain_indexer"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - default
+    restart: unless-stopped
+
+  chain-indexer:
+    image: ghcr.io/gateway-fm/chain-indexer:${INDEXER_VERSION:-latest}
+    profiles: [standalone]
+    environment:
+      DATABASE_URL: postgres://postgres:${INDEXER_POSTGRES_PASSWORD:?INDEXER_POSTGRES_PASSWORD is required for the standalone profile}@indexer-postgres:5432/chain_indexer?sslmode=disable
+      RPC_URL: ${RPC_URL:?RPC_URL is required}
+      GRPC_LISTEN_ADDR: ":50051"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      indexer-postgres:
+        condition: service_healthy
+    networks:
+      - default
+    restart: unless-stopped
 
   api:
     environment:
@@ -46,6 +95,8 @@ services:
 
   # indexer service removed — chain data comes from gateway-fm/chain-indexer
   # (RD-855 Phase 6). Set INDEXER_URL on the api service to point at it.
+  # The standalone profile above brings up a chain-indexer alongside this
+  # stack for self-contained deployments.
 
   # Replace dev server with compiled nginx image
   frontend:
@@ -59,3 +110,6 @@ services:
     ports: !reset []         # Not exposed directly — sit behind a reverse proxy
     environment:
       VITE_API_URL: /api
+
+volumes:
+  indexer_postgres_data:
