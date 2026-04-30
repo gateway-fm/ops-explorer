@@ -9,6 +9,7 @@ IMAGE_PREFIX ?= block-explorer
 
 .PHONY: dev dev-stop dev-destroy dev-logs dev-rebuild-backend
 .PHONY: run run-privacy stop destroy logs rebuild-backend dev-stack
+.PHONY: standalone standalone-stop
 .PHONY: version docker-build docker-build-api docker-build-public-api docker-build-frontend docker-build-dry-run
 .PHONY: lint test build clean clean-build
 
@@ -131,8 +132,8 @@ run-privacy:
 	@echo "  API  RPC: privacy-proxy-backend:8080 (proxy)"
 	@echo "  Indexer RPC: privacy-proxy-anvil:8545 (direct, for indexing)"
 	@echo ""
-	docker compose -f docker-compose.yml $(BRAND_FLAG) build
-	START_BLOCK=$(START_BLOCK) docker compose -f docker-compose.yml $(BRAND_FLAG) up -d
+	docker compose -f docker-compose.yml -f docker-compose.privacy.yml $(BRAND_FLAG) build
+	START_BLOCK=$(START_BLOCK) docker compose -f docker-compose.yml -f docker-compose.privacy.yml $(BRAND_FLAG) up -d
 	@echo ""
 	@echo "Waiting for services..."
 	@for i in 1 2 3 4 5 6 7 8 9 10; do \
@@ -147,6 +148,48 @@ run-privacy:
 	@echo "  Explorer:  http://localhost:$(FRONTEND_PORT)"
 	@echo "  API:       http://localhost:$(API_PORT)"
 	@echo ""
+
+# =============================================================================
+# Standalone (production-style: bundled anvil + chain-indexer + indexer-postgres)
+# =============================================================================
+# Brings up the full self-contained stack. Used for production-like
+# deployments without privacy-proxy. Pulls chain-indexer image from
+# GHCR (set INDEXER_VERSION to pin); uses bundled anvil for RPC by
+# default (override RPC_URL for real-RPC deployments).
+#
+# DATABASE_URL defaults to the bundled postgres for OOTB ergonomics;
+# operators using an external DB MUST set DATABASE_URL in their env.
+STANDALONE_COMPOSE := -f docker-compose.yml -f docker-compose.prod.yml $(BRAND_FLAG)
+STANDALONE_DEFAULT_DB := postgres://postgres:postgres@postgres:5432/explorer?sslmode=disable
+
+standalone:
+	@echo "Starting Block Explorer (standalone — bundled chain-indexer + anvil)..."
+	@echo ""
+	DATABASE_URL=$${DATABASE_URL:-$(STANDALONE_DEFAULT_DB)} \
+	  docker compose $(STANDALONE_COMPOSE) --profile standalone build
+	DATABASE_URL=$${DATABASE_URL:-$(STANDALONE_DEFAULT_DB)} \
+	  docker compose $(STANDALONE_COMPOSE) --profile standalone up -d
+	@echo ""
+	@echo "Waiting for services..."
+	@for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do \
+		if curl -s http://127.0.0.1:$(API_PORT)/api/stats >/dev/null 2>&1; then \
+			break; \
+		fi; \
+		sleep 2; \
+	done
+	@echo ""
+	@echo "Block Explorer is ready! (Standalone)"
+	@echo ""
+	@echo "  Explorer:    http://localhost:$(FRONTEND_PORT)"
+	@echo "  API:         http://localhost:$(API_PORT)"
+	@echo "  Public API:  http://localhost:$(PUBLIC_API_PORT)"
+	@echo ""
+
+standalone-stop:
+	@echo "Stopping standalone stack..."
+	DATABASE_URL=$${DATABASE_URL:-$(STANDALONE_DEFAULT_DB)} \
+	  docker compose $(STANDALONE_COMPOSE) --profile standalone down -v --remove-orphans
+	@echo "Done"
 
 stop:
 	@echo "Stopping Block Explorer..."

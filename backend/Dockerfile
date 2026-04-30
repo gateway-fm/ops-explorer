@@ -11,7 +11,9 @@ RUN go mod download
 COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o /api ./cmd/api
-RUN CGO_ENABLED=0 GOOS=linux go build -o /indexer ./cmd/indexer
+# cmd/indexer was retired in RD-855 Phase 6 — chain data now comes
+# from the gateway-fm/chain-indexer service over gRPC, so the api
+# image no longer ships an embedded indexer binary.
 
 FROM alpine:3.21
 
@@ -29,7 +31,6 @@ RUN mkdir -p /opt/solc && \
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 COPY --from=builder /api /api
-COPY --from=builder /indexer /indexer
 
 USER appuser:appgroup
 

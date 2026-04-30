@@ -15,11 +15,6 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
-    networks:
-      default:
-      privacy-proxy:
-        aliases:
-          - explorer-postgres
 
   api:
     platform: linux/amd64
@@ -57,9 +52,6 @@ services:
       PRIVACY_PROXY_PUBLIC_URL: ${PRIVACY_PROXY_PUBLIC_URL:-http://localhost:${HOST_PORT_PROXY:-8080}}
       SSO_CLIENT_ID: ${SSO_CLIENT_ID:-explorer}
       SSO_REDIRECT_URI: ${SSO_REDIRECT_URI:-http://localhost:${FRONTEND_PORT:-3001}/api/auth/callback}
-    networks:
-      - default
-      - privacy-proxy
     depends_on:
       postgres:
         condition: service_healthy
@@ -85,9 +77,6 @@ services:
       PUBLIC_API_PORT: "8082"
       RATE_LIMIT: ${RATE_LIMIT:-100}
       RATE_LIMIT_WINDOW: ${RATE_LIMIT_WINDOW:-1m}
-    networks:
-      - default
-      - privacy-proxy
     depends_on:
       postgres:
         condition: service_healthy
@@ -109,11 +98,6 @@ services:
       - api
       - public-api
     restart: unless-stopped
-
-networks:
-  privacy-proxy:
-    external: true
-    name: ${PROXY_NETWORK:-privacy-proxy_proxy-network}
 
 volumes:
   postgres_data:

@@ -1,59 +1,80 @@
-# Production overrides — use with:
-#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Production overrides. Use with EITHER mode:
+#
+#   Standalone mode (anvil + chain-indexer + indexer-postgres bundled):
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#       --profile standalone up -d
+#     # Or: make standalone
+#
+#   Privacy mode (chain data via privacy-proxy; that stack must be running):
+#     docker compose -f docker-compose.yml -f docker-compose.privacy.yml \
+#       -f docker-compose.prod.yml up -d
+#     # Or: make run-privacy
 #
 # Requires Docker Compose v2.x (uses !reset tag for port/volume overrides).
 #
 # What this changes vs the base file:
 #   - Frontend runs the compiled nginx image instead of the Vite dev server
 #   - PostgreSQL port is not exposed to the host
-#   - DATABASE_URL and RPC_URL must be provided via environment — no hardcoded defaults
-#   - SSO redirect URI and public URLs must be set for the real domain (privacy mode only)
+#   - DATABASE_URL must be provided via environment — no hardcoded default
 #
 # Always required:
 #   DATABASE_URL  postgres://user:pass@host:5432/explorer?sslmode=require
-#   RPC_URL       https://rpc.yourdomain.com
+#
+# Optional (with sensible defaults for the standalone profile):
+#   RPC_URL                       defaults to http://anvil:8545 (bundled anvil)
+#   INDEXER_VERSION               defaults to `latest` (chain-indexer image tag)
+#   INDEXER_POSTGRES_PASSWORD     defaults to `indexer`
 #
 # Chain-data source — pick EXACTLY ONE. Setting both is rejected at
 # startup (privacy footgun: chain data would bypass privacy-proxy's
-# redaction). Setting neither is also rejected.
+# redaction). The standalone profile defaults INDEXER_URL; privacy mode
+# (docker-compose.privacy.yml) defaults PRIVACY_PROXY_URL.
 #
 #   Standalone mode — chain-indexer direct, raw chain data:
-#     INDEXER_URL  chain-indexer:50051   # or host:port of the gRPC endpoint
+#     INDEXER_URL          defaults to chain-indexer:50051
 #
 #   Privacy mode — reads routed through privacy-proxy, redaction applied:
 #     PRIVACY_PROXY_URL         http://privacy-proxy-backend:8080
 #     PRIVACY_PROXY_PUBLIC_URL  https://proxy.yourdomain.com
 #     SSO_REDIRECT_URI          https://explorer.yourdomain.com/api/auth/callback
 #
-# Standalone deployment helper — opt in with `--profile standalone`:
-#   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
-#     --profile standalone up -d
-#
-# That brings up `indexer-postgres` and `chain-indexer` (pulled from
-# ghcr.io/gateway-fm/chain-indexer, pinned via INDEXER_VERSION)
-# alongside the api/frontend so the standalone path is self-contained.
-# Set INDEXER_URL=chain-indexer:50051 on api when using this profile.
 # Operators running block-explorer alongside privacy-proxy SHOULD NOT
-# enable this profile — chain-indexer comes from privacy-proxy's
+# enable the standalone profile — chain-indexer comes from privacy-proxy's
 # compose network in that mode, and running a second copy would split
 # the indexed state.
-#
-# Note: if deploying alongside privacy-proxy, the external network must exist first:
-#   docker network create privacy-proxy_proxy-network
 
 services:
   postgres:
     ports: !reset []   # Internal only — not exposed to host in production
 
-  # Standalone-profile: chain-indexer + its postgres. Only started with
-  # `--profile standalone`. The privacy-mode deployment leaves these off
-  # and points api at privacy-proxy instead.
+  # Standalone-profile chain-indexer trio. `--profile standalone` brings
+  # up indexer-postgres + chain-indexer + a default anvil. anvil is
+  # included so the profile is self-contained — operators replacing
+  # anvil with a real upstream RPC just override `RPC_URL` in their
+  # env (and they MAY remove anvil from their compose invocation if
+  # they prefer; but the default is a working stack).
+  #
+  # Privacy-mode deployments leave these off and point api at
+  # privacy-proxy via docker-compose.privacy.yml instead.
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:latest
+    profiles: [standalone]
+    entrypoint: ["anvil", "--host", "0.0.0.0", "--block-time", "2"]
+    healthcheck:
+      test: ["CMD", "cast", "block-number", "--rpc-url", "http://localhost:8545"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - default
+    restart: unless-stopped
+
   indexer-postgres:
     image: postgres:16-alpine
     profiles: [standalone]
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${INDEXER_POSTGRES_PASSWORD:?INDEXER_POSTGRES_PASSWORD is required for the standalone profile}
+      POSTGRES_PASSWORD: ${INDEXER_POSTGRES_PASSWORD:-indexer}
       POSTGRES_DB: chain_indexer
     volumes:
       - indexer_postgres_data:/var/lib/postgresql/data
@@ -70,12 +91,16 @@ services:
     image: ghcr.io/gateway-fm/chain-indexer:${INDEXER_VERSION:-latest}
     profiles: [standalone]
     environment:
-      DATABASE_URL: postgres://postgres:${INDEXER_POSTGRES_PASSWORD:?INDEXER_POSTGRES_PASSWORD is required for the standalone profile}@indexer-postgres:5432/chain_indexer?sslmode=disable
-      RPC_URL: ${RPC_URL:?RPC_URL is required}
+      DATABASE_URL: postgres://postgres:${INDEXER_POSTGRES_PASSWORD:-indexer}@indexer-postgres:5432/chain_indexer?sslmode=disable
+      # Default to the bundled anvil; override to point at a real
+      # upstream RPC (e.g. RPC_URL=https://rpc.example.com) for prod.
+      RPC_URL: ${RPC_URL:-http://anvil:8545}
       GRPC_LISTEN_ADDR: ":50051"
       LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
       indexer-postgres:
+        condition: service_healthy
+      anvil:
         condition: service_healthy
     networks:
       - default
@@ -84,10 +109,12 @@ services:
   api:
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      RPC_URL: ${RPC_URL:?RPC_URL is required}
+      # Default to bundled anvil; override for real-RPC deployments.
+      RPC_URL: ${RPC_URL:-http://anvil:8545}
       # Pick exactly one of INDEXER_URL / PRIVACY_PROXY_URL — the api
-      # process rejects having both set.
-      INDEXER_URL: ${INDEXER_URL:-}
+      # process rejects having both set. Standalone profile defaults
+      # INDEXER_URL to the in-stack chain-indexer.
+      INDEXER_URL: ${INDEXER_URL:-chain-indexer:50051}
       PRIVACY_PROXY_URL: ${PRIVACY_PROXY_URL:-}
       PRIVACY_PROXY_PUBLIC_URL: ${PRIVACY_PROXY_PUBLIC_URL:-}
       SSO_REDIRECT_URI: ${SSO_REDIRECT_URI:-}
