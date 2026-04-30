@@ -118,7 +118,19 @@ services:
       PRIVACY_PROXY_URL: ${PRIVACY_PROXY_URL:-}
       PRIVACY_PROXY_PUBLIC_URL: ${PRIVACY_PROXY_PUBLIC_URL:-}
       SSO_REDIRECT_URI: ${SSO_REDIRECT_URI:-}
-    ports: !reset []   # Not exposed directly — sit behind a reverse proxy
+    # Host port mapping inherited from base compose (${API_PORT:-8081}:8080).
+    # Operators behind a reverse proxy can override `API_PORT` to bind a
+    # firewalled port, or layer their own override file to add `ports: !reset []`.
+
+  public-api:
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      # public-api also reads chain data via chain-indexer (RD-855 Phase 6).
+      # Standalone profile defaults INDEXER_URL to the in-stack service;
+      # privacy mode uses docker-compose.privacy.yml to override.
+      INDEXER_URL: ${INDEXER_URL:-chain-indexer:50051}
+      RPC_URL: ${RPC_URL:-http://anvil:8545}
+    # See `api` above for the port-mapping rationale.
 
   # indexer service removed — chain data comes from gateway-fm/chain-indexer
   # (RD-855 Phase 6). Set INDEXER_URL on the api service to point at it.
@@ -134,7 +146,14 @@ services:
     working_dir: !reset ""  # Clear dev working_dir so nginx uses its own root
     command: !reset []       # Clear dev command so Dockerfile CMD (nginx) runs
     volumes: !reset []       # No source mount in production
-    ports: !reset []         # Not exposed directly — sit behind a reverse proxy
+    # nginx in the prod image listens on :80 (different from the Vite
+    # dev server on :3001), so the dev port mapping has to be replaced
+    # rather than inherited. Reset then re-add with the correct internal
+    # port so `make standalone` is reachable on host:${FRONTEND_PORT:-3001}
+    # OOTB. Operators behind a reverse proxy can layer an override
+    # to drop the binding entirely.
+    ports: !override
+      - "${FRONTEND_PORT:-3001}:80"
     environment:
       VITE_API_URL: /api
 
