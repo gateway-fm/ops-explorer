@@ -152,23 +152,29 @@ run-privacy:
 # =============================================================================
 # Standalone (production-style: bundled anvil + chain-indexer + indexer-postgres)
 # =============================================================================
-# Brings up the full self-contained stack. Used for production-like
-# deployments without privacy-proxy. Pulls chain-indexer image from
-# GHCR (set INDEXER_VERSION to pin); uses bundled anvil for RPC by
-# default (override RPC_URL for real-RPC deployments).
-#
-# DATABASE_URL defaults to the bundled postgres for OOTB ergonomics;
-# operators using an external DB MUST set DATABASE_URL in their env.
+# Brings up the full self-contained stack for local / dev-style runs.
+# The prod compose file (docker-compose.prod.yml) hard-requires its env
+# vars (DATABASE_URL, RPC_URL, INDEXER_POSTGRES_PASSWORD) so a raw
+# `docker compose ... up` cannot accidentally start with insecure dev
+# defaults in a production deployment. This Makefile target sets those
+# defaults explicitly so `make standalone` works OOTB locally; any
+# value already in the environment wins via shell `:-`.
 STANDALONE_COMPOSE := -f docker-compose.yml -f docker-compose.prod.yml $(BRAND_FLAG)
 STANDALONE_DEFAULT_DB := postgres://postgres:postgres@postgres:5432/explorer?sslmode=disable
+STANDALONE_DEFAULT_RPC := http://anvil:8545
+STANDALONE_DEFAULT_INDEXER := chain-indexer:50051
+STANDALONE_DEFAULT_INDEXER_PASSWORD := indexer
+STANDALONE_ENV = \
+	DATABASE_URL=$${DATABASE_URL:-$(STANDALONE_DEFAULT_DB)} \
+	RPC_URL=$${RPC_URL:-$(STANDALONE_DEFAULT_RPC)} \
+	INDEXER_URL=$${INDEXER_URL:-$(STANDALONE_DEFAULT_INDEXER)} \
+	INDEXER_POSTGRES_PASSWORD=$${INDEXER_POSTGRES_PASSWORD:-$(STANDALONE_DEFAULT_INDEXER_PASSWORD)}
 
 standalone:
 	@echo "Starting Block Explorer (standalone — bundled chain-indexer + anvil)..."
 	@echo ""
-	DATABASE_URL=$${DATABASE_URL:-$(STANDALONE_DEFAULT_DB)} \
-	  docker compose $(STANDALONE_COMPOSE) --profile standalone build
-	DATABASE_URL=$${DATABASE_URL:-$(STANDALONE_DEFAULT_DB)} \
-	  docker compose $(STANDALONE_COMPOSE) --profile standalone up -d
+	$(STANDALONE_ENV) docker compose $(STANDALONE_COMPOSE) --profile standalone build
+	$(STANDALONE_ENV) docker compose $(STANDALONE_COMPOSE) --profile standalone up -d
 	@echo ""
 	@echo "Waiting for services..."
 	@for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do \
@@ -187,8 +193,7 @@ standalone:
 
 standalone-stop:
 	@echo "Stopping standalone stack..."
-	DATABASE_URL=$${DATABASE_URL:-$(STANDALONE_DEFAULT_DB)} \
-	  docker compose $(STANDALONE_COMPOSE) --profile standalone down -v --remove-orphans
+	$(STANDALONE_ENV) docker compose $(STANDALONE_COMPOSE) --profile standalone down -v --remove-orphans
 	@echo "Done"
 
 stop:
