@@ -1,39 +1,62 @@
 # =============================================================================
-# Block Explorer — Production Docker Compose
+# Block Explorer — Production Docker Compose (Standalone)
 # =============================================================================
 #
-# Full production deployment with all configuration options documented.
-# Copy this file, fill in your values, and run:
+# Self-contained production deployment of block-explorer with all
+# configuration documented. Brings up:
 #
-#   docker compose -f docker-compose.production.yml up -d
+#   - postgres            (block-explorer's own DB)
+#   - indexer-postgres    (chain-indexer's DB)
+#   - chain-indexer       (indexes the chain into indexer-postgres,
+#                          serves gRPC on :50051)
+#   - api                 (block-explorer api, reads chain data from
+#                          chain-indexer over gRPC)
+#   - public-api          (rate-limited read-only API for third-party
+#                          consumers)
+#   - frontend            (React SPA served by nginx)
 #
-# Images are published to Docker Hub on each release:
-#   gatewayfm/block-explorer-api
-#   gatewayfm/block-explorer-indexer
-#   gatewayfm/block-explorer-public-api
-#   gatewayfm/block-explorer-frontend
+# Operators running block-explorer behind privacy-proxy do NOT use
+# this file — privacy-proxy's own compose stack provides chain-indexer.
+# Use the repo-root `docker-compose.yml` + `docker-compose.privacy.yml`
+# overlay instead (or `make run-privacy`).
 #
-# Pin to a specific version (recommended):
-#   image: gatewayfm/block-explorer-api:0.0.1
+# Quick start:
 #
-# Or use latest (not recommended for production):
-#   image: gatewayfm/block-explorer-api:latest
+#   1. Copy this file and fill in your values (or export them as env vars):
+#        cp examples/docker-compose.production.yml docker-compose.production.yml
+#   2. Required env vars (compose fails to start without them):
+#        POSTGRES_PASSWORD              block-explorer DB password
+#        INDEXER_POSTGRES_PASSWORD      chain-indexer DB password
+#        RPC_URL                        upstream chain RPC endpoint
+#        CHAIN_ID                       decimal chain ID for MetaMask
+#   3. Run:
+#        docker compose -f docker-compose.production.yml up -d
+#
+# Images are published on each release:
+#   block-explorer:  gatewayfm/block-explorer-{api,public-api,frontend}
+#                    Pin via VERSION env var (defaults to `latest` —
+#                    NOT recommended for production).
+#   chain-indexer:   ghcr.io/gateway-fm/chain-indexer
+#                    Pin via INDEXER_VERSION env var.
+#
+# Pin to a specific release in production. Example:
+#   VERSION=0.5.0 INDEXER_VERSION=v1.2.3 docker compose ... up -d
 #
 # =============================================================================
 
 services:
 
   # ---------------------------------------------------------------------------
-  # PostgreSQL — Data store for indexed chain data
+  # postgres — block-explorer's data store (verifications, etc.)
   # ---------------------------------------------------------------------------
+  # Note: most chain data lives in indexer-postgres now (RD-855 Phase 6).
+  # block-explorer's own postgres holds verifications and api-side state.
   postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-explorer}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-explorer}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -44,7 +67,41 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
-  # API — Serves the explorer frontend and internal API
+  # indexer-postgres — chain-indexer's data store (blocks, txs, logs, etc.)
+  # ---------------------------------------------------------------------------
+  indexer-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${INDEXER_POSTGRES_PASSWORD:?Set INDEXER_POSTGRES_PASSWORD}
+      POSTGRES_DB: chain_indexer
+    volumes:
+      - indexer_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chain_indexer"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # chain-indexer — indexes blocks/txs/logs from RPC into indexer-postgres,
+  # serves gRPC on :50051 for the api/public-api to consume.
+  # ---------------------------------------------------------------------------
+  chain-indexer:
+    image: ghcr.io/gateway-fm/chain-indexer:${INDEXER_VERSION:-latest}
+    environment:
+      DATABASE_URL: postgres://postgres:${INDEXER_POSTGRES_PASSWORD}@indexer-postgres:5432/chain_indexer?sslmode=disable
+      RPC_URL: ${RPC_URL:?Set RPC_URL to your chain RPC endpoint}
+      GRPC_LISTEN_ADDR: ":50051"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      indexer-postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # api — Serves the explorer frontend and internal API
   # ---------------------------------------------------------------------------
   api:
     image: gatewayfm/block-explorer-api:${VERSION:-latest}
@@ -53,57 +110,34 @@ services:
     environment:
       # --- Required ---
       DATABASE_URL: postgres://${POSTGRES_USER:-explorer}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-explorer}?sslmode=disable
-      RPC_URL: ${RPC_URL:?Set RPC_URL to your chain RPC endpoint}
+      RPC_URL: ${RPC_URL:?Set RPC_URL}
+      # Standalone mode — chain data via chain-indexer over gRPC.
+      INDEXER_URL: chain-indexer:50051
 
       # --- Server ---
       API_PORT: "8080"                              # Internal port (mapped via Docker)
       SOLC_PATH: /opt/solc                          # Path to solc binaries for contract verification
 
-      # --- Privacy Proxy (optional) ---
-      # Uncomment these if you're running with a privacy proxy
-      # PRIVACY_PROXY_URL: http://privacy-proxy:8080
+      # --- Privacy mode (optional) ---
+      # If you want to route chain reads through privacy-proxy for
+      # RBAC redaction instead of going direct to chain-indexer:
+      # 1. Comment out INDEXER_URL above (api rejects both being set).
+      # 2. Set the values below. Block-explorer also has to be on
+      #    privacy-proxy's network — see docker-compose.privacy.yml in
+      #    the repo root for the canonical wiring.
+      # PRIVACY_PROXY_URL: http://privacy-proxy-backend:8080
       # PRIVACY_PROXY_PUBLIC_URL: https://privacy.example.com
       # SSO_CLIENT_ID: explorer
       # SSO_REDIRECT_URI: https://explorer.example.com/api/auth/callback
     depends_on:
       postgres:
         condition: service_healthy
+      chain-indexer:
+        condition: service_started
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
-  # Indexer — Indexes chain data from the RPC node into PostgreSQL
-  # ---------------------------------------------------------------------------
-  indexer:
-    image: gatewayfm/block-explorer-indexer:${VERSION:-latest}
-    environment:
-      # --- Required ---
-      DATABASE_URL: postgres://${POSTGRES_USER:-explorer}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-explorer}?sslmode=disable
-      RPC_URL: ${RPC_URL:?Set RPC_URL to your chain RPC endpoint}
-
-      # --- Indexer tuning ---
-      POLL_INTERVAL: ${POLL_INTERVAL:-2s}           # How often to poll for new blocks
-      START_BLOCK: ${START_BLOCK:-0}                # Block number to start indexing from (0 = genesis)
-      LOG_LEVEL: ${LOG_LEVEL:-info}                 # Log level: debug, info, warn, error
-
-      # --- Performance tuning ---
-      # Reduce these if your RPC endpoint gets overwhelmed (EOF errors, rate limits)
-      CATCHUP_WORKERS: ${CATCHUP_WORKERS:-10}       # Parallel workers for historical block catchup
-      RPC_WORKERS: ${RPC_WORKERS:-50}               # Concurrent RPC request workers
-      RPC_RATE_LIMIT: ${RPC_RATE_LIMIT:-500}        # Max RPC requests per second
-
-      # --- Tracing (optional) ---
-      # Enable to index internal transactions (debug_traceBlockByNumber)
-      # Requires an archive node or a node with debug/trace API enabled
-      # ENABLE_TRACING: "true"
-      # TRACE_WORKERS: "5"
-      # TRACE_RATE_LIMIT: "50"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-
-  # ---------------------------------------------------------------------------
-  # Public API — Rate-limited read-only API for external consumers
+  # public-api — Rate-limited read-only API for external consumers
   # ---------------------------------------------------------------------------
   public-api:
     image: gatewayfm/block-explorer-public-api:${VERSION:-latest}
@@ -112,7 +146,9 @@ services:
     environment:
       # --- Required ---
       DATABASE_URL: postgres://${POSTGRES_USER:-explorer}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-explorer}?sslmode=disable
-      RPC_URL: ${RPC_URL}
+      RPC_URL: ${RPC_URL:?Set RPC_URL}
+      # public-api also reads chain data via chain-indexer (RD-855 Phase 6).
+      INDEXER_URL: chain-indexer:50051
 
       # --- Server ---
       PUBLIC_API_PORT: "8082"                       # Internal port (mapped via Docker)
@@ -123,6 +159,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      chain-indexer:
+        condition: service_started
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
@@ -176,3 +214,4 @@ services:
 
 volumes:
   postgres_data:
+  indexer_postgres_data:
