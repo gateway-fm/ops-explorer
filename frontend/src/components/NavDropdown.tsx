@@ -9,13 +9,18 @@ import { addNetworkToMetaMask } from '../lib/metamask';
 import { useTheme } from '../hooks/useTheme';
 import { formatDID } from '../lib/utils';
 import { getConfig } from '../lib/runtimeConfig';
+import { features } from '../lib/features';
 
 const blockchainItems = [
   { to: '/blocks', label: 'Blocks', icon: Boxes },
   { to: '/transactions', label: 'Transactions', icon: ArrowLeftRight },
   { to: '/accounts', label: 'Top Accounts', icon: Users },
   { to: '/gas-tracker', label: 'Gas Tracker', icon: Fuel },
-  { to: '/verify', label: 'Verify Contract', icon: ShieldCheck },
+  // "Verify Contract" is hidden in privacy mode — the surface is
+  // compiled out on the privacy build (see lib/features.ts).
+  ...(features().contractVerification
+    ? [{ to: '/verify', label: 'Verify Contract', icon: ShieldCheck }]
+    : []),
   { to: '/chain-info', label: 'Chain Info', icon: Info },
 ];
 

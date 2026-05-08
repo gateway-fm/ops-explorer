@@ -5,6 +5,7 @@ import { api } from '../lib/api';
 import { AlertCircle, AlertTriangle, CheckCircle, ChevronDown, ChevronRight, Info, Loader2, Plus, Trash2, Upload, X, FileText } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { getConfig } from '../lib/runtimeConfig';
+import { features } from '../lib/features';
 
 const LICENSE_TYPES = [
   'No License',
@@ -82,7 +83,39 @@ function parseHardhatArtifact(raw: string): HardhatParsed {
   return { standardInput, compilerVersion, contracts };
 }
 
+// VerificationDisabled renders when the deployment has the feature compiled
+// out / disabled (see lib/features.ts). The /verify route stays registered
+// so deep-links don't 404; the form is just swapped for an explanation.
+// The corresponding API surface is also compiled out on the backend in
+// privacy builds (verification_routes_*.go).
+function VerificationDisabled() {
+  return (
+    <div className="max-w-2xl mx-auto py-16 px-6 text-center">
+      <div className="mx-auto w-12 h-12 rounded-full bg-neutral-100 flex items-center justify-center mb-4">
+        <Info className="w-6 h-6 text-neutral-400" />
+      </div>
+      <h1 className="text-xl font-semibold text-neutral-900 mb-2">
+        Contract verification is not available in this deployment
+      </h1>
+      <p className="text-sm text-neutral-500">
+        This explorer is running in privacy mode, where contract source
+        publishing is disabled. Contact your operator if you need source
+        code attached to a contract address.
+      </p>
+    </div>
+  );
+}
+
 export default function ContractVerification() {
+  // Feature gate must come before any other hooks so the disabled branch
+  // never starts the form's effects (network calls, query subscriptions).
+  if (!features().contractVerification) {
+    return <VerificationDisabled />;
+  }
+  return <ContractVerificationForm />;
+}
+
+function ContractVerificationForm() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const initialAddress = searchParams.get('address') || '';
