@@ -39,18 +39,78 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
           labels: |
             org.opencontainers.image.title=block-explorer-api
-            org.opencontainers.image.description=Block Explorer API Service
+            org.opencontainers.image.description=Block Explorer API Service (standalone build — links chain-indexer gRPC client)
             org.opencontainers.image.url=${{ github.event.repository.html_url }}
             org.opencontainers.image.source=${{ github.repositoryUrl }}
             org.opencontainers.image.version=${{ github.ref_name }}
             org.opencontainers.image.created=${{ github.event.release.created_at }}
             org.opencontainers.image.revision=${{ github.sha }}
 
-      - name: Build and push API image
+      - name: Build and push API image (standalone)
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: backend/
           file: backend/Dockerfile.api
+          # Pin the build target explicitly so the published image is
+          # determined by name, not by Dockerfile stage order. Without
+          # `target:`, BuildKit picks the LAST `FROM ... AS` stage —
+          # which silently flips the variant if anyone reorders the
+          # Dockerfile or adds a stage. RD-922.
+          target: standalone
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  release-api-privacy:
+    name: Release API Image (privacy build)
+    runs-on: ubuntu-latest
+    # Privacy variant: built with -tags privacy so the
+    # internal/api/indexerclient package (chain-indexer gRPC client) is
+    # excluded at compile time. Used by privacy-mode deployments where
+    # direct chain-indexer access would bypass privacy-proxy redaction.
+    # Published as a separately-named image (RD-922) so the privacy
+    # compose can pin by image name rather than depending on the
+    # standalone repo to never link the gRPC client.
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
+        with:
+          images: gatewayfm/block-explorer-api-privacy
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=block-explorer-api-privacy
+            org.opencontainers.image.description=Block Explorer API Service (privacy build — chain-indexer gRPC client compiled out)
+            org.opencontainers.image.url=${{ github.event.repository.html_url }}
+            org.opencontainers.image.source=${{ github.repositoryUrl }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.created=${{ github.event.release.created_at }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Build and push API image (privacy)
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: backend/
+          file: backend/Dockerfile.api
+          target: privacy
           push: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
