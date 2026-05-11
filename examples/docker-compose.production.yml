@@ -36,7 +36,7 @@
 #   block-explorer:  gatewayfm/block-explorer-{api,public-api,frontend}
 #                    Pin via VERSION env var (defaults to `latest` —
 #                    NOT recommended for production).
-#   chain-indexer:   ghcr.io/gateway-fm/chain-indexer
+#   chain-indexer:   gatewayfm/chain-indexer
 #                    Pin via INDEXER_VERSION env var.
 #
 # Pin to a specific release in production. Example:
@@ -89,7 +89,7 @@ services:
   # serves gRPC on :50051 for the api/public-api to consume.
   # ---------------------------------------------------------------------------
   chain-indexer:
-    image: ghcr.io/gateway-fm/chain-indexer:${INDEXER_VERSION:-latest}
+    image: gatewayfm/chain-indexer:${INDEXER_VERSION:-latest}
     environment:
       DATABASE_URL: postgres://postgres:${INDEXER_POSTGRES_PASSWORD}@indexer-postgres:5432/chain_indexer?sslmode=disable
       RPC_URL: ${RPC_URL:?Set RPC_URL to your chain RPC endpoint}
