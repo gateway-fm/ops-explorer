@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"explorer/internal/rpc"
 	"explorer/internal/types"
 
 	"explorer/pkg/eth/common"
@@ -30,7 +32,74 @@ func (s *Server) handleGetStats(w http.ResponseWriter, r *http.Request) {
 		stats = &types.ChainStats{}
 	}
 	stats.PrivacyEnabled = s.privacyClient != nil
+
+	// In privacy mode, totalTransactions / totalAddresses flow through from
+	// the privacy proxy (RBAC-scoped per caller). totalBlocks and
+	// avgBlockTime are public chain-level facts, so we pull them straight
+	// from the node via RPC instead of relying on the proxy's view.
+	if stats.PrivacyEnabled && s.rpc != nil {
+		if total, avg, ok := publicChainFactsFromRPC(r.Context(), s.rpc); ok {
+			stats.TotalBlocks = total
+			if avg > 0 {
+				stats.AvgBlockTime = avg
+			}
+		}
+	}
 	writeJSON(w, stats)
+}
+
+// publicChainFactsFromRPC returns chain-height-based stats that the
+// privacy proxy doesn't gate. avgBlockTime is sampled over the most
+// recent ~avgBlockSampleSize blocks; on a chain too young for the
+// sample (or if samples can't be fetched), avgBlockTime comes back 0
+// and the caller leaves the upstream value untouched.
+//
+// Genesis (block 0) is deliberately excluded — dev chains (anvil,
+// hardhat) frequently leave its timestamp at 0, which would otherwise
+// turn the average into (now-0)/N — a wildly wrong number.
+const (
+	avgBlockSampleSize uint64  = 100
+	avgBlockTimeMaxSec float64 = 3600 // 1h/block is the upper sanity bound
+)
+
+func publicChainFactsFromRPC(ctx context.Context, c *rpc.Client) (totalBlocks int64, avgBlockTime float64, ok bool) {
+	latest, err := c.BlockNumber(ctx)
+	if err != nil {
+		return 0, 0, false
+	}
+	// totalBlocks counts genesis as well.
+	totalBlocks = int64(latest) + 1
+
+	// Need at least block 1 to sample without touching genesis.
+	if latest < 2 {
+		return totalBlocks, 0, true
+	}
+	earliestSample := uint64(1)
+	if latest > avgBlockSampleSize {
+		earliestSample = latest - avgBlockSampleSize
+	}
+	window := latest - earliestSample
+
+	latestBlock, err := c.RawBlockByNumber(ctx, latest)
+	if err != nil {
+		return totalBlocks, 0, true
+	}
+	earlierBlock, err := c.RawBlockByNumber(ctx, earliestSample)
+	if err != nil {
+		return totalBlocks, 0, true
+	}
+	latestTS := uint64(latestBlock.Timestamp)
+	earlierTS := uint64(earlierBlock.Timestamp)
+	if latestTS <= earlierTS {
+		return totalBlocks, 0, true
+	}
+	avg := float64(latestTS-earlierTS) / float64(window)
+	if avg <= 0 || avg > avgBlockTimeMaxSec {
+		// Implausible — happens on dev chains that initialise early
+		// block timestamps to 0. Skip the override and let upstream win.
+		return totalBlocks, 0, true
+	}
+	return totalBlocks, avg, true
 }
 
 func (s *Server) handleGetPrice(w http.ResponseWriter, r *http.Request) {
