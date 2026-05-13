@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"explorer/internal/rpc"
 	"explorer/internal/types"
 
 	"explorer/pkg/eth/common"
@@ -30,7 +32,76 @@ func (s *Server) handleGetStats(w http.ResponseWriter, r *http.Request) {
 		stats = &types.ChainStats{}
 	}
 	stats.PrivacyEnabled = s.privacyClient != nil
+
+	// In privacy mode, totalTransactions / totalAddresses flow through from
+	// the privacy proxy (RBAC-scoped per caller). totalBlocks and
+	// avgBlockTime are public chain-level facts, so we pull them straight
+	// from the node via RPC instead of relying on the proxy's view.
+	if stats.PrivacyEnabled && s.rpc != nil {
+		if total, avg, ok := publicChainFactsFromRPC(r.Context(), s.rpc); ok {
+			stats.TotalBlocks = total
+			if avg > 0 {
+				stats.AvgBlockTime = avg
+			}
+		}
+	}
 	writeJSON(w, stats)
+}
+
+// publicChainFactsFromRPC returns chain-height-based stats that the
+// privacy proxy's /explorer/stats endpoint may not surface usefully.
+// Calls go through the same privacy proxy (its RPC forwarder), so the
+// proxy still applies its group policy on a per-method basis. If any
+// call is denied or the sample is implausible, ok=false and the caller
+// leaves both upstream fields untouched (all-or-nothing).
+//
+// Genesis (block 0) is deliberately excluded — dev chains (anvil,
+// hardhat) frequently leave its timestamp at 0, which would otherwise
+// turn the average into (now-0)/N — a wildly wrong number.
+const (
+	avgBlockSampleSize uint64  = 100
+	avgBlockTimeMaxSec float64 = 3600 // 1h/block is the upper sanity bound
+)
+
+func publicChainFactsFromRPC(ctx context.Context, c *rpc.Client) (totalBlocks int64, avgBlockTime float64, ok bool) {
+	latest, err := c.BlockNumber(ctx)
+	if err != nil {
+		slog.Debug("publicChainFactsFromRPC: eth_blockNumber denied or failed", "error", err)
+		return 0, 0, false
+	}
+	// totalBlocks counts genesis as well.
+	totalBlocks = int64(latest) + 1
+
+	// Need at least block 1 to sample without touching genesis.
+	if latest < 2 {
+		return totalBlocks, 0, true
+	}
+	earliestSample := uint64(1)
+	if latest > avgBlockSampleSize {
+		earliestSample = latest - avgBlockSampleSize
+	}
+	window := latest - earliestSample
+
+	latestTS, err := c.RawBlockTimestamp(ctx, latest)
+	if err != nil {
+		slog.Debug("publicChainFactsFromRPC: latest block timestamp denied or failed", "block", latest, "error", err)
+		return 0, 0, false
+	}
+	earlierTS, err := c.RawBlockTimestamp(ctx, earliestSample)
+	if err != nil {
+		slog.Debug("publicChainFactsFromRPC: earlier block timestamp denied or failed", "block", earliestSample, "error", err)
+		return 0, 0, false
+	}
+	if latestTS <= earlierTS {
+		return totalBlocks, 0, true
+	}
+	avg := float64(latestTS-earlierTS) / float64(window)
+	if avg <= 0 || avg > avgBlockTimeMaxSec {
+		// Implausible — happens on dev chains that initialise early
+		// block timestamps to 0. Skip the override and let upstream win.
+		return totalBlocks, 0, true
+	}
+	return totalBlocks, avg, true
 }
 
 func (s *Server) handleGetPrice(w http.ResponseWriter, r *http.Request) {
