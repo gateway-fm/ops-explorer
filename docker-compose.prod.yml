@@ -97,7 +97,7 @@ services:
     restart: unless-stopped
 
   chain-indexer:
-    image: ghcr.io/gateway-fm/chain-indexer:${INDEXER_VERSION:-latest}
+    image: gatewayfm/chain-indexer:${INDEXER_VERSION:-latest}
     profiles: [standalone]
     environment:
       DATABASE_URL: postgres://postgres:${INDEXER_POSTGRES_PASSWORD:?INDEXER_POSTGRES_PASSWORD is required for the standalone profile}@indexer-postgres:5432/chain_indexer?sslmode=disable
