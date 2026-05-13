@@ -12,6 +12,7 @@ import { ContractInteraction } from '../components/ContractInteraction';
 import { FileCode2, BookOpen, Loader2, PenLine, ShieldCheck, Wallet, X, ShieldOff } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { useAuth } from '../lib/auth';
+import { features } from '../lib/features';
 
 
 
@@ -229,7 +230,7 @@ export function Address() {
             Verified
           </span>
         )}
-        {info.isContract && !contract?.isVerified && (
+        {info.isContract && !contract?.isVerified && features().contractVerification && (
           <Link
             to={`/verify?address=${address}`}
             className="btn-secondary text-xs gap-1.5"
@@ -454,10 +455,15 @@ export function Address() {
                       </>
                     ) : (
                       <div className="text-center text-neutral-400 py-8">
-                        Contract source code is not verified.{' '}
-                        <Link to={`/verify?address=${address}`} className="text-primary hover:text-primary-600">
-                          Verify it now
-                        </Link>
+                        Contract source code is not verified.
+                        {features().contractVerification && (
+                          <>
+                            {' '}
+                            <Link to={`/verify?address=${address}`} className="text-primary hover:text-primary-600">
+                              Verify it now
+                            </Link>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
