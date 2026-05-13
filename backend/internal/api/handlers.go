@@ -49,10 +49,11 @@ func (s *Server) handleGetStats(w http.ResponseWriter, r *http.Request) {
 }
 
 // publicChainFactsFromRPC returns chain-height-based stats that the
-// privacy proxy doesn't gate. avgBlockTime is sampled over the most
-// recent ~avgBlockSampleSize blocks; on a chain too young for the
-// sample (or if samples can't be fetched), avgBlockTime comes back 0
-// and the caller leaves the upstream value untouched.
+// privacy proxy's /explorer/stats endpoint may not surface usefully.
+// Calls go through the same privacy proxy (its RPC forwarder), so the
+// proxy still applies its group policy on a per-method basis. If any
+// call is denied or the sample is implausible, ok=false and the caller
+// leaves both upstream fields untouched (all-or-nothing).
 //
 // Genesis (block 0) is deliberately excluded — dev chains (anvil,
 // hardhat) frequently leave its timestamp at 0, which would otherwise
@@ -65,6 +66,7 @@ const (
 func publicChainFactsFromRPC(ctx context.Context, c *rpc.Client) (totalBlocks int64, avgBlockTime float64, ok bool) {
 	latest, err := c.BlockNumber(ctx)
 	if err != nil {
+		slog.Debug("publicChainFactsFromRPC: eth_blockNumber denied or failed", "error", err)
 		return 0, 0, false
 	}
 	// totalBlocks counts genesis as well.
@@ -80,16 +82,16 @@ func publicChainFactsFromRPC(ctx context.Context, c *rpc.Client) (totalBlocks in
 	}
 	window := latest - earliestSample
 
-	latestBlock, err := c.RawBlockByNumber(ctx, latest)
+	latestTS, err := c.RawBlockTimestamp(ctx, latest)
 	if err != nil {
-		return totalBlocks, 0, true
+		slog.Debug("publicChainFactsFromRPC: latest block timestamp denied or failed", "block", latest, "error", err)
+		return 0, 0, false
 	}
-	earlierBlock, err := c.RawBlockByNumber(ctx, earliestSample)
+	earlierTS, err := c.RawBlockTimestamp(ctx, earliestSample)
 	if err != nil {
-		return totalBlocks, 0, true
+		slog.Debug("publicChainFactsFromRPC: earlier block timestamp denied or failed", "block", earliestSample, "error", err)
+		return 0, 0, false
 	}
-	latestTS := uint64(latestBlock.Timestamp)
-	earlierTS := uint64(earlierBlock.Timestamp)
 	if latestTS <= earlierTS {
 		return totalBlocks, 0, true
 	}
