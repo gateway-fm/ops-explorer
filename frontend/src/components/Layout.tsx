@@ -10,6 +10,7 @@ import { addNetworkToMetaMask } from '../lib/metamask';
 import { usePrivacyEnabled } from '../hooks/usePrivacyEnabled';
 import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip';
 import { branding } from '../lib/branding';
+import { features } from '../lib/features';
 
 const mobileNavItems = [
   { to: '/blocks', label: 'Blocks', icon: Boxes },
@@ -18,7 +19,10 @@ const mobileNavItems = [
   { to: '/tokens', label: 'Tokens', icon: Coins },
   { to: '/token-transfers', label: 'Token Transfers', icon: ArrowLeftRight },
   { to: '/gas-tracker', label: 'Gas Tracker', icon: Fuel },
-  { to: '/verify', label: 'Verify Contract', icon: ShieldCheck },
+  // "Verify Contract" hidden in privacy mode (see lib/features.ts).
+  ...(features().contractVerification
+    ? [{ to: '/verify', label: 'Verify Contract', icon: ShieldCheck }]
+    : []),
   { to: '/chain-info', label: 'Chain Info', icon: Info },
   { to: '/stats', label: 'Charts', icon: BarChart3 },
   { to: '/api-docs', label: 'API Docs', icon: BookOpen },
@@ -440,7 +444,9 @@ export function Layout() {
                 <Link to="/token-transfers" className="text-sm text-neutral-500 hover:text-primary transition-colors">Token Transfers</Link>
                 <Link to="/accounts" className="text-sm text-neutral-500 hover:text-primary transition-colors">Top Accounts</Link>
                 <Link to="/gas-tracker" className="text-sm text-neutral-500 hover:text-primary transition-colors">Gas Tracker</Link>
-                <Link to="/verify" className="text-sm text-neutral-500 hover:text-primary transition-colors">Verify Contract</Link>
+                {features().contractVerification && (
+                  <Link to="/verify" className="text-sm text-neutral-500 hover:text-primary transition-colors">Verify Contract</Link>
+                )}
               </div>
             </div>
 
