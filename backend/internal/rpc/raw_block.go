@@ -117,3 +117,18 @@ func (c *Client) RawBlockHash(ctx context.Context, number uint64) (string, error
 	}
 	return raw.Hash.Hex(), nil
 }
+
+// RawBlockTimestamp fetches just the timestamp of a block via
+// eth_getBlockByNumber with fullTxObjects=false. This avoids the
+// privacy proxy walking and redacting the full tx list when only the
+// timestamp is needed (e.g. for avg-block-time sampling).
+func (c *Client) RawBlockTimestamp(ctx context.Context, number uint64) (uint64, error) {
+	var raw struct {
+		Timestamp hexutil.Uint64 `json:"timestamp"`
+	}
+	err := c.raw.CallContext(ctx, &raw, "eth_getBlockByNumber", toHex(number), false)
+	if err != nil {
+		return 0, fmt.Errorf("raw block timestamp fetch for %d: %w", number, err)
+	}
+	return uint64(raw.Timestamp), nil
+}
