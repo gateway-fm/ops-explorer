@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"explorer/internal/events"
-	"explorer/internal/log"
+	"explorer/pkg/log"
 )
 
 type Hub struct {
@@ -69,13 +69,13 @@ func (h *Hub) registerClient(client *Client) {
 	defer h.mu.Unlock()
 
 	if len(h.clients) >= h.maxConnections {
-		log.Warn("max connections reached, rejecting client")
+		log.Warn("ws hub: max connections reached, rejecting client", "max", h.maxConnections)
 		client.Close()
 		return
 	}
 
 	h.clients[client] = true
-	log.Debug("client registered", "total", len(h.clients))
+	log.Debug("ws hub: client registered", "clients", len(h.clients))
 }
 
 func (h *Hub) unregisterClient(client *Client) {
@@ -93,7 +93,7 @@ func (h *Hub) unregisterClient(client *Client) {
 		}
 
 		client.Close()
-		log.Debug("client unregistered", "total", len(h.clients))
+		log.Debug("ws hub: client unregistered", "clients", len(h.clients))
 	}
 }
 
@@ -170,7 +170,7 @@ func (h *Hub) handleEvent(event *events.Event) {
 		"data":  json.RawMessage(event.Data),
 	})
 	if err != nil {
-		log.Error("failed to marshal event", "error", err)
+		log.Error("ws hub: marshal broadcast event failed", "event_type", event.Type, "error", err)
 		return
 	}
 

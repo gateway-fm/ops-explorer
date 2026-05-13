@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,8 +13,9 @@ import (
 
 	"explorer/internal/rpc"
 	"explorer/internal/types"
-
 	"explorer/pkg/eth/common"
+	"explorer/pkg/log"
+
 	"github.com/go-chi/chi/v5"
 )
 
@@ -66,7 +66,7 @@ const (
 func publicChainFactsFromRPC(ctx context.Context, c *rpc.Client) (totalBlocks int64, avgBlockTime float64, ok bool) {
 	latest, err := c.BlockNumber(ctx)
 	if err != nil {
-		slog.Debug("publicChainFactsFromRPC: eth_blockNumber denied or failed", "error", err)
+		log.Debug("public chain facts: eth_blockNumber denied or failed", "error", err)
 		return 0, 0, false
 	}
 	// totalBlocks counts genesis as well.
@@ -84,12 +84,12 @@ func publicChainFactsFromRPC(ctx context.Context, c *rpc.Client) (totalBlocks in
 
 	latestTS, err := c.RawBlockTimestamp(ctx, latest)
 	if err != nil {
-		slog.Debug("publicChainFactsFromRPC: latest block timestamp denied or failed", "block", latest, "error", err)
+		log.Debug("public chain facts: latest block timestamp denied or failed", "block", latest, "error", err)
 		return 0, 0, false
 	}
 	earlierTS, err := c.RawBlockTimestamp(ctx, earliestSample)
 	if err != nil {
-		slog.Debug("publicChainFactsFromRPC: earlier block timestamp denied or failed", "block", earliestSample, "error", err)
+		log.Debug("public chain facts: earlier block timestamp denied or failed", "block", earliestSample, "error", err)
 		return 0, 0, false
 	}
 	if latestTS <= earlierTS {
@@ -868,7 +868,7 @@ func (s *Server) handleGetTokenHolders(w http.ResponseWriter, r *http.Request) {
 	offset := (page - 1) * pageSize
 	holders, total, err := s.provider.GetTokenHolders(r.Context(), address, pageSize, offset)
 	if err != nil {
-		slog.Warn("failed to get token holders", "address", address, "error", err)
+		log.Warn("token holders lookup failed", "address", address, "error", err)
 		http.Error(w, "failed to get token holders", http.StatusInternalServerError)
 		return
 	}
@@ -1182,7 +1182,7 @@ func (s *Server) handleGetAddressTokenBalances(w http.ResponseWriter, r *http.Re
 
 	balances, err := s.provider.GetTokenBalances(r.Context(), address)
 	if err != nil {
-		slog.Warn("failed to get token balances", "address", address, "error", err)
+		log.Warn("token balances lookup failed", "address", address, "error", err)
 		http.Error(w, "failed to get token balances", http.StatusInternalServerError)
 		return
 	}

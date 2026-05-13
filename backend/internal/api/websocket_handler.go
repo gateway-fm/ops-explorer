@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"explorer/internal/log"
+	"explorer/pkg/log"
 	ws "explorer/internal/websocket"
 
 	gorillaWS "github.com/gorilla/websocket"
@@ -26,7 +26,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Error("websocket upgrade failed", "error", err)
+		log.Error("ws: connection upgrade failed", "error", err, "remote", r.RemoteAddr)
 		return
 	}
 

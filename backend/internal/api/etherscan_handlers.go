@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"explorer/internal/log"
+	"explorer/pkg/log"
 	"explorer/internal/verifier"
 
 	"explorer/pkg/eth/common"
@@ -123,7 +123,7 @@ func (s *Server) handleEtherscanVerify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if verifyErr != nil {
-		log.Error("etherscan verify internal error", "error", verifyErr)
+		log.Error("etherscan: verify failed", "error", verifyErr, "address", contractAddress, "compiler", compilerVersion)
 		s.etherscanResults.Store(guid, &etherscanVerifyResult{Success: false, Message: verifyErr.Error()})
 		etherscanError(w, verifyErr.Error())
 		return

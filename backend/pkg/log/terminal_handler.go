@@ -13,18 +13,17 @@ import (
 	"time"
 )
 
+// ANSI colour codes used by the terminal handler. Kept private — callers
+// should not be styling individual log lines themselves.
 const (
-	reset   = "\033[0m"
-	bold    = "\033[1m"
-	dim     = "\033[2m"
-	red     = "\033[31m"
-	green   = "\033[32m"
-	yellow  = "\033[33m"
-	blue    = "\033[34m"
-	magenta = "\033[35m"
-	cyan    = "\033[36m"
-	white   = "\033[37m"
-	gray    = "\033[90m"
+	reset  = "\033[0m"
+	bold   = "\033[1m"
+	dim    = "\033[2m"
+	red    = "\033[31m"
+	green  = "\033[32m"
+	yellow = "\033[33m"
+	cyan   = "\033[36m"
+	gray   = "\033[90m"
 )
 
 var levelStyles = map[slog.Level]struct {
@@ -37,6 +36,17 @@ var levelStyles = map[slog.Level]struct {
 	slog.LevelError: {color: red, label: "ERROR"},
 }
 
+// HandlerOptions configures a TerminalHandler. A nil Level defaults to Info.
+// UseColors is auto-detected from the writer when left nil: enabled for ttys,
+// disabled when stderr is redirected, and force-disabled by NO_COLOR.
+type HandlerOptions struct {
+	Level      slog.Leveler
+	ShowSource bool
+	UseColors  *bool
+}
+
+// TerminalHandler is a slog.Handler that renders records in a human-friendly
+// single-line format suitable for local development and container stdout.
 type TerminalHandler struct {
 	opts      *HandlerOptions
 	mu        *sync.Mutex
@@ -44,12 +54,6 @@ type TerminalHandler struct {
 	attrs     []slog.Attr
 	groups    []string
 	useColors bool
-}
-
-type HandlerOptions struct {
-	Level      slog.Leveler
-	ShowSource bool
-	UseColors  *bool
 }
 
 func NewTerminalHandler(w io.Writer, opts *HandlerOptions) *TerminalHandler {
@@ -85,7 +89,8 @@ func (h *TerminalHandler) Enabled(_ context.Context, level slog.Level) bool {
 	return level >= h.opts.Level.Level()
 }
 
-// Format: LEVEL[DD-MM|HH:MM:SS] message key=value key2=value2
+// Handle renders a record as: LEVEL[DD-MM|HH:MM:SS] [group:] message key=value...
+// Source location (file:line) is appended for error records when ShowSource is on.
 func (h *TerminalHandler) Handle(_ context.Context, r slog.Record) error {
 	var buf strings.Builder
 
@@ -133,17 +138,15 @@ func (h *TerminalHandler) Handle(_ context.Context, r slog.Record) error {
 		h.writeAttrs(&buf, allAttrs)
 	}
 
-	if h.opts.ShowSource && r.Level >= slog.LevelError {
-		if r.PC != 0 {
-			fs := runtime.CallersFrames([]uintptr{r.PC})
-			f, _ := fs.Next()
-			if f.File != "" {
-				file := filepath.Base(f.File)
-				if h.useColors {
-					fmt.Fprintf(&buf, " %s(%s:%d)%s", dim, file, f.Line, reset)
-				} else {
-					fmt.Fprintf(&buf, " (%s:%d)", file, f.Line)
-				}
+	if h.opts.ShowSource && r.Level >= slog.LevelError && r.PC != 0 {
+		fs := runtime.CallersFrames([]uintptr{r.PC})
+		f, _ := fs.Next()
+		if f.File != "" {
+			file := filepath.Base(f.File)
+			if h.useColors {
+				fmt.Fprintf(&buf, " %s(%s:%d)%s", dim, file, f.Line, reset)
+			} else {
+				fmt.Fprintf(&buf, " (%s:%d)", file, f.Line)
 			}
 		}
 	}
@@ -192,7 +195,7 @@ func formatValue(v slog.Value) string {
 		if len(attrs) == 0 {
 			return "{}"
 		}
-		var parts []string
+		parts := make([]string, 0, len(attrs))
 		for _, a := range attrs {
 			parts = append(parts, fmt.Sprintf("%s=%s", a.Key, formatValue(a.Value)))
 		}
@@ -203,7 +206,7 @@ func formatValue(v slog.Value) string {
 }
 
 func collectAttrs(r slog.Record) []slog.Attr {
-	var attrs []slog.Attr
+	attrs := make([]slog.Attr, 0, r.NumAttrs())
 	r.Attrs(func(a slog.Attr) bool {
 		attrs = append(attrs, a)
 		return true

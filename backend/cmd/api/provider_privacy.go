@@ -21,9 +21,9 @@ import (
 	"explorer/internal/auth"
 	"explorer/internal/config"
 	"explorer/internal/db"
-	"explorer/internal/log"
 	"explorer/internal/privacy"
 	"explorer/internal/rpc"
+	"explorer/pkg/log"
 )
 
 func chooseProvider(cfg *config.Config, _ *db.DB, _ *rpc.Client) (*privacy.Client, *auth.SSOClient, api.DataProvider) {
