@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { RefreshCw, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
 import { api } from '../lib/api';
 import { PageHeader } from '../components/PageHeader';
+import { features } from '../lib/features';
 
 function formatGwei(wei: string): string {
   if (!wei || wei === '0') return '0';
@@ -179,7 +180,9 @@ export default function ChainInfo() {
             { to: '/accounts', label: 'Top Accounts' },
             { to: '/tokens', label: 'Tokens' },
             { to: '/gas-tracker', label: 'Gas Tracker' },
-            { to: '/verify', label: 'Verify Contract' },
+            ...(features().contractVerification
+              ? [{ to: '/verify', label: 'Verify Contract' }]
+              : []),
           ].map(({ to, label }) => (
             <Link
               key={to}
