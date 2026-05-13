@@ -14,9 +14,9 @@ import (
 	"explorer/internal/api/indexerclient"
 	"explorer/internal/chaininfo"
 	"explorer/internal/db"
-	"explorer/internal/log"
 	"explorer/internal/publicapi"
 	"explorer/internal/rpc"
+	"explorer/pkg/log"
 )
 
 func main() {

@@ -2,11 +2,12 @@ package api
 
 import (
 	"errors"
-	"log/slog"
 	"net/http"
 
 	"explorer/internal/privacy"
 	"explorer/internal/types"
+	"explorer/pkg/log"
+
 	"github.com/go-chi/chi/v5"
 )
 
@@ -36,7 +37,7 @@ func (s *Server) handleGetViewableAddresses(w http.ResponseWriter, r *http.Reque
 
 	result, err := s.privacyClient.GetViewableAddressesWithIdentity(r.Context(), viewer)
 	if err != nil {
-		slog.Warn("failed to get viewable addresses", "error", err)
+		log.Warn("privacy: get viewable addresses failed", "error", err, "viewer_did", viewer.DID)
 		http.Error(w, "failed to get viewable addresses", http.StatusInternalServerError)
 		return
 	}
@@ -85,7 +86,7 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 			http.Error(w, "grant or address not found", http.StatusNotFound)
 			return
 		}
-		slog.Warn("failed to resolve address", "grant_id", grantID, "address_id", addressID, "error", err)
+		log.Warn("privacy: resolve grant address failed", "grant_id", grantID, "address_id", addressID, "error", err)
 		http.Error(w, "failed to resolve address", http.StatusInternalServerError)
 		return
 	}
@@ -176,7 +177,7 @@ func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *h
 
 	body, statusCode, err := s.privacyClient.GetGrantTransactions(r.Context(), grantID, addressID, limit, beforeBlock)
 	if err != nil {
-		slog.Warn("failed to get grant transactions", "grant_id", grantID, "address_id", addressID, "error", err)
+		log.Warn("privacy: get grant transactions failed", "grant_id", grantID, "address_id", addressID, "error", err)
 		http.Error(w, "failed to get transactions", http.StatusInternalServerError)
 		return
 	}
@@ -211,7 +212,7 @@ func (s *Server) handleGetGrantActivityLogs(w http.ResponseWriter, r *http.Reque
 
 	body, statusCode, err := s.privacyClient.GetGrantActivityLogs(r.Context(), grantID, viewer.JWTToken, limit, offset)
 	if err != nil {
-		slog.Warn("failed to get grant activity logs", "grant_id", grantID, "error", err)
+		log.Warn("privacy: get grant activity logs failed", "grant_id", grantID, "error", err)
 		http.Error(w, "failed to get activity logs", http.StatusInternalServerError)
 		return
 	}

@@ -3,12 +3,12 @@ package api
 import (
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 	"strings"
 	"time"
 
 	"explorer/internal/auth"
+	"explorer/pkg/log"
 )
 
 const (
@@ -49,7 +49,7 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 
 	state, err := s.ssoClient.GenerateState(returnURL)
 	if err != nil {
-		log.Printf("Failed to generate state: %v", err)
+		log.Error("sso login: failed to generate oauth state", "error", err)
 		writeError(w, http.StatusInternalServerError, "Failed to initiate login")
 		return
 	}
@@ -90,7 +90,7 @@ func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 
 	tokenResp, err := s.ssoClient.ExchangeCode(r.Context(), code)
 	if err != nil {
-		log.Printf("Failed to exchange code: %v", err)
+		log.Error("sso callback: failed to exchange authorization code", "error", err)
 		writeError(w, http.StatusBadGateway, "Failed to exchange authorization code")
 		return
 	}
@@ -159,7 +159,7 @@ func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	if s.ssoClient != nil && s.ssoClient.IsEnabled() {
 		if refreshCookie, err := r.Cookie(RefreshCookieName); err == nil && refreshCookie.Value != "" {
 			if err := s.ssoClient.RevokeToken(r.Context(), refreshCookie.Value); err != nil {
-				log.Printf("failed to revoke refresh token on logout: %v", err)
+				log.Warn("sso logout: refresh token revocation failed", "error", err)
 				// Continue — local logout proceeds regardless.
 			}
 		}
@@ -256,7 +256,7 @@ func (s *Server) refreshAuthMiddleware(next http.Handler) http.Handler {
 			if errors.Is(err, auth.ErrRefreshRevoked) {
 				// Explicitly rejected: banned user, revoked token, or expired.
 				// Clear cookies immediately — the session is dead.
-				log.Printf("refresh token rejected by server, clearing session")
+				log.Info("sso refresh: token rejected by server, clearing session")
 				clearAuthCookies(w)
 			}
 			// For transient errors (network, 5xx) do NOT clear cookies.

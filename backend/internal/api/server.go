@@ -15,6 +15,7 @@ import (
 	"explorer/internal/rpc"
 	"explorer/internal/verifier"
 	ws "explorer/internal/websocket"
+	"explorer/pkg/log"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -87,7 +88,7 @@ func New(database APIDatabase, rpcClient *rpc.Client, idx any, priceService *pri
 }
 
 func (s *Server) setupRoutes() {
-	s.router.Use(middleware.Logger)
+	s.router.Use(log.HTTPMiddleware)
 	s.router.Use(middleware.Recoverer)
 	s.router.Use(middleware.Timeout(30 * time.Second))
 

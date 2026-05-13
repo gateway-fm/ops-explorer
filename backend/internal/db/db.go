@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"io/fs"
 
-	"explorer/internal/log"
+	"explorer/pkg/log"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/tern/v2/migrate"
@@ -71,7 +71,7 @@ func (d *DB) Migrate() error {
 	}
 
 	migrator.OnStart = func(seq int32, name string, direction string, sql string) {
-		log.Info(fmt.Sprintf("running migration %d: %s %s", seq, name, direction))
+		log.Info("running migration", "seq", seq, "name", name, "direction", direction)
 	}
 
 	log.Info("migrations loaded", "count", len(migrator.Migrations))

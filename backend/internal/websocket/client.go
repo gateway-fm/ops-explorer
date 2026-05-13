@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"explorer/internal/log"
+	"explorer/pkg/log"
 
 	"github.com/gorilla/websocket"
 )
@@ -52,7 +52,7 @@ func (c *Client) ReadPump() {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Warn("websocket error", "error", err)
+				log.Warn("ws client: unexpected close", "error", err, "remote", c.conn.RemoteAddr().String())
 			}
 			break
 		}
@@ -107,7 +107,7 @@ func (c *Client) WritePump() {
 func (c *Client) handleMessage(message []byte) {
 	var msg ClientMessage
 	if err := json.Unmarshal(message, &msg); err != nil {
-		log.Warn("invalid client message", "error", err)
+		log.Warn("ws client: invalid client message", "error", err, "remote", c.conn.RemoteAddr().String())
 		c.sendError("invalid message format")
 		return
 	}

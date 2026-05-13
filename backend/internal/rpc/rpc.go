@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"explorer/internal/log"
+	"explorer/pkg/log"
 	explorerTypes "explorer/internal/types"
 
 	"explorer/pkg/eth/common"

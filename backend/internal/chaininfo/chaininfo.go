@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"explorer/internal/log"
+	"explorer/pkg/log"
 	"explorer/internal/rpc"
 )
 

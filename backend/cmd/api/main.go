@@ -13,9 +13,9 @@ import (
 	"explorer/internal/config"
 	"explorer/internal/db"
 	"explorer/internal/events"
-	"explorer/internal/log"
 	"explorer/internal/price"
 	"explorer/internal/rpc"
+	"explorer/pkg/log"
 )
 
 func main() {
