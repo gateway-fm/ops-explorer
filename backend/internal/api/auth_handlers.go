@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	AuthCookieName  = "explorer_auth"
+	AuthCookieName    = "explorer_auth"
 	RefreshCookieName = "explorer_refresh"
-	StateCookieName = "explorer_oauth_state"
+	StateCookieName   = "explorer_oauth_state"
 
 	// CookieMaxAge is the browser lifetime of the access-token cookie.
 	// This should stay in sync with the access token TTL on privacy-proxy
@@ -119,7 +119,16 @@ func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	http.Redirect(w, r, returnURL, http.StatusFound)
+	// When the explorer is embedded in another app (e.g. iframed under a
+	// parent dashboard at a different origin), the relative returnURL
+	// would land the user on the standalone explorer host with no way
+	// back to the parent. PostLoginRedirectURL overrides the target so
+	// the user lands on the embedding app's URL instead.
+	finalURL := returnURL
+	if s.postLoginRedirectURL != "" {
+		finalURL = s.postLoginRedirectURL
+	}
+	http.Redirect(w, r, finalURL, http.StatusFound)
 }
 
 func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {

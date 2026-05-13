@@ -72,9 +72,10 @@ func main() {
 	priceService.SetEventBus(eventBus)
 
 	serverCfg := &api.ServerConfig{
-		SolcPath:            cfg.SolcPath,
-		UseSourcifyFallback: cfg.UseSourcifyFallback,
-		MetricsEnabled:      cfg.MetricsEnabled,
+		SolcPath:             cfg.SolcPath,
+		UseSourcifyFallback:  cfg.UseSourcifyFallback,
+		MetricsEnabled:       cfg.MetricsEnabled,
+		PostLoginRedirectURL: cfg.PostLoginRedirectURL,
 	}
 
 	// chooseProvider decides which chain-data source the api will serve

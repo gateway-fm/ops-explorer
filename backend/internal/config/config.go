@@ -47,10 +47,10 @@ type Config struct {
 	// PrivacyProxyURL — privacy mode: reads routed through privacy-proxy's
 	// REST explorer API, which applies RBAC-based redaction before
 	// returning. Auth/SSO also flows through privacy-proxy.
-	PrivacyProxyURL       string `mapstructure:"privacy_proxy_url"`
+	PrivacyProxyURL string `mapstructure:"privacy_proxy_url"`
 	// IndexerURL — standalone mode: reads go direct to a chain-indexer
 	// gRPC service. Raw chain data, no redaction. No auth coupling.
-	IndexerURL            string `mapstructure:"indexer_url"`
+	IndexerURL string `mapstructure:"indexer_url"`
 	// PrivacyProxyPublicURL is the browser-facing URL for OAuth redirects.
 	// Defaults to PrivacyProxyURL if not set. Set this when the proxy is on a
 	// Docker-internal hostname (e.g. privacy-proxy-proxy-backend-1) but the
@@ -58,12 +58,19 @@ type Config struct {
 	PrivacyProxyPublicURL string `mapstructure:"privacy_proxy_public_url"`
 	SSOClientID           string `mapstructure:"sso_client_id"`
 	SSORedirectURI        string `mapstructure:"sso_redirect_uri"`
+	// PostLoginRedirectURL, if set, overrides the post-OAuth redirect
+	// target. Use this when the explorer UI is embedded in another app
+	// (e.g. an iframe in a parent dashboard) so the user lands on the
+	// embedding app's URL after sign-in instead of the standalone
+	// explorer origin. The frontend's return_url is ignored when this
+	// is set. Must be a full URL (scheme + host + path).
+	PostLoginRedirectURL string `mapstructure:"post_login_redirect_url"`
 
-	LogLevel              string        `mapstructure:"log_level"`
+	LogLevel string `mapstructure:"log_level"`
 
 	// HiddenTxTypes is a comma-separated list of transaction type numbers to
 	// exclude from the default transaction listings (e.g. "126" for OP deposit TXs).
-	HiddenTxTypes         string        `mapstructure:"hidden_tx_types"`
+	HiddenTxTypes string `mapstructure:"hidden_tx_types"`
 
 	EnableOPDeposits      bool          `mapstructure:"enable_op_deposits"`
 	L1RPCURL              string        `mapstructure:"l1_rpc_url"`
@@ -108,6 +115,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("privacy_proxy_public_url", "")
 	v.SetDefault("sso_client_id", "explorer")
 	v.SetDefault("sso_redirect_uri", "http://localhost:8080/api/auth/callback")
+	v.SetDefault("post_login_redirect_url", "")
 
 	v.SetDefault("log_level", "info")
 
@@ -174,6 +182,7 @@ func Load() (*Config, error) {
 	}
 	cfg.SSOClientID = v.GetString("sso_client_id")
 	cfg.SSORedirectURI = v.GetString("sso_redirect_uri")
+	cfg.PostLoginRedirectURL = v.GetString("post_login_redirect_url")
 
 	cfg.LogLevel = v.GetString("log_level")
 
