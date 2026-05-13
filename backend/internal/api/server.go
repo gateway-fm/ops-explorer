@@ -160,10 +160,11 @@ func (s *Server) setupRoutes() {
 }
 
 func (s *Server) setupAPIRoutes(r chi.Router) {
-	// Etherscan-compatible RPC API (hardhat verify, forge verify-contract).
-	// Handles POST/GET to /api (or /api/v1) with ?module=contract&action=...
-	// Falls through to 404 if module param is absent.
-	r.HandleFunc("/", s.handleEtherscanRPC)
+	// Etherscan-compatible RPC API (hardhat verify, forge verify-contract)
+	// is registered via the build-tagged verification helper so privacy
+	// builds can compile it out entirely. See verification_routes_*.go.
+	// (In standalone mode this also adds /verify/* below.)
+	s.registerVerificationAPI(r)
 
 	r.Get("/stats", s.handleGetStats)
 	r.Get("/chain-info", s.handleGetChainInfo)
@@ -199,15 +200,12 @@ func (s *Server) setupAPIRoutes(r chi.Router) {
 		r.Get("/internal", s.handleGetAddressInternalTxs)
 		r.Get("/logs", s.handleGetAddressLogs)
 		r.Get("/balances", s.handleGetAddressTokenBalances)
-		r.Get("/sourcify", s.handleFetchSourcify)
-		r.Get("/sourcify/check", s.handleCheckSourcify)
+		// Sourcify lookups are also build-tagged (privacy build = no-op).
+		s.registerSourcifyAddressRoutes(r)
 	})
 
-	r.Route("/verify", func(r chi.Router) {
-		r.Post("/", s.handleVerifyContract)
-		r.Post("/standard-json", s.handleVerifyStandardJSON)
-		r.Get("/compilers", s.handleListCompilers)
-	})
+	// /verify/* moved into the build-tagged registerVerificationAPI helper
+	// above (call site at the top of this function). Privacy builds skip it.
 
 	r.Route("/tokens", func(r chi.Router) {
 		r.Get("/", s.handleGetTokens)
