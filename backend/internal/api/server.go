@@ -23,27 +23,29 @@ import (
 )
 
 type Server struct {
-	db            APIDatabase
-	rpc           *rpc.Client
-	provider      DataProvider
-	price         *price.Service
-	eventBus      *events.Bus
-	verifier      *verifier.Verifier
-	chainInfo     *chaininfo.Service
-	metrics       *Metrics
-	wsHub         *ws.Hub
-	wsConfig      *ws.Config
-	privacyClient *privacy.Client
-	ssoClient     *auth.SSOClient
-	port          int
-	router        *chi.Mux
-	etherscanResults sync.Map // guid -> *etherscanVerifyResult
+	db                   APIDatabase
+	rpc                  *rpc.Client
+	provider             DataProvider
+	price                *price.Service
+	eventBus             *events.Bus
+	verifier             *verifier.Verifier
+	chainInfo            *chaininfo.Service
+	metrics              *Metrics
+	wsHub                *ws.Hub
+	wsConfig             *ws.Config
+	privacyClient        *privacy.Client
+	ssoClient            *auth.SSOClient
+	postLoginRedirectURL string
+	port                 int
+	router               *chi.Mux
+	etherscanResults     sync.Map // guid -> *etherscanVerifyResult
 }
 
 type ServerConfig struct {
-	SolcPath            string
-	UseSourcifyFallback bool
-	MetricsEnabled      bool
+	SolcPath             string
+	UseSourcifyFallback  bool
+	MetricsEnabled       bool
+	PostLoginRedirectURL string
 }
 
 // New constructs the api Server. The idx parameter is retained for
@@ -62,6 +64,10 @@ func New(database APIDatabase, rpcClient *rpc.Client, idx any, priceService *pri
 		ssoClient:     ssoClient,
 		port:          port,
 		router:        chi.NewRouter(),
+	}
+
+	if cfg != nil {
+		s.postLoginRedirectURL = cfg.PostLoginRedirectURL
 	}
 
 	if cfg != nil && cfg.MetricsEnabled {
