@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { PseudonymizedTransaction, GrantedAddressResponse } from '../lib/api';
-import { formatWei, formatTimestamp } from '../lib/utils';
+import { formatWei, formatTimestamp, getNetworkCurrency } from '../lib/utils';
 import { useAuth } from '../lib/auth';
 import { redirectToLogin } from '../lib/login';
 import { PageHeader } from '../components/PageHeader';
@@ -289,7 +289,7 @@ export function GrantedAddressPage() {
             }
           />
           <InfoRow label="Type" value={data.is_contract ? 'Contract' : 'EOA (Externally Owned Account)'} />
-          <InfoRow label="Balance" value={`${formatWei(data.balance)} ETH`} />
+          <InfoRow label="Balance" value={`${formatWei(data.balance)} ${getNetworkCurrency()}`} />
           <InfoRow label="Transactions" value={data.tx_count.toLocaleString()} />
           <InfoRow label="Disclosure Level" value={
             <span className={`badge capitalize ${
@@ -557,7 +557,7 @@ function TransactionRow({
       <td className="text-right font-mono text-sm">
         {tx.value === '' || tx.value == null
           ? <span className="text-neutral-400 italic">hidden</span>
-          : `${formatWei(String(tx.value))} ETH`}
+          : `${formatWei(String(tx.value))} ${getNetworkCurrency()}`}
       </td>
       <td>
         {tx.status === 1 ? (

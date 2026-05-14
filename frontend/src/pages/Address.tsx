@@ -4,7 +4,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../lib/api';
 import type { Transaction } from '../lib/api';
-import { formatWei, formatHash, formatAddress, formatTimeAgo } from '../lib/utils';
+import { formatWei, formatHash, formatAddress, formatTimeAgo, getNetworkCurrency } from '../lib/utils';
 import { AddressLink } from '../components/AddressLink';
 import { AddressLabel } from '../components/AddressLabel';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
@@ -251,7 +251,7 @@ export function Address() {
             value={<span className="font-mono text-sm break-all text-neutral-900">{info.address}</span>}
           />
           <InfoRow label="Type" value={info.isContract ? 'Contract' : 'EOA (Externally Owned Account)'} />
-          <InfoRow label="Balance" value={`${formatWei(info.balance)} ETH`} />
+          <InfoRow label="Balance" value={`${formatWei(info.balance)} ${getNetworkCurrency()}`} />
           <InfoRow label="Transactions" value={info.txCount.toLocaleString()} />
           {contract?.contractName && (
             <InfoRow label="Contract Name" value={contract.contractName} />
@@ -729,7 +729,7 @@ function TxTableRow({ tx, currentAddress }: { tx: Transaction; currentAddress: s
       <td className="text-right font-mono text-neutral-700">
         {tx.value === '' || tx.value == null
           ? <span className="text-neutral-400 italic">hidden</span>
-          : `${formatWei(tx.value)} ETH`}
+          : `${formatWei(tx.value)} ${getNetworkCurrency()}`}
       </td>
 
       {/* Txn Fee */}

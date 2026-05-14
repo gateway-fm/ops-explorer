@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '../lib/api';
 import type { Block, Transaction, InternalTransaction } from '../lib/api';
-import { formatHash, formatTimestamp, formatGas, formatWei } from '../lib/utils';
+import { formatHash, formatTimestamp, formatGas, formatWei, getNetworkCurrency } from '../lib/utils';
 import { PageHeader } from '../components/PageHeader';
 import { AddressLink } from '../components/AddressLink';
 import { CopyButton } from '../components/CopyButton';
@@ -290,7 +290,7 @@ function TxRow({ tx }: { tx: Transaction }) {
         <div className="text-neutral-700">
           {tx.value === '' || tx.value == null
             ? <span className="text-neutral-400 italic">hidden</span>
-            : `${formatWei(tx.value)} ETH`}
+            : `${formatWei(tx.value)} ${getNetworkCurrency()}`}
         </div>
         <div className={tx.status === 1 ? 'text-success-600' : 'text-error-600'}>
           {tx.status === 1 ? 'Success' : 'Failed'}
@@ -329,7 +329,7 @@ function InternalTxRow({ itx }: { itx: InternalTransaction }) {
         <div className="text-neutral-700">
           {itx.value === '' || itx.value == null
             ? <span className="text-neutral-400 italic">hidden</span>
-            : `${formatWei(itx.value)} ETH`}
+            : `${formatWei(itx.value)} ${getNetworkCurrency()}`}
         </div>
         {itx.error && (
           <div className="text-error-600">Error</div>

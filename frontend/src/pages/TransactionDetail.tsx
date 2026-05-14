@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../lib/api';
 import type { TokenTransfer, Log, TxCategory } from '../lib/api';
-import { formatWei, formatGas, formatTimestamp } from '../lib/utils';
+import { formatWei, formatGas, formatTimestamp, getNetworkCurrency } from '../lib/utils';
 import { formatTokenValue } from '../lib/formatToken';
 import { useTokenMap } from '../hooks/useTokenMap';
 import { AddressLink, TokenAddressLink } from '../components/AddressLink';
@@ -231,12 +231,12 @@ export function TransactionDetail() {
               value={
                 tx.value === '' || tx.value == null
                   ? <span className="text-neutral-400 italic">hidden</span>
-                  : `${formatWei(tx.value)} ETH`
+                  : `${formatWei(tx.value)} ${getNetworkCurrency()}`
               }
             />
             <InfoRow
               label="Transaction Fee"
-              value={`${formatWei((BigInt(tx.gasUsed) * BigInt(tx.gasPrice)).toString())} ETH`}
+              value={`${formatWei((BigInt(tx.gasUsed) * BigInt(tx.gasPrice)).toString())} ${getNetworkCurrency()}`}
             />
             <InfoRow label="Gas Price" value={`${tx.gasPrice} wei`} />
           </div>

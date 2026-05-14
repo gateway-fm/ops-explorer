@@ -1,5 +1,6 @@
 import { getShortName } from './branding';
 import { getConfig } from './runtimeConfig';
+import { getNetworkCurrency } from './utils';
 
 export function addNetworkToMetaMask() {
   if (!window.ethereum) {
@@ -11,7 +12,7 @@ export function addNetworkToMetaMask() {
     params: [{
       chainId: '0x' + Number(getConfig('VITE_CHAIN_ID', '1001')).toString(16),
       chainName: getConfig('VITE_NETWORK_NAME') || getShortName(),
-      nativeCurrency: { name: 'Ether', symbol: getConfig('VITE_NETWORK_CURRENCY', 'ETH'), decimals: 18 },
+      nativeCurrency: { name: 'Ether', symbol: getNetworkCurrency(), decimals: 18 },
       rpcUrls: [getConfig('VITE_RPC_URL', 'http://localhost:8545')],
     }],
   });
