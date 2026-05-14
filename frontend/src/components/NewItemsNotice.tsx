@@ -2,12 +2,16 @@ interface NewItemsNoticeProps {
   count: number;
   type: 'block' | 'transaction';
   onClick: () => void;
+  // When true, render the count as "N+" — used when the live window can
+  // only confirm a lower bound (e.g. snapshot has fallen off the page).
+  approximate?: boolean;
 }
 
-export function NewItemsNotice({ count, type, onClick }: NewItemsNoticeProps) {
+export function NewItemsNotice({ count, type, onClick, approximate = false }: NewItemsNoticeProps) {
   if (count <= 0) return null;
 
-  const label = `${count.toLocaleString()} new ${type}${count === 1 ? '' : 's'}`;
+  const countLabel = approximate ? `${count.toLocaleString()}+` : count.toLocaleString();
+  const label = `${countLabel} new ${type}${count === 1 ? '' : 's'}`;
 
   return (
     <button

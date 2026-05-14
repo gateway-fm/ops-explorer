@@ -22,35 +22,49 @@ export function Transactions() {
     queryFn: () => api.getTransactionsPaginated(page, pageSize),
   });
 
-  // Track the total at the time of last load
-  const [snapshotTotal, setSnapshotTotal] = useState<number | null>(null);
-  useEffect(() => {
-    if (data && snapshotTotal === null) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time snapshot on initial data load
-      setSnapshotTotal(data.total);
-    }
-  }, [data, snapshotTotal]);
-
-  // Lightweight poll for updated total (only on page 1)
-  const { data: stats } = useQuery({
-    queryKey: ['stats'],
-    queryFn: api.getStats,
+  // Separate lightweight poll of page 1 to detect new transactions.
+  // We can't share the main query key (we want the table to stay static
+  // until the user clicks "load new"), so we use a distinct key and the
+  // same endpoint. Snapshotting the top hash and counting entries above
+  // it in the live window works under both the privacy proxy (where
+  // /stats.totalTransactions is 0 because it isn't user-scoped) and the
+  // indexer provider (where /transactions.total is page-local), since
+  // it only relies on the ordered list itself.
+  const { data: livePage } = useQuery({
+    queryKey: ['transactions-live', pageSize],
+    queryFn: () => api.getTransactionsPaginated(1, pageSize),
     refetchInterval: page === 1 ? 3000 : false,
     enabled: page === 1,
   });
 
-  // Calculate how many new transactions since snapshot
-  const newTxCount = (page === 1 && snapshotTotal !== null && stats)
-    ? Math.max(0, stats.totalTransactions - snapshotTotal)
-    : 0;
+  // Snapshot the top tx hash at the moment the table first shows results.
+  const [snapshotTopHash, setSnapshotTopHash] = useState<string | null>(null);
+  useEffect(() => {
+    if (page === 1 && data?.data?.length && snapshotTopHash === null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time snapshot on initial data load
+      setSnapshotTopHash(data.data[0].hash);
+    }
+  }, [page, data, snapshotTopHash]);
+
+  // Count entries in the live window above the snapshot. If the snapshot
+  // has fallen off the visible page, we know there are at least pageSize
+  // new entries — we surface that as "N+" in the banner.
+  const { newTxCount, newTxApproximate } = (() => {
+    if (page !== 1 || !snapshotTopHash || !livePage?.data?.length) {
+      return { newTxCount: 0, newTxApproximate: false };
+    }
+    const idx = livePage.data.findIndex((tx) => tx.hash === snapshotTopHash);
+    if (idx === -1) return { newTxCount: livePage.data.length, newTxApproximate: true };
+    return { newTxCount: idx, newTxApproximate: false };
+  })();
 
   const handleLoadNew = useCallback(() => {
-    setSnapshotTotal(null);
+    setSnapshotTopHash(null);
     queryClient.invalidateQueries({ queryKey: ['transactions', page, pageSize] });
   }, [queryClient, page, pageSize]);
 
   const goToPage = (newPage: number) => {
-    setSnapshotTotal(null);
+    setSnapshotTopHash(null);
     setSearchParams({ page: String(newPage) });
   };
 
@@ -72,6 +86,7 @@ export function Transactions() {
             count={newTxCount}
             type="transaction"
             onClick={handleLoadNew}
+            approximate={newTxApproximate}
           />
         )}
 
