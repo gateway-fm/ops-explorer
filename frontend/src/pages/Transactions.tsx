@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '../lib/api';
 import type { Transaction, TxCategory } from '../lib/api';
-import { formatHash, formatWei } from '../lib/utils';
+import { formatHash, formatWei, getNetworkCurrency } from '../lib/utils';
 import { PageHeader } from '../components/PageHeader';
 import { AddressLink } from '../components/AddressLink';
 import { AddressLabel } from '../components/AddressLabel';
@@ -256,7 +256,7 @@ function TxTableRow({ tx }: { tx: Transaction }) {
       <td className="text-sm text-neutral-700">
         {tx.value === '' || tx.value == null
           ? <span className="text-neutral-400 italic">hidden</span>
-          : `${formatWei(tx.value)} ETH`}
+          : `${formatWei(tx.value)} ${getNetworkCurrency()}`}
       </td>
       <td>
         <span className={`badge ${tx.status === 1 ? 'badge-success' : 'badge-error'}`}>

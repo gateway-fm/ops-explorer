@@ -4,6 +4,7 @@ import type { Eip1193Provider } from 'ethers';
 import type { AbiFragment, AbiInput } from '../lib/api';
 import { ChevronDown, ChevronUp, Loader2, Wallet, AlertCircle, CheckCircle } from 'lucide-react';
 import { getConfig } from '../lib/runtimeConfig';
+import { getNetworkCurrency } from '../lib/utils';
 
 // Extend Window interface for ethereum provider
 declare global {
@@ -215,11 +216,11 @@ function FunctionCard({ contractAddress, abiFragment, index, type, isExpanded, o
             </div>
           ))}
 
-          {/* ETH value for payable functions */}
+          {/* Native currency value for payable functions */}
           {abiFragment.stateMutability === 'payable' && (
             <div className="space-y-1">
               <label className="text-sm text-neutral-500">
-                ETH Value <span className="text-xs">(wei)</span>
+                {getNetworkCurrency()} Value <span className="text-xs">(wei)</span>
               </label>
               <input
                 type="text"

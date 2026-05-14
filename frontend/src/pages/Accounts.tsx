@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, FileCode2, Copy, Check } from 'lucide-react';
 import { api } from '../lib/api';
-import { formatWei } from '../lib/utils';
+import { formatWei, getNetworkCurrency } from '../lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { PageHeader } from '../components/PageHeader';
 
@@ -118,7 +118,7 @@ export function Accounts() {
                     </div>
                   </td>
                   <td className="text-right font-mono text-neutral-700">
-                    {formatWei(account.balance)} ETH
+                    {formatWei(account.balance)} {getNetworkCurrency()}
                   </td>
                   <td className="text-right text-neutral-500">
                     {calculatePercentage(account.balance)}%
