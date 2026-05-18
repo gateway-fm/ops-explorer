@@ -28,7 +28,7 @@ ENV VITE_RPC_URL=$VITE_RPC_URL
 
 RUN npm run build
 
-FROM nginx:alpine@sha256:f46cb72c7df02710e693e863a983ac42f6a9579058a59a35f1ae36c9958e4ce0
+FROM nginx:alpine@sha256:dc48b7a872a79fb541ba5081d320b11b549231bc63ba465a7495afaa7d2ebcb8
 
 # Upgrade system packages
 RUN apk update --no-cache && apk upgrade --no-cache
