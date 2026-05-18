@@ -15,7 +15,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /api ./cmd/api
 # from the gateway-fm/chain-indexer service over gRPC, so the api
 # image no longer ships an embedded indexer binary.
 
-FROM alpine:3.21
+FROM alpine:3.22
 
 RUN apk update --no-cache && apk upgrade --no-cache
 RUN apk --no-cache add ca-certificates libc6-compat
