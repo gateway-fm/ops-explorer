@@ -36,11 +36,24 @@ export API_PORT FRONTEND_PORT POSTGRES_PORT ANVIL_PORT PUBLIC_API_PORT PROXY_NET
 # Dev Environment (Anvil local testnet)
 # =============================================================================
 
+# The dev stack layers docker-compose.indexer.yml on top of the base
+# dev compose to bring up gateway-fm/chain-indexer locally. The
+# override references `gatewayfm/chain-indexer:latest` and pulls are
+# disabled — see README for the prerequisite build step in
+# ../chain-indexer (`make docker-build`).
+DEV_COMPOSE := -f docker-compose.dev.yml -f docker-compose.indexer.yml $(BRAND_FLAG)
+
 dev:
-	@echo "Starting Block Explorer (dev mode with Anvil)..."
+	@if ! docker image inspect gatewayfm/chain-indexer:latest >/dev/null 2>&1; then \
+		echo "ERROR: image 'gatewayfm/chain-indexer:latest' not found locally."; \
+		echo "Build it first (prerequisite):"; \
+		echo "  cd ../chain-indexer && make docker-build"; \
+		exit 1; \
+	fi
+	@echo "Starting Block Explorer (dev mode with Anvil + chain-indexer)..."
 	@echo ""
-	docker compose -f docker-compose.dev.yml $(BRAND_FLAG) build
-	docker compose -f docker-compose.dev.yml $(BRAND_FLAG) up -d
+	docker compose $(DEV_COMPOSE) build
+	docker compose $(DEV_COMPOSE) up -d
 	@echo ""
 	@echo "Waiting for services..."
 	@for i in 1 2 3 4 5 6 7 8 9 10; do \
@@ -64,19 +77,19 @@ dev:
 
 dev-stop:
 	@echo "Stopping dev stack..."
-	docker compose -f docker-compose.dev.yml down --remove-orphans
+	docker compose $(DEV_COMPOSE) down --remove-orphans
 	@echo "Done"
 
 dev-destroy:
 	@echo "Destroying dev stack (containers, volumes, and images)..."
-	docker compose -f docker-compose.dev.yml down -v --remove-orphans --rmi local
+	docker compose $(DEV_COMPOSE) down -v --remove-orphans --rmi local
 	@echo "Done"
 
 dev-logs:
-	docker compose -f docker-compose.dev.yml logs -f
+	docker compose $(DEV_COMPOSE) logs -f
 
 dev-rebuild-backend:
-	docker compose -f docker-compose.dev.yml build --no-cache api && docker compose -f docker-compose.dev.yml up -d api
+	docker compose $(DEV_COMPOSE) build --no-cache api && docker compose $(DEV_COMPOSE) up -d api
 
 # =============================================================================
 # Parallel Dev Stacks (worktrees)
@@ -215,7 +228,7 @@ rebuild-backend:
 # Clean Docker environment (stop services, remove volumes)
 clean:
 	docker compose down -v --remove-orphans
-	docker compose -f docker-compose.dev.yml down -v --remove-orphans
+	docker compose -f docker-compose.dev.yml -f docker-compose.indexer.yml down -v --remove-orphans
 	docker system prune -f
 
 # Clean build artifacts

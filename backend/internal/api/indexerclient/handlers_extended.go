@@ -400,3 +400,19 @@ func (p *Provider) GetOPDeposit(ctx context.Context, txHash string) (*types.OPDe
 	}
 	return mapOPDeposit(resp), nil
 }
+
+// ----- Gas prices -----
+
+func (p *Provider) GetGasPrices(ctx context.Context, numBlocks int) (slow, normal, fast, baseFee *uint64, err error) {
+	resp, rpcErr := p.client.GetGasPrices(ctx, &indexerv1.GetGasPricesRequest{
+		SampleBlockCount: uint32(numBlocks),
+	})
+	if rpcErr != nil {
+		return nil, nil, nil, nil, rpcErr
+	}
+	return bigToUint64Ptr(resp.GetSlow()),
+		bigToUint64Ptr(resp.GetNormal()),
+		bigToUint64Ptr(resp.GetFast()),
+		bigToUint64Ptr(resp.GetBaseFee()),
+		nil
+}

@@ -72,6 +72,9 @@ type Config struct {
 	// exclude from the default transaction listings (e.g. "126" for OP deposit TXs).
 	HiddenTxTypes string `mapstructure:"hidden_tx_types"`
 
+	EnableGasPrices     bool `mapstructure:"enable_gas_prices"`
+	EnableProviderCache bool `mapstructure:"enable_provider_cache"`
+
 	EnableOPDeposits      bool          `mapstructure:"enable_op_deposits"`
 	L1RPCURL              string        `mapstructure:"l1_rpc_url"`
 	OptimismPortalAddress string        `mapstructure:"optimism_portal_address"`
@@ -121,6 +124,8 @@ func setDefaults(v *viper.Viper) {
 
 	v.SetDefault("hidden_tx_types", "126") // OP deposit system transactions hidden by default
 
+	v.SetDefault("enable_gas_prices", false)
+	v.SetDefault("enable_provider_cache", true)
 	v.SetDefault("enable_op_deposits", false)
 	v.SetDefault("l1_rpc_url", "")
 	v.SetDefault("optimism_portal_address", "")
@@ -186,6 +191,8 @@ func Load() (*Config, error) {
 
 	cfg.LogLevel = v.GetString("log_level")
 
+	cfg.EnableGasPrices = v.GetBool("enable_gas_prices")
+	cfg.EnableProviderCache = v.GetBool("enable_provider_cache")
 	cfg.EnableOPDeposits = v.GetBool("enable_op_deposits")
 	cfg.L1RPCURL = v.GetString("l1_rpc_url")
 	cfg.OptimismPortalAddress = v.GetString("optimism_portal_address")

@@ -9,6 +9,7 @@ import { LiveTimeAgo } from '../components/LiveTimeAgo';
 import { AddressLink } from '../components/AddressLink';
 import { TransactionHistoryChart } from '../components/TransactionHistoryChart';
 import { SearchBar } from '../components/SearchBar';
+import { Skeleton } from '../components/ui/skeleton';
 import { branding } from '../lib/branding';
 
 export function Home() {
@@ -111,30 +112,41 @@ export function Home() {
       {/* Stats + Chart */}
       <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
         <div className="grid grid-cols-2 gap-2 sm:gap-4">
-          <StatCard
-            label="Total Blocks"
-            value={stats?.totalBlocks?.toLocaleString() ?? '-'}
-            icon={<Boxes className="w-5 h-5" />}
-            color="blue"
-          />
-          <StatCard
-            label="Total Transactions"
-            value={stats?.totalTransactions?.toLocaleString() ?? '-'}
-            icon={<ArrowLeftRight className="w-5 h-5" />}
-            color="green"
-          />
-          <StatCard
-            label="Total Addresses"
-            value={stats?.totalAddresses?.toLocaleString() ?? '-'}
-            icon={<Users className="w-5 h-5" />}
-            color="purple"
-          />
-          <StatCard
-            label="Avg Block Time"
-            value={stats?.avgBlockTime ? `${stats.avgBlockTime.toFixed(2)}s` : '-'}
-            icon={<Clock className="w-5 h-5" />}
-            color="amber"
-          />
+          {stats ? (
+            <>
+              <StatCard
+                label="Total Blocks"
+                value={stats.totalBlocks?.toLocaleString() ?? '-'}
+                icon={<Boxes className="w-5 h-5" />}
+                color="blue"
+              />
+              <StatCard
+                label="Total Transactions"
+                value={stats.totalTransactions?.toLocaleString() ?? '-'}
+                icon={<ArrowLeftRight className="w-5 h-5" />}
+                color="green"
+              />
+              <StatCard
+                label="Total Addresses"
+                value={stats.totalAddresses?.toLocaleString() ?? '-'}
+                icon={<Users className="w-5 h-5" />}
+                color="purple"
+              />
+              <StatCard
+                label="Avg Block Time"
+                value={stats.avgBlockTime ? `${stats.avgBlockTime.toFixed(2)}s` : '-'}
+                icon={<Clock className="w-5 h-5" />}
+                color="amber"
+              />
+            </>
+          ) : (
+            <>
+              <StatCardSkeleton />
+              <StatCardSkeleton />
+              <StatCardSkeleton />
+              <StatCardSkeleton />
+            </>
+          )}
         </div>
         <TransactionHistoryChart />
       </div>
@@ -154,7 +166,8 @@ export function Home() {
                 isNew={newBlocks.has(block.number)}
               />
             ))}
-            {!blocks?.data?.length && (
+            {!blocks && Array.from({ length: 10 }).map((_, i) => <BlockRowSkeleton key={i} />)}
+            {blocks && !blocks.data?.length && (
               <div className="px-4 py-8 text-center text-neutral-400">No blocks yet</div>
             )}
           </div>
@@ -172,9 +185,11 @@ export function Home() {
                 key={tx.hash}
                 tx={tx}
                 isNew={newTxs.has(tx.hash)}
+                addressInfo={txs.addressInfo}
               />
             ))}
-            {!txs?.data?.length && (
+            {!txs && Array.from({ length: 10 }).map((_, i) => <TxRowSkeleton key={i} />)}
+            {txs && !txs.data?.length && (
               <div className="px-4 py-8 text-center text-neutral-400">No transactions yet</div>
             )}
           </div>
@@ -205,6 +220,18 @@ function StatCard({ label, value, icon, color }: { label: string; value: string;
   );
 }
 
+function StatCardSkeleton() {
+  return (
+    <div className="card p-3 sm:p-4">
+      <div className="flex items-center justify-between mb-2 sm:mb-3">
+        <Skeleton className="h-3 sm:h-4 w-20" />
+        <Skeleton className="h-7 w-7 sm:h-8 sm:w-8 rounded-lg" />
+      </div>
+      <Skeleton className="h-6 sm:h-8 w-24" />
+    </div>
+  );
+}
+
 // Format gas value for display
 function formatGasCompact(gas: number): string {
   if (gas >= 1_000_000) {
@@ -214,6 +241,22 @@ function formatGasCompact(gas: number): string {
     return `${(gas / 1_000).toFixed(1)}K`;
   }
   return gas.toString();
+}
+
+function BlockRowSkeleton() {
+  return (
+    <div className="px-3 sm:px-4 h-[52px] sm:h-[60px] flex items-center gap-3">
+      <Skeleton className="h-9 w-9 rounded-lg shrink-0" />
+      <div className="flex-1 min-w-0 space-y-1.5">
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="h-3 w-32" />
+      </div>
+      <div className="text-right shrink-0 space-y-1.5">
+        <Skeleton className="h-3 w-16 ml-auto" />
+        <Skeleton className="h-3 w-20 ml-auto" />
+      </div>
+    </div>
+  );
 }
 
 function BlockRow({ block, isNew }: { block: Block; isNew: boolean }) {
@@ -310,10 +353,28 @@ function getTxTypeConfig(categories?: TxCategory[]) {
   return DEFAULT_TX_CONFIG;
 }
 
-function TxRow({ tx, isNew }: { tx: Transaction; isNew: boolean }) {
+function TxRowSkeleton() {
+  return (
+    <div className="px-3 sm:px-4 h-[52px] sm:h-[60px] flex items-center gap-3">
+      <Skeleton className="h-9 w-9 rounded-lg shrink-0" />
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-3 w-40" />
+      </div>
+      <div className="text-right shrink-0 space-y-1.5">
+        <Skeleton className="h-3 w-20 ml-auto" />
+        <Skeleton className="h-3 w-14 ml-auto" />
+      </div>
+    </div>
+  );
+}
+
+function TxRow({ tx, isNew, addressInfo }: { tx: Transaction; isNew: boolean; addressInfo?: Record<string, import('../lib/api').RowAddressInfo> }) {
   const { icon, bgColor, textColor, label } = getTxTypeConfig(tx.txCategories);
   const fromReason = tx.addressMetadata?.[tx.from?.toLowerCase()];
   const toReason = tx.to ? tx.addressMetadata?.[tx.to.toLowerCase()] : undefined;
+  const fromInfo = addressInfo?.[tx.from?.toLowerCase()];
+  const toInfo = tx.to ? addressInfo?.[tx.to.toLowerCase()] : undefined;
 
   return (
     <div className={`px-3 sm:px-4 h-[52px] sm:h-[60px] flex items-center gap-3 hover:bg-primary-50/50 dark:hover:bg-primary-900/10 transition-colors ${isNew ? 'feed-item-new' : ''}`}>
@@ -330,11 +391,11 @@ function TxRow({ tx, isNew }: { tx: Transaction; isNew: boolean }) {
           )}
         </div>
         <div className="text-xs sm:text-sm text-neutral-500 truncate">
-          <AddressLink address={tx.from} chars={8} className="text-neutral-500 hover:text-neutral-700" reason={fromReason} />
+          <AddressLink address={tx.from} chars={8} className="text-neutral-500 hover:text-neutral-700" reason={fromReason} info={fromInfo} />
           {tx.to && (
             <>
               {' → '}
-              <AddressLink address={tx.to} chars={8} className="text-neutral-500 hover:text-neutral-700" reason={toReason} />
+              <AddressLink address={tx.to} chars={8} className="text-neutral-500 hover:text-neutral-700" reason={toReason} info={toInfo} />
             </>
           )}
         </div>

@@ -3,7 +3,7 @@ import { Lock } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { formatAddress } from '../lib/utils';
 import { useContractName } from '../hooks/useContractName';
-import type { AddressVisibility } from '../lib/api';
+import type { AddressVisibility, RowAddressInfo } from '../lib/api';
 
 interface AddressLinkProps {
   address: string;
@@ -14,15 +14,15 @@ interface AddressLinkProps {
   showLabel?: boolean; // Whether to auto-fetch and show contract name (default: true)
   visibility?: AddressVisibility; // Privacy visibility info
   reason?: import('../lib/api').VisibilityReason;
+  info?: RowAddressInfo;
 }
 
-export function AddressLink({ address, chars = 6, full = false, className = '', label, showLabel = true, visibility, reason }: AddressLinkProps) {
-  // Auto-fetch contract name if showLabel is true and no label is provided
+export function AddressLink({ address, chars = 6, full = false, className = '', label, showLabel = true, visibility, reason, info }: AddressLinkProps) {
   // Hook must be called unconditionally before any early returns
   const isPrivatePlaceholder = address === '[PRIVATE]' || address.startsWith('[PRIVATE');
-  const shouldFetch = showLabel && !label && !isPrivatePlaceholder && !(visibility && !visibility.visible) && !(visibility?.level === 'pseudonymous' && visibility.pseudonym);
+  const shouldFetch = showLabel && !label && !info && !isPrivatePlaceholder && !(visibility && !visibility.visible) && !(visibility?.level === 'pseudonymous' && visibility.pseudonym);
   const fetchedName = useContractName(shouldFetch ? address : null);
-  const displayLabel = label || fetchedName;
+  const displayLabel = label || info?.name || fetchedName;
 
   // Handle [PRIVATE] placeholder from backend redaction
   if (isPrivatePlaceholder) {

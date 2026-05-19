@@ -231,10 +231,16 @@ type ChainStats struct {
 	PrivacyEnabled    bool    `json:"privacyEnabled"`
 }
 
+type RowAddressInfo struct {
+	IsContract bool   `json:"isContract"`
+	Name       string `json:"name,omitempty"`
+}
+
 type PaginatedResponse[T any] struct {
-	Data       []T     `json:"data"`
-	NextCursor *string `json:"nextCursor,omitempty"`
-	HasMore    bool    `json:"hasMore"`
+	Data        []T                       `json:"data"`
+	NextCursor  *string                   `json:"nextCursor,omitempty"`
+	HasMore     bool                      `json:"hasMore"`
+	AddressInfo map[string]RowAddressInfo `json:"addressInfo,omitempty"`
 }
 
 type OffsetPaginatedResponse[T any] struct {

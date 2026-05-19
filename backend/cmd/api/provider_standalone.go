@@ -9,6 +9,7 @@ package main
 
 import (
 	"explorer/internal/api"
+	"explorer/internal/api/cache"
 	"explorer/internal/api/indexerclient"
 	"explorer/internal/auth"
 	"explorer/internal/config"
@@ -38,6 +39,8 @@ func chooseProvider(cfg *config.Config, database *db.DB, rpcClient *rpc.Client) 
 		return nil, nil, nil // unreachable
 
 	case cfg.PrivacyProxyURL != "":
+		// Do NOT wrap with cache here — privacy-proxy responses are
+		// auth-scoped per caller and a shared cache would leak across users.
 		privacyClient := privacy.NewClient(cfg.PrivacyProxyURL)
 		ssoClient := auth.NewSSOClient(cfg.PrivacyProxyURL, cfg.PrivacyProxyPublicURL, cfg.SSOClientID, cfg.SSORedirectURI)
 		dataProvider := api.NewProxyDataProvider(cfg.PrivacyProxyURL)
@@ -50,11 +53,22 @@ func chooseProvider(cfg *config.Config, database *db.DB, rpcClient *rpc.Client) 
 		if err != nil {
 			log.Fatal("failed to construct indexerclient provider", "error", err)
 		}
+		var dataProvider api.DataProvider = ip
+		dataProvider = wrapWithCache(dataProvider, cfg)
 		log.Info("indexer-backed standalone mode", "indexer_url", cfg.IndexerURL)
-		return nil, nil, ip
+		return nil, nil, dataProvider
 
 	default:
 		log.Fatal("neither INDEXER_URL nor PRIVACY_PROXY_URL is set — block-explorer needs a chain-data source. Set INDEXER_URL for standalone mode (chain-indexer gRPC) or PRIVACY_PROXY_URL for privacy mode (reads through privacy-proxy, redaction applied). Setting both is rejected.")
 		return nil, nil, nil // unreachable
 	}
+}
+
+func wrapWithCache(inner api.DataProvider, cfg *config.Config) api.DataProvider {
+	if !cfg.EnableProviderCache {
+		log.Info("provider cache disabled (ENABLE_PROVIDER_CACHE=false)")
+		return inner
+	}
+	log.Info("provider cache enabled")
+	return cache.NewProvider(inner)
 }

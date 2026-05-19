@@ -2,7 +2,10 @@
 
 # Load test script for the explorer
 # Usage: ./loadtest.sh [rpc_url] [num_transactions]
-# Example: ./loadtest.sh http://localhost:8545 50
+# Example: ./loadtest.sh http://localhost:8546 10000
+#
+# Submits each tx with --async (no wait for receipt) and pre-computes
+# nonces so anvil's mempool can absorb them as fast as we can submit.
 
 set -e
 
@@ -21,30 +24,31 @@ ADDRESSES=(
 )
 
 echo "Starting load test against $RPC_URL"
-echo "Sending $NUM_TXS transactions..."
+echo "Submitting $NUM_TXS transactions (async)..."
+echo ""
+
+START_NONCE=$(cast nonce --rpc-url "$RPC_URL" "$FROM_ADDRESS")
+echo "Starting nonce: $START_NONCE"
 echo ""
 
 for i in $(seq 1 $NUM_TXS); do
-  # Pick a random address
   TO_ADDRESS=${ADDRESSES[$((RANDOM % ${#ADDRESSES[@]}))]}
-
-  # Random value between 0.001 and 0.01 ETH
   VALUE="0.00$((RANDOM % 9 + 1))ether"
+  NONCE=$((START_NONCE + i - 1))
 
-  echo -n "[$i/$NUM_TXS] Sending $VALUE to ${TO_ADDRESS:0:10}... "
-
-  TX_HASH=$(cast send \
+  cast send \
     --rpc-url "$RPC_URL" \
     --private-key "$PRIVATE_KEY" \
+    --async \
+    --nonce "$NONCE" \
     "$TO_ADDRESS" \
-    --value "$VALUE" \
-    --json 2>/dev/null | jq -r '.transactionHash')
+    --value "$VALUE" >/dev/null
 
-  echo "tx: ${TX_HASH:0:18}..."
-
-  # Small delay to spread transactions
-  sleep 0.2
+  if (( i % 250 == 0 )); then
+    echo "[$i/$NUM_TXS] submitted"
+  fi
 done
 
 echo ""
-echo "Load test complete! Sent $NUM_TXS transactions."
+echo "Load test complete! Submitted $NUM_TXS transactions to mempool."
+echo "Anvil will mine them at its configured block time."

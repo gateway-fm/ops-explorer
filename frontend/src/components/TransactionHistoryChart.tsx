@@ -1,9 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { api } from '../lib/api';
 import type { TxHistoryPoint } from '../lib/api';
 import { branding } from '../lib/branding';
+
+const RANGE_STORAGE_KEY = 'tx-history-range';
 
 interface ChartDataPoint {
   time: string;
@@ -12,8 +14,6 @@ interface ChartDataPoint {
 }
 
 type TimeRange = '1h' | '24h' | '7d' | '30d';
-
-const TIME_RANGE_ORDER: TimeRange[] = ['30d', '7d', '24h', '1h'];
 
 // Time range configurations
 const TIME_RANGES: Record<TimeRange, { interval: number; limit: number; label: string; refetchInterval: number }> = {
@@ -43,13 +43,14 @@ const TIME_RANGES: Record<TimeRange, { interval: number; limit: number; label: s
   },
 };
 
-// A range is "useful" if at least 10% of its points have transactions,
-// meaning the data is meaningfully spread across the time window.
-// A single spike in 30 empty days isn't a useful 30d chart.
-function hasUsefulData(history: TxHistoryPoint[] | undefined): boolean {
-  if (!history || history.length === 0) return false;
-  const nonZero = history.filter(p => p.count > 0).length;
-  return nonZero >= Math.max(2, Math.ceil(history.length * 0.1));
+function loadStoredRange(): TimeRange {
+  try {
+    const v = localStorage.getItem(RANGE_STORAGE_KEY);
+    if (v === '1h' || v === '24h' || v === '7d' || v === '30d') return v;
+  } catch {
+    // localStorage unavailable in private mode
+  }
+  return '30d';
 }
 
 function formatTime(timestamp: number, timeRange: TimeRange): string {
@@ -103,44 +104,7 @@ function CustomTooltip({ active, payload, timeRange }: { active?: boolean; paylo
 }
 
 export function TransactionHistoryChart() {
-  const [userRange, setUserRange] = useState<TimeRange | null>(null);
-
-  // Prefetch all ranges for auto-selection
-  const { data: h30d } = useQuery({
-    queryKey: ['tx-history', '30d'],
-    queryFn: () => api.getTransactionHistory(TIME_RANGES['30d'].interval, TIME_RANGES['30d'].limit),
-    staleTime: 60000,
-  });
-  const { data: h7d } = useQuery({
-    queryKey: ['tx-history', '7d'],
-    queryFn: () => api.getTransactionHistory(TIME_RANGES['7d'].interval, TIME_RANGES['7d'].limit),
-    staleTime: 60000,
-  });
-  const { data: h24h } = useQuery({
-    queryKey: ['tx-history', '24h'],
-    queryFn: () => api.getTransactionHistory(TIME_RANGES['24h'].interval, TIME_RANGES['24h'].limit),
-    staleTime: 60000,
-  });
-  const { data: h1h } = useQuery({
-    queryKey: ['tx-history', '1h'],
-    queryFn: () => api.getTransactionHistory(TIME_RANGES['1h'].interval, TIME_RANGES['1h'].limit),
-    staleTime: 15000,
-  });
-
-  // Auto-select the best time range based on data availability
-  const autoRange = useMemo<TimeRange>(() => {
-    if (!h30d || !h7d || !h24h || !h1h) return '30d';
-    const ranges: Record<TimeRange, TxHistoryPoint[] | undefined> = { '30d': h30d, '7d': h7d, '24h': h24h, '1h': h1h };
-    for (const range of TIME_RANGE_ORDER) {
-      if (hasUsefulData(ranges[range])) return range;
-    }
-    for (const range of [...TIME_RANGE_ORDER].reverse()) {
-      if (ranges[range]?.some(p => p.count > 0)) return range;
-    }
-    return '30d';
-  }, [h30d, h7d, h24h, h1h]);
-
-  const timeRange = userRange ?? autoRange;
+  const [timeRange, setTimeRange] = useState<TimeRange>(loadStoredRange);
   const config = TIME_RANGES[timeRange];
 
   const { data: history, isLoading } = useQuery({
@@ -150,7 +114,12 @@ export function TransactionHistoryChart() {
   });
 
   const handleRangeChange = (range: TimeRange) => {
-    setUserRange(range);
+    setTimeRange(range);
+    try {
+      localStorage.setItem(RANGE_STORAGE_KEY, range);
+    } catch {
+      // localStorage unavailable in private mode
+    }
   };
 
   const primaryColor = branding.colorPrimary || '#8950FA';

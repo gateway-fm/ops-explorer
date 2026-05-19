@@ -27,12 +27,20 @@
 
 ## Quickstart (Dev Mode)
 
-Spins up a local [Anvil](https://book.getfoundry.sh/reference/anvil/) testnet, PostgreSQL, the backend services, and the frontend — all via Docker Compose.
+Spins up a local [Anvil](https://book.getfoundry.sh/reference/anvil/) testnet, PostgreSQL, the backend services, the frontend, and the chain-indexer — all via Docker Compose.
 
 ### Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) & Docker Compose
 - [Make](https://www.gnu.org/software/make/)
+- A locally built `gatewayfm/chain-indexer:latest` image. The indexer lives in a separate repo ([gateway-fm/chain-indexer](https://github.com/gateway-fm/chain-indexer)) and is no longer bundled here. Clone it as a sibling of this checkout and build the image before running `make dev`:
+
+  ```bash
+  git clone https://github.com/gateway-fm/chain-indexer.git ../chain-indexer
+  cd ../chain-indexer && make docker-build
+  ```
+
+  `make dev` checks for the image and exits with a hint if it isn't present. Rebuild the image whenever you pull new indexer changes.
 
 ### Start
 

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"explorer/internal/rpc"
@@ -120,25 +121,37 @@ func (s *Server) handleGetPrice(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetGasPrices(w http.ResponseWriter, r *http.Request) {
-	// Sample size mirrors the legacy gas.Tracker default (20 blocks).
+	if !s.gasPricesEnabled {
+		writeJSON(w, map[string]any{
+			"enabled":   false,
+			"slow":      nil,
+			"normal":    nil,
+			"fast":      nil,
+			"updatedAt": time.Now().UTC().Format(time.RFC3339),
+		})
+		return
+	}
+
 	slow, normal, fast, baseFee, err := s.provider.GetGasPrices(r.Context(), 20)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, map[string]any{
-		"slow":    derefUint64(slow),
-		"normal":  derefUint64(normal),
-		"fast":    derefUint64(fast),
-		"baseFee": derefUint64(baseFee),
+		"enabled":   true,
+		"slow":      gweiPriceFromWei(slow),
+		"normal":    gweiPriceFromWei(normal),
+		"fast":      gweiPriceFromWei(fast),
+		"baseFee":   gweiPriceFromWei(baseFee),
+		"updatedAt": time.Now().UTC().Format(time.RFC3339),
 	})
 }
 
-func derefUint64(p *uint64) uint64 {
-	if p == nil {
-		return 0
+func gweiPriceFromWei(wei *uint64) map[string]any {
+	if wei == nil {
+		return nil
 	}
-	return *p
+	return map[string]any{"price": float64(*wei) / 1e9}
 }
 
 func (s *Server) handleGetBlocks(w http.ResponseWriter, r *http.Request) {
@@ -151,7 +164,19 @@ func (s *Server) handleGetBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, paginate(blocks, limit))
+	resp := paginate(blocks, limit)
+	resp.AddressInfo = s.enrichBlockAddresses(r.Context(), resp.Data)
+	writeJSON(w, resp)
+}
+
+func (s *Server) enrichBlockAddresses(ctx context.Context, blocks []types.Block) map[string]types.RowAddressInfo {
+	addrs := make([]string, 0, len(blocks))
+	for _, b := range blocks {
+		if b.Miner != "" {
+			addrs = append(addrs, b.Miner)
+		}
+	}
+	return s.lookupAddressInfo(ctx, addrs)
 }
 
 func (s *Server) handleGetLatestBlock(w http.ResponseWriter, r *http.Request) {
@@ -245,7 +270,69 @@ func (s *Server) handleGetTransactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, paginate(txs, limit))
+	resp := paginate(txs, limit)
+	resp.AddressInfo = s.enrichTxAddresses(r.Context(), resp.Data)
+	writeJSON(w, resp)
+}
+
+func (s *Server) enrichTxAddresses(ctx context.Context, txs []types.Transaction) map[string]types.RowAddressInfo {
+	addrs := make([]string, 0, 3*len(txs))
+	for _, tx := range txs {
+		if tx.From != "" {
+			addrs = append(addrs, tx.From)
+		}
+		if tx.To != nil && *tx.To != "" {
+			addrs = append(addrs, *tx.To)
+		}
+		if tx.ContractAddress != nil && *tx.ContractAddress != "" {
+			addrs = append(addrs, *tx.ContractAddress)
+		}
+	}
+	return s.lookupAddressInfo(ctx, addrs)
+}
+
+// lookupAddressInfo returns one entry per unique address — including EOAs
+// as {isContract: false} — so the frontend can distinguish "enrichment ran,
+// EOA" from "no enrichment". Fan-out is deduped + cached by CachingProvider.
+func (s *Server) lookupAddressInfo(ctx context.Context, addrs []string) map[string]types.RowAddressInfo {
+	if len(addrs) == 0 {
+		return nil
+	}
+
+	unique := make(map[string]struct{}, len(addrs))
+	for _, a := range addrs {
+		unique[strings.ToLower(a)] = struct{}{}
+	}
+
+	type entry struct {
+		key  string
+		info types.RowAddressInfo
+	}
+	resCh := make(chan entry, len(unique))
+	var wg sync.WaitGroup
+	for addr := range unique {
+		wg.Add(1)
+		go func(addr string) {
+			defer wg.Done()
+			contract, err := s.provider.GetContract(ctx, addr)
+			info := types.RowAddressInfo{}
+			if err == nil && contract != nil {
+				info.IsContract = true
+				if contract.IsVerified && contract.ContractName != nil {
+					info.Name = *contract.ContractName
+				}
+			}
+			resCh <- entry{key: addr, info: info}
+		}(addr)
+	}
+	wg.Wait()
+	close(resCh)
+
+	out := make(map[string]types.RowAddressInfo, len(unique))
+	for e := range resCh {
+		out[e.key] = e.info
+	}
+	return out
 }
 
 func (s *Server) handleGetTransactionsPaginated(w http.ResponseWriter, r *http.Request) {

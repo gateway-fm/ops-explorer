@@ -114,10 +114,16 @@ export interface ChainStats {
   privacyEnabled?: boolean;
 }
 
+export interface RowAddressInfo {
+  isContract: boolean;
+  name?: string;
+}
+
 export interface PaginatedResponse<T> {
   data: T[];
   nextCursor?: string;
   hasMore: boolean;
+  addressInfo?: Record<string, RowAddressInfo>;
 }
 
 export interface SearchSuggestion {

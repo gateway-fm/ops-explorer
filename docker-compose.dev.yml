@@ -51,6 +51,7 @@ services:
       # unset INDEXER_URL and use the compose-override pattern to point
       # PRIVACY_PROXY_URL at a running privacy-proxy instead.
       INDEXER_URL: ${INDEXER_URL:-chain-indexer:50051}
+      ENABLE_GAS_PRICES: ${ENABLE_GAS_PRICES:-false}
     volumes:
       - solc_binaries:/opt/solc
     depends_on:

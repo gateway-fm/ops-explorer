@@ -76,6 +76,7 @@ func main() {
 		UseSourcifyFallback:  cfg.UseSourcifyFallback,
 		MetricsEnabled:       cfg.MetricsEnabled,
 		PostLoginRedirectURL: cfg.PostLoginRedirectURL,
+		EnableGasPrices:      cfg.EnableGasPrices,
 	}
 
 	// chooseProvider decides which chain-data source the api will serve

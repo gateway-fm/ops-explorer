@@ -162,6 +162,13 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status)
 }
 
+func handleAuthStatusDisabled(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, map[string]any{
+		"enabled":       false,
+		"authenticated": false,
+	})
+}
+
 func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	// Revoke server-side so the token cannot be reused even if captured from
 	// the network before the cookie was cleared.
