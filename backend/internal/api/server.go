@@ -36,6 +36,7 @@ type Server struct {
 	privacyClient        *privacy.Client
 	ssoClient            *auth.SSOClient
 	postLoginRedirectURL string
+	gasPricesEnabled     bool
 	port                 int
 	router               *chi.Mux
 	etherscanResults     sync.Map // guid -> *etherscanVerifyResult
@@ -46,6 +47,7 @@ type ServerConfig struct {
 	UseSourcifyFallback  bool
 	MetricsEnabled       bool
 	PostLoginRedirectURL string
+	EnableGasPrices      bool
 }
 
 // New constructs the api Server. The idx parameter is retained for
@@ -68,6 +70,7 @@ func New(database APIDatabase, rpcClient *rpc.Client, idx any, priceService *pri
 
 	if cfg != nil {
 		s.postLoginRedirectURL = cfg.PostLoginRedirectURL
+		s.gasPricesEnabled = cfg.EnableGasPrices
 	}
 
 	if cfg != nil && cfg.MetricsEnabled {
@@ -147,6 +150,9 @@ func (s *Server) setupRoutes() {
 			r.Get("/status", s.handleAuthStatus)
 			r.Post("/logout", s.handleAuthLogout)
 		})
+	} else {
+		s.router.Get("/api/auth/status", handleAuthStatusDisabled)
+		s.router.Get("/api/v1/auth/status", handleAuthStatusDisabled)
 	}
 
 	if s.privacyClient != nil && s.privacyClient.IsEnabled() {
