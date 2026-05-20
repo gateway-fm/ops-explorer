@@ -10,6 +10,7 @@ import { useTheme } from '../hooks/useTheme';
 import { formatDID } from '../lib/utils';
 import { getConfig } from '../lib/runtimeConfig';
 import { features } from '../lib/features';
+import { NetworkMenu } from './NetworkMenu';
 
 const blockchainItems = [
   { to: '/blocks', label: 'Blocks', icon: Boxes },
@@ -285,6 +286,7 @@ export function NavDropdown() {
       </Link>
       <SettingsDropdown />
       <AuthButton />
+      <NetworkMenu />
     </div>
   );
 }

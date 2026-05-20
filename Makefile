@@ -8,6 +8,7 @@ DOCKER_REGISTRY ?= gatewayfm
 IMAGE_PREFIX ?= block-explorer
 
 .PHONY: dev dev-stop dev-destroy dev-logs dev-rebuild-backend
+.PHONY: dev-multi dev-multi-stop dev-multi-destroy dev-multi-logs
 .PHONY: run run-privacy stop destroy logs rebuild-backend dev-stack
 .PHONY: standalone standalone-stop
 .PHONY: version docker-build docker-build-api docker-build-public-api docker-build-frontend docker-build-dry-run
@@ -90,6 +91,71 @@ dev-logs:
 
 dev-rebuild-backend:
 	docker compose $(DEV_COMPOSE) build --no-cache api && docker compose $(DEV_COMPOSE) up -d api
+
+# =============================================================================
+# Multi-Network Dev Stack (two Anvil chains side-by-side)
+# =============================================================================
+#
+# Brings up two complete, independent stacks so the frontend's network
+# switcher can navigate between them — mirrors how Blockscout runs in
+# production (one deployment per chain).
+#
+#   Network A (chain id 31337): Frontend 3001  API 8081  Anvil 8546
+#   Network B (chain id 31338): Frontend 3002  API 8091  Anvil 8556
+
+MULTI_COMPOSE := -f docker-compose.multi.yml
+
+dev-multi:
+	@if ! docker image inspect gatewayfm/chain-indexer:latest >/dev/null 2>&1; then \
+		echo "ERROR: image 'gatewayfm/chain-indexer:latest' not found locally."; \
+		echo "Build it first (prerequisite):"; \
+		echo "  cd ../chain-indexer && make docker-build"; \
+		exit 1; \
+	fi
+	@echo "Starting Block Explorer (multi-network: 2 Anvil chains)..."
+	@echo ""
+	docker compose $(MULTI_COMPOSE) build
+	docker compose $(MULTI_COMPOSE) up -d
+	@echo ""
+	@echo "Waiting for services..."
+	@for i in 1 2 3 4 5 6 7 8 9 10; do \
+		if curl -s http://127.0.0.1:8081/api/stats >/dev/null 2>&1 && \
+		   curl -s http://127.0.0.1:8091/api/stats >/dev/null 2>&1; then \
+			break; \
+		fi; \
+		sleep 2; \
+	done
+	@echo ""
+	@echo "Multi-network dev stack is ready!"
+	@echo ""
+	@echo "  Network A (chain id 31337):"
+	@echo "    Explorer:   http://localhost:3001"
+	@echo "    API:        http://localhost:8081"
+	@echo "    Public API: http://localhost:8082"
+	@echo "    Anvil RPC:  http://localhost:8546"
+	@echo ""
+	@echo "  Network B (chain id 31338):"
+	@echo "    Explorer:   http://localhost:3002"
+	@echo "    API:        http://localhost:8091"
+	@echo "    Public API: http://localhost:8092"
+	@echo "    Anvil RPC:  http://localhost:8556"
+	@echo ""
+	@echo "Open either frontend — the navbar 'Networks' dropdown switches between them."
+	@echo "Edit frontend/public/featured-networks.json to rename / add networks."
+	@echo ""
+
+dev-multi-stop:
+	@echo "Stopping multi-network stack..."
+	docker compose $(MULTI_COMPOSE) down --remove-orphans
+	@echo "Done"
+
+dev-multi-destroy:
+	@echo "Destroying multi-network stack (containers, volumes, and images)..."
+	docker compose $(MULTI_COMPOSE) down -v --remove-orphans --rmi local
+	@echo "Done"
+
+dev-multi-logs:
+	docker compose $(MULTI_COMPOSE) logs -f
 
 # =============================================================================
 # Parallel Dev Stacks (worktrees)
