@@ -35,7 +35,6 @@ jobs:
           images: gatewayfm/block-explorer-api
           tags: |
             type=semver,pattern={{version}}
-            type=raw,value=latest,enable={{is_default_branch}}
           labels: |
             org.opencontainers.image.title=block-explorer-api
             org.opencontainers.image.description=Block Explorer API Service (standalone build — links chain-indexer gRPC client)
@@ -93,7 +92,6 @@ jobs:
           images: gatewayfm/block-explorer-api-privacy
           tags: |
             type=semver,pattern={{version}}
-            type=raw,value=latest,enable={{is_default_branch}}
           labels: |
             org.opencontainers.image.title=block-explorer-api-privacy
             org.opencontainers.image.description=Block Explorer API Service (privacy build — chain-indexer gRPC client compiled out)
@@ -140,7 +138,6 @@ jobs:
           images: gatewayfm/block-explorer-public-api
           tags: |
             type=semver,pattern={{version}}
-            type=raw,value=latest,enable={{is_default_branch}}
           labels: |
             org.opencontainers.image.title=block-explorer-public-api
             org.opencontainers.image.description=Block Explorer Public API Service
@@ -185,7 +182,6 @@ jobs:
           images: gatewayfm/block-explorer-frontend
           tags: |
             type=semver,pattern={{version}}
-            type=raw,value=latest,enable={{is_default_branch}}
           labels: |
             org.opencontainers.image.title=block-explorer-frontend
             org.opencontainers.image.description=Block Explorer Frontend
