@@ -3,27 +3,45 @@ pragma solidity ^0.8.13;
 
 /// @title Mock Tether USD
 /// @notice Minimal ERC20 used for testing the block explorer's token features.
-/// @dev Decimals are 6 to match real USDT. `mint` is unrestricted on purpose so
-///      test scripts can fund any address without managing an owner key.
+/// @dev Decimals are 6 to match real USDT. Mint is gated to the deployer so
+///      static analysis doesn't flag this as a public-mint vulnerability;
+///      the companion deploy-mock-usdt.sh script uses the same Anvil key for
+///      both deployment and subsequent funding, so the gate doesn't get in
+///      the way of testing.
 contract MockUSDT {
     string public constant name = "Tether USD";
     string public constant symbol = "USDT";
     uint8 public constant decimals = 6;
 
     uint256 public totalSupply;
+    address public owner;
     mapping(address => uint256) public balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;
 
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "USDT: not owner");
+        _;
+    }
 
     constructor(uint256 _initialSupply) {
+        owner = msg.sender;
+        emit OwnershipTransferred(address(0), msg.sender);
         if (_initialSupply > 0) {
             _mint(msg.sender, _initialSupply);
         }
     }
 
-    function mint(address to, uint256 amount) external {
+    function transferOwnership(address newOwner) external onlyOwner {
+        require(newOwner != address(0), "USDT: owner zero");
+        emit OwnershipTransferred(owner, newOwner);
+        owner = newOwner;
+    }
+
+    function mint(address to, uint256 amount) external onlyOwner {
         _mint(to, amount);
     }
 
