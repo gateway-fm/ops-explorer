@@ -10,14 +10,26 @@
 #
 # The deployer (Anvil account #0) also receives 1,000,000 USDT at construction
 # time so you have a funded sender for transfer testing.
+#
+# Auth: reads PRIVATE_KEY from the environment. For a local Anvil dev chain,
+# export the well-known Anvil account #0 key first:
+#   export PRIVATE_KEY=$(cast wallet private-key --mnemonic 'test test test test test test test test test test test junk')
+# or run `anvil` and copy the printed Account #0 key.
 
 set -e
 
 RECIPIENT="${1:-0x70997970C51812dc3A010C7d01b50e0d17dc79C8}"  # Anvil account #1
 AMOUNT_HUMAN="${2:-1000000}"                                  # in whole USDT
 RPC_URL="${3:-http://localhost:8545}"
-PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"  # Anvil key #0
-DEPLOYER="0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+
+if [ -z "${PRIVATE_KEY:-}" ]; then
+  echo "Error: PRIVATE_KEY env var is not set."
+  echo "For local Anvil, export the deployer key first (see header comment)."
+  exit 1
+fi
+
+# Derive the deployer address from the key so we don't have to hard-code it.
+DEPLOYER=$(cast wallet address --private-key "$PRIVATE_KEY")
 
 DECIMALS=6
 # Raw token amount = AMOUNT_HUMAN * 10^DECIMALS

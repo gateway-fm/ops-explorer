@@ -134,6 +134,10 @@ curl -X POST http://localhost:8080/api/verify \
 # Send 50 random transactions for load testing
 ./loadtest.sh http://localhost:8545 50
 
+# Export the deployer key (well-known Anvil mnemonic, account #0) once:
+export PRIVATE_KEY=$(cast wallet private-key \
+  --mnemonic 'test test test test test test test test test test test junk')
+
 # Deploy MockUSDT and mint 1,000,000 USDT to Anvil account #1 (defaults)
 ./deploy-mock-usdt.sh
 
