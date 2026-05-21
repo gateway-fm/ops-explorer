@@ -1,0 +1,283 @@
+# Multi-network dev stack: two fully-independent block-explorer
+# deployments running side-by-side. Mirrors Blockscout's "one stack per
+# chain" model — the frontend network switcher in each stack just
+# navigates to the other's URL.
+#
+# Bring up with: `make dev-multi`
+#
+# Stack A (defaults):           Stack B (offset):
+#   anvil-a       :8546           anvil-b        :8556    (chain id 31338)
+#   postgres-a    :5433           postgres-b     :5443
+#   chain-indexer-a (internal)    chain-indexer-b (internal)
+#   api-a         :8081           api-b          :8091
+#   public-api-a  :8082           public-api-b   :8092
+#   frontend-a    :3001           frontend-b     :3002
+
+services:
+  # ============================== STACK A ==============================
+  anvil-a:
+    image: ghcr.io/foundry-rs/foundry:latest
+    entrypoint: ["anvil", "--host", "0.0.0.0", "--block-time", "2", "--chain-id", "31337"]
+    ports:
+      - "8546:8545"
+    healthcheck:
+      test: ["CMD", "cast", "block-number", "--rpc-url", "http://localhost:8545"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  postgres-a:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: explorer
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_a_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  indexer-postgres-a:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: chain_indexer
+    volumes:
+      - indexer_postgres_a_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chain_indexer"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  chain-indexer-a:
+    image: gatewayfm/chain-indexer:latest
+    pull_policy: never
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@indexer-postgres-a:5432/chain_indexer?sslmode=disable
+      RPC_URL: http://anvil-a:8545
+      GRPC_LISTEN_ADDR: ":50051"
+      LOG_LEVEL: ${INDEXER_LOG_LEVEL:-info}
+    depends_on:
+      indexer-postgres-a:
+        condition: service_healthy
+      anvil-a:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api-a:
+    platform: linux/amd64
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    entrypoint: ["/api"]
+    ports:
+      - "8081:8080"
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres-a:5432/explorer?sslmode=disable
+      RPC_URL: http://anvil-a:8545
+      API_PORT: "8080"
+      INDEXER_URL: chain-indexer-a:50051
+      ENABLE_GAS_PRICES: ${ENABLE_GAS_PRICES:-false}
+    volumes:
+      - solc_binaries_a:/opt/solc
+    depends_on:
+      postgres-a:
+        condition: service_healthy
+      anvil-a:
+        condition: service_healthy
+      chain-indexer-a:
+        condition: service_started
+    restart: unless-stopped
+
+  public-api-a:
+    platform: linux/amd64
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.public-api
+    ports:
+      - "8082:8082"
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres-a:5432/explorer?sslmode=disable
+      RPC_URL: http://anvil-a:8545
+      INDEXER_URL: chain-indexer-a:50051
+      PUBLIC_API_PORT: "8082"
+      RATE_LIMIT: ${RATE_LIMIT:-100}
+      RATE_LIMIT_WINDOW: ${RATE_LIMIT_WINDOW:-1m}
+    depends_on:
+      postgres-a:
+        condition: service_healthy
+      anvil-a:
+        condition: service_healthy
+      chain-indexer-a:
+        condition: service_started
+    restart: unless-stopped
+
+  frontend-a:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - frontend_a_node_modules:/app/node_modules
+    ports:
+      - "3001:3001"
+    environment:
+      VITE_API_URL: /api
+      VITE_PUBLIC_API_URL: http://localhost:8082
+      VITE_CHAIN_ID: "31337"
+      VITE_NETWORK_NAME: "Local Mainnet"
+      VITE_RPC_URL: http://localhost:8546
+      API_PROXY_TARGET: http://api-a:8080
+    command: sh -c "npm install --legacy-peer-deps && npm run dev -- --host 0.0.0.0 --port 3001"
+    depends_on:
+      - api-a
+      - public-api-a
+    restart: unless-stopped
+
+  # ============================== STACK B ==============================
+  anvil-b:
+    image: ghcr.io/foundry-rs/foundry:latest
+    entrypoint: ["anvil", "--host", "0.0.0.0", "--block-time", "2", "--chain-id", "31338"]
+    ports:
+      - "8556:8545"
+    healthcheck:
+      test: ["CMD", "cast", "block-number", "--rpc-url", "http://localhost:8545"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  postgres-b:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: explorer
+    ports:
+      - "5443:5432"
+    volumes:
+      - postgres_b_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  indexer-postgres-b:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: chain_indexer
+    volumes:
+      - indexer_postgres_b_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chain_indexer"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  chain-indexer-b:
+    image: gatewayfm/chain-indexer:latest
+    pull_policy: never
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@indexer-postgres-b:5432/chain_indexer?sslmode=disable
+      RPC_URL: http://anvil-b:8545
+      GRPC_LISTEN_ADDR: ":50051"
+      LOG_LEVEL: ${INDEXER_LOG_LEVEL:-info}
+    depends_on:
+      indexer-postgres-b:
+        condition: service_healthy
+      anvil-b:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api-b:
+    platform: linux/amd64
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    entrypoint: ["/api"]
+    ports:
+      - "8091:8080"
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres-b:5432/explorer?sslmode=disable
+      RPC_URL: http://anvil-b:8545
+      API_PORT: "8080"
+      INDEXER_URL: chain-indexer-b:50051
+      ENABLE_GAS_PRICES: ${ENABLE_GAS_PRICES:-false}
+    volumes:
+      - solc_binaries_b:/opt/solc
+    depends_on:
+      postgres-b:
+        condition: service_healthy
+      anvil-b:
+        condition: service_healthy
+      chain-indexer-b:
+        condition: service_started
+    restart: unless-stopped
+
+  public-api-b:
+    platform: linux/amd64
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.public-api
+    ports:
+      - "8092:8082"
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres-b:5432/explorer?sslmode=disable
+      RPC_URL: http://anvil-b:8545
+      INDEXER_URL: chain-indexer-b:50051
+      PUBLIC_API_PORT: "8082"
+      RATE_LIMIT: ${RATE_LIMIT:-100}
+      RATE_LIMIT_WINDOW: ${RATE_LIMIT_WINDOW:-1m}
+    depends_on:
+      postgres-b:
+        condition: service_healthy
+      anvil-b:
+        condition: service_healthy
+      chain-indexer-b:
+        condition: service_started
+    restart: unless-stopped
+
+  frontend-b:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - frontend_b_node_modules:/app/node_modules
+    ports:
+      - "3002:3001"
+    environment:
+      VITE_API_URL: /api
+      VITE_PUBLIC_API_URL: http://localhost:8092
+      VITE_CHAIN_ID: "31338"
+      VITE_NETWORK_NAME: "Local Testnet"
+      VITE_RPC_URL: http://localhost:8556
+      API_PROXY_TARGET: http://api-b:8080
+    command: sh -c "npm install --legacy-peer-deps && npm run dev -- --host 0.0.0.0 --port 3001"
+    depends_on:
+      - api-b
+      - public-api-b
+    restart: unless-stopped
+
+volumes:
+  postgres_a_data:
+  postgres_b_data:
+  indexer_postgres_a_data:
+  indexer_postgres_b_data:
+  frontend_a_node_modules:
+  frontend_b_node_modules:
+  solc_binaries_a:
+  solc_binaries_b:

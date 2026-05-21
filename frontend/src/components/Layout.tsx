@@ -5,6 +5,7 @@ import { Search, Menu, X, ArrowLeftRight, Users, Coins, ShieldCheck, Boxes, Fuel
 import { api } from '../lib/api';
 import type { SearchSuggestion } from '../lib/api';
 import { NavDropdown } from './NavDropdown';
+import { MobileNetworkList } from './NetworkMenu';
 import { MetaMaskFox } from './MetaMask';
 import { addNetworkToMetaMask } from '../lib/metamask';
 import { usePrivacyEnabled } from '../hooks/usePrivacyEnabled';
@@ -351,6 +352,9 @@ export function Layout() {
                   ))}
                 </div>
               )}
+
+              {/* Mobile Network Switcher (hidden when ≤1 network configured) */}
+              <MobileNetworkList />
 
               {/* Mobile Navigation Links */}
               <div className="card overflow-hidden">
