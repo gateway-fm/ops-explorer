@@ -453,10 +453,12 @@ func (s *Server) handleGetAddress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	info := &types.AddressInfo{
-		Address:    address,
-		Balance:    *balance,
-		TxCount:    stats.TxCount,
-		IsContract: len(code) > 0 && string(code) != "0x",
+		Address:            address,
+		Balance:            *balance,
+		TxCount:            stats.TxCount,
+		InternalTxCount:    stats.InternalTxCount,
+		TokenTransferCount: stats.TokenTransferCount,
+		IsContract:         len(code) > 0 && string(code) != "0x",
 	}
 
 	writeJSON(w, info)
@@ -866,6 +868,7 @@ func (s *Server) handleGetTokens(w http.ResponseWriter, r *http.Request) {
 	pageStr := r.URL.Query().Get("page")
 	pageSizeStr := r.URL.Query().Get("pageSize")
 	tokenType := r.URL.Query().Get("type")
+	search := strings.TrimSpace(r.URL.Query().Get("search"))
 
 	page := 1
 	if pageStr != "" {
@@ -882,7 +885,7 @@ func (s *Server) handleGetTokens(w http.ResponseWriter, r *http.Request) {
 	}
 
 	offset := (page - 1) * pageSize
-	tokens, total, err := s.provider.GetTokens(r.Context(), pageSize, offset, tokenType)
+	tokens, total, err := s.provider.GetTokens(r.Context(), pageSize, offset, tokenType, search)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

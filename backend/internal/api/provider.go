@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -68,7 +69,7 @@ type DataProvider interface {
 	UpdateContractABI(ctx context.Context, address string, abi json.RawMessage) error
 	VerifyContract(ctx context.Context, address string, name string, compilerVersion string, optimizationUsed bool, sourceCode string, abi json.RawMessage, evmVersion string, licenseType string, constructorArgs string, optimizationRuns int) error
 
-	GetTokens(ctx context.Context, limit int, offset int, tokenType string) ([]types.Token, int64, error)
+	GetTokens(ctx context.Context, limit int, offset int, tokenType, search string) ([]types.Token, int64, error)
 	GetToken(ctx context.Context, address string) (*types.Token, error)
 	GetTokenHolders(ctx context.Context, address string, limit int, offset int) ([]types.TokenHolder, int64, error)
 	GetTransfersByToken(ctx context.Context, tokenAddress string, limit int, offset int) ([]types.TokenTransfer, int64, error)
@@ -196,7 +197,7 @@ func (p *DirectDBProvider) GetLogs(ctx context.Context, address *string, topic0 
 func (p *DirectDBProvider) IsContract(ctx context.Context, address string) (bool, error) {
 	return false, ErrChainDataNotAvailable
 }
-func (p *DirectDBProvider) GetTokens(ctx context.Context, limit int, offset int, tokenType string) ([]types.Token, int64, error) {
+func (p *DirectDBProvider) GetTokens(ctx context.Context, limit int, offset int, tokenType, search string) ([]types.Token, int64, error) {
 	return nil, 0, ErrChainDataNotAvailable
 }
 func (p *DirectDBProvider) GetToken(ctx context.Context, address string) (*types.Token, error) {
@@ -614,8 +615,11 @@ func (p *ProxyDataProvider) UpdateContractABI(ctx context.Context, address strin
 	return p.doRequest(ctx, "POST", fmt.Sprintf("/api/v1/explorer/addresses/%s/abi", address), bytes.NewReader(abi), nil)
 }
 
-func (p *ProxyDataProvider) GetTokens(ctx context.Context, limit int, offset int, tokenType string) ([]types.Token, int64, error) {
-	q := fmt.Sprintf("?limit=%d&offset=%d&type=%s", limit, offset, tokenType)
+func (p *ProxyDataProvider) GetTokens(ctx context.Context, limit int, offset int, tokenType, search string) ([]types.Token, int64, error) {
+	q := fmt.Sprintf("?limit=%d&offset=%d&type=%s", limit, offset, url.QueryEscape(tokenType))
+	if search != "" {
+		q += "&search=" + url.QueryEscape(search)
+	}
 	var res struct {
 		Data  []types.Token `json:"data"`
 		Total int64         `json:"total"`

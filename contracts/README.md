@@ -14,6 +14,7 @@ Test contracts for the block explorer. Used for deploying to local/dev chains an
 | Counter | `src/Counter.sol` | `uint256 _initialNumber` | Simple counter with get/set/increment |
 | EventCounter | `src/EventCounter.sol` | `uint256 _initialNumber` | Counter that emits events on every state change |
 | Forwarder | `src/Forwarder.sol` | _(none)_ | Forwards ETH to a recipient, creating internal transactions |
+| MockUSDT | `src/MockUSDT.sol` | `uint256 _initialSupply` | ERC20 "Tether USD" (6 decimals) with unrestricted `mint` for test funding |
 
 ## Deploy
 
@@ -120,6 +121,7 @@ curl -X POST http://localhost:8080/api/verify \
 | Script | Description | Usage |
 |--------|-------------|-------|
 | `fund.sh` | Fund a wallet from the Anvil deployer | `./fund.sh 0xADDRESS [amount] [rpc_url]` |
+| `deploy-mock-usdt.sh` | Deploy MockUSDT and mint test tokens to an address | `./deploy-mock-usdt.sh [recipient] [usdt_amount] [rpc_url]` |
 | `loadtest.sh` | Send many random transactions | `./loadtest.sh [rpc_url] [num_txs]` |
 
 ```bash
@@ -131,6 +133,12 @@ curl -X POST http://localhost:8080/api/verify \
 
 # Send 50 random transactions for load testing
 ./loadtest.sh http://localhost:8545 50
+
+# Deploy MockUSDT and mint 1,000,000 USDT to Anvil account #1 (defaults)
+./deploy-mock-usdt.sh
+
+# Deploy MockUSDT and mint 5,000 USDT to a specific address
+./deploy-mock-usdt.sh 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 5000
 ```
 
 ## Standard JSON Input Files

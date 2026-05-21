@@ -59,6 +59,10 @@ export interface AddressInfo {
   balance: string | number;  // API may return string or number
   txCount: number;
   isContract: boolean;
+  // Both populated by the indexer's address_stats aggregate. Default to 0 if
+  // the row hasn't been built yet for this address.
+  tokenTransferCount: number;
+  internalTxCount: number;
 }
 
 export interface Contract {
@@ -152,6 +156,13 @@ export interface TokenTransfer {
   tokenId?: string;
   isInternal: boolean;
   addressMetadata?: Record<string, VisibilityReason>;
+}
+
+export interface Balance {
+  address: string;
+  tokenAddress: string;
+  blockNumber: number;
+  balance: string;
 }
 
 export interface Log {
@@ -460,6 +471,25 @@ export const api = {
 
   getContract: (address: string) => fetchAPI<Contract>(`/addresses/${address}/contract`),
 
+  getAddressTransfers: (address: string, limit = 25, before?: number) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (before) params.set('before', String(before));
+    return fetchAPI<PaginatedResponse<TokenTransfer>>(`/addresses/${address}/transfers?${params}`);
+  },
+
+  getAddressInternalTxs: (address: string, page = 1, pageSize = 25) => {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    return fetchAPI<OffsetPaginatedResponse<InternalTransaction>>(`/addresses/${address}/internal?${params}`);
+  },
+
+  getAddressLogs: (address: string, page = 1, pageSize = 25) => {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    return fetchAPI<OffsetPaginatedResponse<Log>>(`/addresses/${address}/logs?${params}`);
+  },
+
+  getAddressTokenBalances: (address: string) =>
+    fetchAPI<Balance[]>(`/addresses/${address}/balances`),
+
   search: (query: string) =>
     fetchAPI<{ type: string; data: unknown }>(`/search?q=${encodeURIComponent(query)}`),
 
@@ -477,9 +507,10 @@ export const api = {
   },
 
   // Token endpoints
-  getTokens: (page = 1, pageSize = 25, type?: string) => {
+  getTokens: (page = 1, pageSize = 25, type?: string, search?: string) => {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (type) params.set('type', type);
+    if (search) params.set('search', search);
     return fetchAPI<OffsetPaginatedResponse<Token>>(`/tokens?${params}`);
   },
 

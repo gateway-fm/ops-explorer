@@ -240,7 +240,7 @@ func (p *Provider) GetToken(ctx context.Context, address string) (*types.Token, 
 	return mapToken(resp), nil
 }
 
-func (p *Provider) GetTokens(ctx context.Context, limit int, offset int, tokenType string) ([]types.Token, int64, error) {
+func (p *Provider) GetTokens(ctx context.Context, limit int, offset int, tokenType, search string) ([]types.Token, int64, error) {
 	page := offset/limit + 1
 	var tt indexerv1.TokenType
 	switch tokenType {
@@ -254,6 +254,7 @@ func (p *Provider) GetTokens(ctx context.Context, limit int, offset int, tokenTy
 	resp, err := p.client.ListTokens(ctx, &indexerv1.ListTokensRequest{
 		Page:      &indexerv1.OffsetPageRequest{Page: int32(page), PageSize: int32(limit)},
 		TokenType: tt,
+		Search:    search,
 	})
 	if err != nil {
 		return nil, 0, err
