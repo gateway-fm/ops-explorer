@@ -40,6 +40,7 @@ func newImpersonationTestServer(t *testing.T, probeStatus int) (*Server, *httpte
 	s.router.Route("/api/impersonation", func(r chi.Router) {
 		r.Post("/start", s.handleStartImpersonation)
 		r.Delete("/{token}", s.handleStopImpersonation)
+		r.Get("/{token}", s.handleGetImpersonation)
 	})
 	return s, upstream
 }
@@ -175,6 +176,64 @@ func TestHandleStopImpersonation_Idempotent(t *testing.T) {
 	}
 	if _, err := s.impersonations.Lookup(context.Background(), tok); err != ErrImpersonationNotFound {
 		t.Fatalf("expected token gone after delete, got %v", err)
+	}
+}
+
+func TestHandleGetImpersonation_OK(t *testing.T) {
+	s, _ := newImpersonationTestServer(t, http.StatusOK)
+	tok, _, err := s.impersonations.Mint(context.Background(), ImpersonationSession{
+		AdminDID:  "did:p:admin",
+		TargetDID: "did:p:target",
+	}, time.Hour)
+	if err != nil {
+		t.Fatalf("Mint: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/impersonation/"+tok, nil)
+	addAuthCookie(req, "did:p:admin")
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp startImpersonationResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.TargetDID != "did:p:target" {
+		t.Fatalf("unexpected target: %s", resp.TargetDID)
+	}
+}
+
+func TestHandleGetImpersonation_WrongAdmin(t *testing.T) {
+	s, _ := newImpersonationTestServer(t, http.StatusOK)
+	tok, _, err := s.impersonations.Mint(context.Background(), ImpersonationSession{
+		AdminDID:  "did:p:alice",
+		TargetDID: "did:p:target",
+	}, time.Hour)
+	if err != nil {
+		t.Fatalf("Mint: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/impersonation/"+tok, nil)
+	addAuthCookie(req, "did:p:mallory")
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, req)
+
+	// 404 (not 403): we never leak that the token exists.
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for cross-admin token, got %d", w.Code)
+	}
+}
+
+func TestHandleGetImpersonation_NoAuth(t *testing.T) {
+	s, _ := newImpersonationTestServer(t, http.StatusOK)
+	req := httptest.NewRequest(http.MethodGet, "/api/impersonation/some-token", nil)
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without auth, got %d", w.Code)
 	}
 }
 

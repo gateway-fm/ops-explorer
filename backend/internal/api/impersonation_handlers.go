@@ -141,6 +141,47 @@ func (s *Server) handleStopImpersonation(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleGetImpersonation returns the session metadata for a known token,
+// scoped to the caller. Used by the frontend's cold-mount restore path so
+// it can populate the banner with the real target DID after a page refresh
+// without leaving the placeholder in place.
+//
+// The caller's auth-cookie subject must match the AdminDID embedded in the
+// session at mint time — same replay defense as the middleware. Unknown or
+// foreign tokens return 404 (we never leak the existence of someone else's
+// session).
+func (s *Server) handleGetImpersonation(w http.ResponseWriter, r *http.Request) {
+	if s.impersonations == nil {
+		writeError(w, http.StatusServiceUnavailable, "View-as impersonation is not enabled")
+		return
+	}
+	token := chi.URLParam(r, "token")
+	if token == "" {
+		writeError(w, http.StatusBadRequest, "token is required")
+		return
+	}
+	callerDID := s.GetAuthDID(r)
+	if callerDID == "" {
+		writeError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+	session, err := s.impersonations.Lookup(r.Context(), token)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "Session not found")
+		return
+	}
+	if !strings.EqualFold(session.AdminDID, callerDID) {
+		// 404 not 403: don't leak that the token exists.
+		writeError(w, http.StatusNotFound, "Session not found")
+		return
+	}
+	writeJSON(w, startImpersonationResponse{
+		Token:     token,
+		ExpiresAt: session.ExpiresAt,
+		TargetDID: session.TargetDID,
+	})
+}
+
 // probeImpersonationGate makes a HEAD-like read call under the impersonation
 // URL prefix and returns the upstream status code. Privacy-proxy decides the
 // outcome:

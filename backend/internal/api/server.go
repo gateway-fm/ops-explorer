@@ -175,6 +175,10 @@ func (s *Server) setupRoutes() {
 		s.router.Route("/api/impersonation", func(r chi.Router) {
 			r.Post("/start", s.handleStartImpersonation)
 			r.Delete("/{token}", s.handleStopImpersonation)
+			// Cold-mount restore: lets the frontend translate ?as=<token>
+			// back into the target DID after a page refresh without leaking
+			// it through the URL.
+			r.Get("/{token}", s.handleGetImpersonation)
 		})
 	}
 
