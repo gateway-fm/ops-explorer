@@ -156,6 +156,16 @@ func (c *Client) IsEnabled() bool {
 	return c != nil && c.baseURL != ""
 }
 
+// BaseURL returns the configured privacy-proxy base URL (with no trailing slash).
+// Used by the "View as user" (RD-928) flow to build impersonation URLs without
+// needing a second copy of the URL in the call site.
+func (c *Client) BaseURL() string {
+	if c == nil {
+		return ""
+	}
+	return strings.TrimSuffix(c.baseURL, "/")
+}
+
 // ETH address linking types
 
 type LinkedAddress struct {
