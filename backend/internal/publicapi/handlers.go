@@ -480,9 +480,10 @@ func (s *Server) handleGetTokens(w http.ResponseWriter, r *http.Request) {
 	page := parsePage(r)
 	pageSize := parsePageSize(r)
 	tokenType := r.URL.Query().Get("type")
+	search := strings.TrimSpace(r.URL.Query().Get("search"))
 
 	offset := (page - 1) * pageSize
-	tokens, total, err := s.provider.GetTokens(r.Context(), pageSize, offset, tokenType)
+	tokens, total, err := s.provider.GetTokens(r.Context(), pageSize, offset, tokenType, search)
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
