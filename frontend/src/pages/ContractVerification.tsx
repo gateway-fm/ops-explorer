@@ -6,6 +6,7 @@ import { AlertCircle, AlertTriangle, CheckCircle, ChevronDown, ChevronRight, Inf
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { getConfig } from '../lib/runtimeConfig';
 import { features } from '../lib/features';
+import { useImpersonation } from '../hooks/useImpersonation';
 
 const LICENSE_TYPES = [
   'No License',
@@ -444,8 +445,14 @@ function ContractVerificationForm() {
 
   const compilerVersions = compilerData?.versions ?? [];
 
+  // RD-928 "View as user": contract verification is a write-side action
+  // (mutates explorer state, can call privacy-proxy write paths), so it is
+  // gated alongside the contract-write submit buttons. Disabled, not hidden.
+  const { isActive: impersonating } = useImpersonation();
+
   // Compute disabled state for submit
   const isSubmitDisabled = () => {
+    if (impersonating) return true;
     if (!address || activeMutation.isPending) return true;
     switch (method) {
       case 'source':
@@ -1415,7 +1422,13 @@ contract MyContract {
         <button
           onClick={() => activeMutation.mutate()}
           disabled={isSubmitDisabled()}
-          className="btn-primary w-full"
+          title={
+            impersonating
+              ? 'Read-only diagnostic view — exit "View as user" to verify contracts'
+              : undefined
+          }
+          data-testid="verify-contract-submit"
+          className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {activeMutation.isPending ? (
             <>
