@@ -125,6 +125,14 @@ func (s *Server) handleStartImpersonation(w http.ResponseWriter, r *http.Request
 // handleStopImpersonation revokes the given token. Idempotent: revoking an
 // unknown token returns 204 so the frontend can "stop" cleanly even if the
 // session was already cleared by GC or another tab.
+//
+// Authorization: the caller's auth-cookie subject must match the AdminDID
+// embedded in the session at mint time — same replay defense as the
+// impersonation middleware and handleGetImpersonation. Without this gate, a
+// leaked token (URL, history, log) could be used by any authenticated
+// caller to revoke the legitimate admin's session, causing a low-grade DoS.
+// Unknown-token and wrong-caller paths return the same 204 so the response
+// shape can't be used as a token-validity oracle.
 func (s *Server) handleStopImpersonation(w http.ResponseWriter, r *http.Request) {
 	if s.impersonations == nil {
 		writeError(w, http.StatusServiceUnavailable, "View-as impersonation is not enabled")
@@ -135,6 +143,33 @@ func (s *Server) handleStopImpersonation(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "token is required")
 		return
 	}
+	callerDID := s.GetAuthDID(r)
+	if callerDID == "" {
+		writeError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+
+	// Resolve the session first so we can verify ownership. Lookup
+	// returns a zero-valued ImpersonationSession on miss (value, not
+	// pointer); err signals the miss/expiry case. Either condition
+	// collapses to the unknown-token branch.
+	session, err := s.impersonations.Lookup(r.Context(), token)
+	if err != nil {
+		// Unknown / expired token: idempotent 204 so the FE's "Stop
+		// viewing as" button always reaches a clean state. No info leak.
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// Ownership check. Mismatched caller swallows silently with 204 so an
+	// attacker can't probe "does this token exist?" by comparing 204-fast
+	// (no session / wrong caller) vs 204-slow (revoked). The session
+	// itself is left intact for the rightful admin.
+	if !strings.EqualFold(callerDID, session.AdminDID) {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	// Best-effort revoke; the call cannot fail in the current in-memory
 	// implementation but we still honour the interface contract.
 	_ = s.impersonations.Revoke(r.Context(), token)

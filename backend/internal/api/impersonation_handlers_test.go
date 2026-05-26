@@ -153,22 +153,34 @@ func TestHandleStartImpersonation_BadBody(t *testing.T) {
 func TestHandleStopImpersonation_Idempotent(t *testing.T) {
 	s, _ := newImpersonationTestServer(t, http.StatusOK)
 
-	// Stop unknown token → 204.
+	// Unauthenticated → 401. Stop requires the caller's DID to verify
+	// ownership of the token; missing auth fails closed.
 	req := httptest.NewRequest(http.MethodDelete, "/api/impersonation/does-not-exist", nil)
 	w := httptest.NewRecorder()
 	s.router.ServeHTTP(w, req)
-	if w.Code != http.StatusNoContent {
-		t.Fatalf("expected 204 for unknown token, got %d", w.Code)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for unauthenticated DELETE, got %d", w.Code)
 	}
 
-	// Mint then stop → 204, and lookup returns missing.
+	// Authenticated stop of unknown token → 204 (idempotent, no info leak
+	// about whether the token ever existed).
+	req = httptest.NewRequest(http.MethodDelete, "/api/impersonation/does-not-exist", nil)
+	addAuthCookie(req, "did:p:admin")
+	w = httptest.NewRecorder()
+	s.router.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 for unknown token with auth, got %d", w.Code)
+	}
+
+	// Mint then stop with the matching admin → 204, and lookup returns missing.
 	tok, _, err := s.impersonations.Mint(context.Background(), ImpersonationSession{
-		AdminDID: "a", TargetDID: "b",
+		AdminDID: "did:p:admin", TargetDID: "did:p:target",
 	}, time.Minute)
 	if err != nil {
 		t.Fatalf("Mint: %v", err)
 	}
 	req = httptest.NewRequest(http.MethodDelete, "/api/impersonation/"+tok, nil)
+	addAuthCookie(req, "did:p:admin")
 	w = httptest.NewRecorder()
 	s.router.ServeHTTP(w, req)
 	if w.Code != http.StatusNoContent {
@@ -176,6 +188,36 @@ func TestHandleStopImpersonation_Idempotent(t *testing.T) {
 	}
 	if _, err := s.impersonations.Lookup(context.Background(), tok); err != ErrImpersonationNotFound {
 		t.Fatalf("expected token gone after delete, got %v", err)
+	}
+}
+
+// TestHandleStopImpersonation_WrongCaller verifies that an authenticated user
+// who is NOT the session's minting admin cannot revoke the token. A token
+// leaked via URL/history must not become a DoS vector against the legitimate
+// admin. The response shape is identical to the unknown-token branch (204)
+// so an attacker can't probe token validity via response timing/code.
+func TestHandleStopImpersonation_WrongCaller(t *testing.T) {
+	s, _ := newImpersonationTestServer(t, http.StatusOK)
+
+	tok, _, err := s.impersonations.Mint(context.Background(), ImpersonationSession{
+		AdminDID: "did:p:alice", TargetDID: "did:p:bob",
+	}, time.Minute)
+	if err != nil {
+		t.Fatalf("Mint: %v", err)
+	}
+
+	// Mallory (different authenticated user) tries to revoke Alice's token.
+	req := httptest.NewRequest(http.MethodDelete, "/api/impersonation/"+tok, nil)
+	addAuthCookie(req, "did:p:mallory")
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("expected silent 204 for wrong caller, got %d", w.Code)
+	}
+
+	// Token must still be valid for the rightful admin.
+	if _, err := s.impersonations.Lookup(context.Background(), tok); err != nil {
+		t.Fatalf("token must survive wrong-caller delete attempt, got err=%v", err)
 	}
 }
 
