@@ -14,7 +14,6 @@ import { PageHeader } from '../components/PageHeader';
 import { redirectToLogin } from '../lib/login';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { formatDID } from '../lib/utils';
-import { ViewAsButton } from '../components/ViewAsButton';
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -219,23 +218,20 @@ export function PrivacyDashboard() {
                         </span>
                       </td>
                       <td className="hidden lg:table-cell">
-                        <div className="flex items-center gap-2">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="font-mono text-xs text-neutral-500 cursor-help">
-                                {truncateDID(disclosed.ownerDid)}
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <span className="font-mono text-xs">{disclosed.ownerDid}</span>
-                            </TooltipContent>
-                          </Tooltip>
-                          {/* RD-928: tier-2 admin can start a "View as" session
-                              for the disclosure's owner DID. The button itself
-                              relies on the BFF + privacy-proxy to gate access
-                              (non-admin clicks fall through to a 404/403). */}
-                          <ViewAsButton targetDID={disclosed.ownerDid} variant="inline" />
-                        </div>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="font-mono text-xs text-neutral-500 cursor-help">
+                              {truncateDID(disclosed.ownerDid)}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <span className="font-mono text-xs">{disclosed.ownerDid}</span>
+                          </TooltipContent>
+                        </Tooltip>
+                        {/* RD-928: View-as initiator moved to the privacy-proxy
+                            admin dashboard's user list. See PR description.
+                            The disclosure-table location conflated audit-the-
+                            discloser with permission-grant verification. */}
                       </td>
                       <td className="hidden sm:table-cell">
                         <span className={`text-sm ${
