@@ -34,12 +34,23 @@ type Server struct {
 	wsHub                *ws.Hub
 	wsConfig             *ws.Config
 	privacyClient        *privacy.Client
+	privacyProxyURL      string // base URL used for the impersonation probe (RD-928)
 	ssoClient            *auth.SSOClient
 	postLoginRedirectURL string
 	gasPricesEnabled     bool
 	port                 int
 	router               *chi.Mux
 	etherscanResults     sync.Map // guid -> *etherscanVerifyResult
+
+	// impersonations is the session store backing the "View as user" (RD-928)
+	// admin diagnostic flow. nil when the feature is not configured (e.g.
+	// privacy proxy URL not set), in which case start/stop endpoints return
+	// 503 and the impersonationMiddleware is a no-op.
+	impersonations ImpersonationStore
+	// impersonationHTTP is an optional HTTP client for the eligibility probe
+	// against privacy-proxy. Tests inject a stub here; production code leaves
+	// it nil and uses the default client.
+	impersonationHTTP *http.Client
 }
 
 type ServerConfig struct {
@@ -66,6 +77,13 @@ func New(database APIDatabase, rpcClient *rpc.Client, idx any, priceService *pri
 		ssoClient:     ssoClient,
 		port:          port,
 		router:        chi.NewRouter(),
+	}
+
+	if privacyClient != nil && privacyClient.IsEnabled() {
+		s.privacyProxyURL = privacyClient.BaseURL()
+		// "View as user" (RD-928): only meaningful when privacy-proxy is
+		// reachable — without it there is nothing to impersonate against.
+		s.impersonations = NewMemoryImpersonationStore(0)
 	}
 
 	if cfg != nil {
@@ -131,17 +149,38 @@ func (s *Server) setupRoutes() {
 		s.router.Get("/ws", s.handleWebSocket)
 	}
 
-	// /api and /api/v1 serve the same routes
+	// /api and /api/v1 serve the same routes.
+	// impersonationMiddleware is mounted here so chain-data reads are
+	// transparently routed through privacy-proxy's admin-impersonate prefix
+	// when X-Impersonate-Token is present. The middleware is a no-op when
+	// the feature is disabled or the header is absent.
 	s.router.Route("/api", func(r chi.Router) {
+		r.Use(s.impersonationMiddleware)
 		s.setupAPIRoutes(r)
 	})
 	s.router.Route("/api/v1", func(r chi.Router) {
+		r.Use(s.impersonationMiddleware)
 		s.setupAPIRoutes(r)
 	})
 
 	s.router.Route("/api/v2", func(r chi.Router) {
+		r.Use(s.impersonationMiddleware)
 		s.setupAPIV2Routes(r)
 	})
+
+	// "View as user" (RD-928) session management. Mounted outside the
+	// impersonation middleware: starting / stopping a session must always be
+	// authenticated as the real admin user, never under another view-as token.
+	if s.impersonations != nil {
+		s.router.Route("/api/impersonation", func(r chi.Router) {
+			r.Post("/start", s.handleStartImpersonation)
+			r.Delete("/{token}", s.handleStopImpersonation)
+			// Cold-mount restore: lets the frontend translate ?as=<token>
+			// back into the target DID after a page refresh without leaking
+			// it through the URL.
+			r.Get("/{token}", s.handleGetImpersonation)
+		})
+	}
 
 	if s.ssoClient != nil && s.ssoClient.IsEnabled() {
 		s.router.Route("/api/auth", func(r chi.Router) {
