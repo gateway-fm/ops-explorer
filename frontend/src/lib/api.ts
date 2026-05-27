@@ -1,6 +1,35 @@
 import { getConfig } from './runtimeConfig';
+import { getImpersonationTokenHeader } from '../hooks/useImpersonation';
 
 const API_BASE = getConfig('VITE_API_URL', '/api');
+
+/**
+ * Headers attached to every BFF request. The impersonation token is read
+ * here (rather than at fetch call sites) so any view-as session
+ * transparently scopes the entire frontend without per-call wiring.
+ *
+ * The token never lives in URL params on outbound BFF calls — only the
+ * X-Impersonate-Token header. Carrying it in the URL would expose it to
+ * server logs / proxy headers; the header is the only sanctioned channel.
+ */
+function defaultHeaders(extra?: HeadersInit): HeadersInit {
+  const headers: Record<string, string> = {};
+  const token = getImpersonationTokenHeader();
+  if (token) {
+    headers['X-Impersonate-Token'] = token;
+  }
+  if (extra) {
+    // Merge: explicit per-call headers win over our defaults.
+    if (extra instanceof Headers) {
+      extra.forEach((v, k) => (headers[k] = v));
+    } else if (Array.isArray(extra)) {
+      for (const [k, v] of extra) headers[k] = v;
+    } else {
+      Object.assign(headers, extra);
+    }
+  }
+  return headers;
+}
 
 export interface Block {
   number: number;
@@ -408,6 +437,7 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
   const res = await fetch(`${API_BASE}${endpoint}`, {
     credentials: 'include',
     ...options,
+    headers: defaultHeaders(options?.headers),
   });
 
   if (!res.ok) {
@@ -547,7 +577,8 @@ export const api = {
   updateContractABI: async (address: string, abi: AbiFragment[]) => {
     const res = await fetch(`${API_BASE}/addresses/${address}/abi`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: defaultHeaders({ 'Content-Type': 'application/json' }),
+      credentials: 'include',
       body: JSON.stringify({ abi }),
     });
     if (!res.ok) {
@@ -567,7 +598,10 @@ export const api = {
 
   fetchFromSourcify: async (address: string, chainId?: string) => {
     const params = chainId ? `?chainId=${chainId}` : '';
-    const res = await fetch(`${API_BASE}/addresses/${address}/sourcify${params}`);
+    const res = await fetch(`${API_BASE}/addresses/${address}/sourcify${params}`, {
+      credentials: 'include',
+      headers: defaultHeaders(),
+    });
     if (!res.ok) {
       const text = await res.text();
       throw new Error(text || `API error: ${res.status}`);
@@ -618,6 +652,7 @@ export const api = {
       const res = await fetch(`${API_BASE}/eth/addresses/${encodeURIComponent(address.toLowerCase())}`, {
         method: 'DELETE',
         credentials: 'include',
+        headers: defaultHeaders(),
       });
       if (!res.ok) {
         throw new Error(`API error: ${res.status}`);
@@ -658,7 +693,8 @@ export const api = {
   }) => {
     const res = await fetch(`${API_BASE}/verify`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: defaultHeaders({ 'Content-Type': 'application/json' }),
+      credentials: 'include',
       body: JSON.stringify(data),
     });
     if (!res.ok) {
@@ -687,7 +723,8 @@ export const api = {
   }) => {
     const res = await fetch(`${API_BASE}/verify/standard-json`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: defaultHeaders({ 'Content-Type': 'application/json' }),
+      credentials: 'include',
       body: JSON.stringify(data),
     });
     if (!res.ok) {
