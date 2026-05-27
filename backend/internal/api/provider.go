@@ -337,6 +337,12 @@ func NewProxyDataProvider(baseURL string) *ProxyDataProvider {
 }
 
 func (p *ProxyDataProvider) doRequest(ctx context.Context, method, path string, body io.Reader, result any) error {
+	// If the caller is in "View as user" mode (RD-928), rewrite the outbound
+	// path under the admin-impersonation prefix so privacy-proxy applies the
+	// target user's visibility rules + audit-logs the access. The
+	// X-Impersonate-Token header (which only the BFF knows how to interpret)
+	// is intentionally NOT forwarded — the proxy gates on the URL.
+	path = applyImpersonationPath(ctx, path)
 	url := p.baseURL + path
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {

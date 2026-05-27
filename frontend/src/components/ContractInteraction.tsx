@@ -5,6 +5,7 @@ import type { AbiFragment, AbiInput } from '../lib/api';
 import { ChevronDown, ChevronUp, Loader2, Wallet, AlertCircle, CheckCircle } from 'lucide-react';
 import { getConfig } from '../lib/runtimeConfig';
 import { getNetworkCurrency } from '../lib/utils';
+import { useImpersonation } from '../hooks/useImpersonation';
 
 // Extend Window interface for ethereum provider
 declare global {
@@ -96,6 +97,11 @@ function FunctionCard({ contractAddress, abiFragment, index, type, isExpanded, o
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
+  // RD-928 "View as user": disable write affordances while impersonating.
+  // We deliberately do NOT hide them — admins should still see what would
+  // be possible for the target user, just not perform writes themselves.
+  const { isActive: impersonating } = useImpersonation();
+  const writeDisabledByImpersonation = type === 'write' && impersonating;
 
   const handleInputChange = (name: string, value: string) => {
     setInputs((prev) => ({ ...prev, [name]: value }));
@@ -242,8 +248,14 @@ function FunctionCard({ contractAddress, abiFragment, index, type, isExpanded, o
           {/* Submit button */}
           <button
             type="submit"
-            disabled={isLoading}
-            className="btn-primary flex items-center gap-2 text-sm"
+            disabled={isLoading || writeDisabledByImpersonation}
+            title={
+              writeDisabledByImpersonation
+                ? 'Read-only diagnostic view — exit "View as user" to send transactions'
+                : undefined
+            }
+            data-testid={type === 'write' ? 'contract-write-submit' : 'contract-read-submit'}
+            className="btn-primary flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? (
               <>
@@ -259,6 +271,11 @@ function FunctionCard({ contractAddress, abiFragment, index, type, isExpanded, o
               </>
             )}
           </button>
+          {writeDisabledByImpersonation && (
+            <div className="mt-1 text-xs text-amber-700">
+              Write actions are disabled in view-as mode.
+            </div>
+          )}
 
           {/* Result */}
           {result !== null && (

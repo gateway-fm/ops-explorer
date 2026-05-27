@@ -10,6 +10,7 @@ import { MetaMaskFox } from './MetaMask';
 import { addNetworkToMetaMask } from '../lib/metamask';
 import { usePrivacyEnabled } from '../hooks/usePrivacyEnabled';
 import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip';
+import { ImpersonationBanner } from './ImpersonationBanner';
 import { branding } from '../lib/branding';
 import { features } from '../lib/features';
 
@@ -199,6 +200,10 @@ export function Layout() {
 
   return (
     <div className="min-h-screen bg-neutral-100 flex flex-col">
+      {/* RD-928 "View as user" — sticky amber banner shown to admins
+          who are currently impersonating a tier-2 user. Renders nothing
+          when no impersonation session is active. */}
+      <ImpersonationBanner />
       {/* Navigation Header */}
       <header className="nav">
         <div className="px-4 sm:px-6 py-3 sm:py-4">
