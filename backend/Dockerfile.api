@@ -32,7 +32,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -tags privacy -o /api ./cmd/api
 # is "default" — the release workflow names each one. RD-922.
 
 # Standalone runtime image (published as gatewayfm/block-explorer-api).
-FROM gcr.io/distroless/static-debian12:nonroot@sha256:a9329520abc449e3b14d5bc3a6ffae065bdde0f02667fa10880c49b35c109fd1 AS standalone
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:963fa6c544fe5ce420f1f54fb88b6fb01479f054c8056d0f74cc2c6000df5240 AS standalone
 
 COPY --from=builder-standalone /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder-standalone /api /api
@@ -43,7 +43,7 @@ ENTRYPOINT ["/api"]
 
 # Privacy runtime image (published as gatewayfm/block-explorer-api-privacy).
 # indexerclient package excluded at compile time.
-FROM gcr.io/distroless/static-debian12:nonroot@sha256:a9329520abc449e3b14d5bc3a6ffae065bdde0f02667fa10880c49b35c109fd1 AS privacy
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:963fa6c544fe5ce420f1f54fb88b6fb01479f054c8056d0f74cc2c6000df5240 AS privacy
 
 COPY --from=builder-privacy /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder-privacy /api /api
