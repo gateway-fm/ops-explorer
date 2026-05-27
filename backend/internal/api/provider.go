@@ -72,6 +72,7 @@ type DataProvider interface {
 	GetTokens(ctx context.Context, limit int, offset int, tokenType, search string) ([]types.Token, int64, error)
 	GetToken(ctx context.Context, address string) (*types.Token, error)
 	GetTokenHolders(ctx context.Context, address string, limit int, offset int) ([]types.TokenHolder, int64, error)
+	GetTokenInventory(ctx context.Context, address string, tokenID string, limit int, offset int) ([]types.TokenInventoryItem, int64, error)
 	GetTransfersByToken(ctx context.Context, tokenAddress string, limit int, offset int) ([]types.TokenTransfer, int64, error)
 	GetAllTransfers(ctx context.Context, limit int, offset int) ([]types.TokenTransfer, int64, error)
 
@@ -204,6 +205,9 @@ func (p *DirectDBProvider) GetToken(ctx context.Context, address string) (*types
 	return nil, ErrChainDataNotAvailable
 }
 func (p *DirectDBProvider) GetTokenHolders(ctx context.Context, address string, limit int, offset int) ([]types.TokenHolder, int64, error) {
+	return nil, 0, ErrChainDataNotAvailable
+}
+func (p *DirectDBProvider) GetTokenInventory(ctx context.Context, address string, tokenID string, limit int, offset int) ([]types.TokenInventoryItem, int64, error) {
 	return nil, 0, ErrChainDataNotAvailable
 }
 func (p *DirectDBProvider) GetTransfersByToken(ctx context.Context, tokenAddress string, limit int, offset int) ([]types.TokenTransfer, int64, error) {
@@ -646,6 +650,19 @@ func (p *ProxyDataProvider) GetTokenHolders(ctx context.Context, address string,
 		Total int64               `json:"total"`
 	}
 	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/tokens/%s/holders?limit=%d&offset=%d", address, limit, offset), nil, &res)
+	return res.Data, res.Total, err
+}
+
+func (p *ProxyDataProvider) GetTokenInventory(ctx context.Context, address string, tokenID string, limit int, offset int) ([]types.TokenInventoryItem, int64, error) {
+	var res struct {
+		Data  []types.TokenInventoryItem `json:"data"`
+		Total int64                      `json:"total"`
+	}
+	path := fmt.Sprintf("/api/v1/explorer/tokens/%s/inventory?limit=%d&offset=%d", address, limit, offset)
+	if tokenID != "" {
+		path += "&tokenId=" + url.QueryEscape(tokenID)
+	}
+	err := p.doRequest(ctx, "GET", path, nil, &res)
 	return res.Data, res.Total, err
 }
 

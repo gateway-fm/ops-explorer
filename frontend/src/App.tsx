@@ -15,6 +15,7 @@ import { Address } from './pages/Address';
 import { Accounts } from './pages/Accounts';
 import Tokens from './pages/Tokens';
 import TokenDetail from './pages/TokenDetail';
+import NftDetail from './pages/NftDetail';
 import TokenTransfers from './pages/TokenTransfers';
 import ContractVerification from './pages/ContractVerification';
 import GasTracker from './pages/GasTracker';
@@ -54,6 +55,7 @@ function App() {
                   <Route path="accounts" element={<Accounts />} />
                   <Route path="tokens" element={<Tokens />} />
                   <Route path="token/:address" element={<TokenDetail />} />
+                  <Route path="nft/:address/:tokenId" element={<NftDetail />} />
                   <Route path="token-transfers" element={<TokenTransfers />} />
                   <Route path="verify" element={<ContractVerification />} />
                   <Route path="gas-tracker" element={<GasTracker />} />

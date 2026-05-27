@@ -177,6 +177,27 @@ func mapTokenHolders(in []*indexerv1.TokenBalance) []types.TokenHolder {
 	return out
 }
 
+func mapTokenInventoryItems(in []*indexerv1.TokenInventoryItem) []types.TokenInventoryItem {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]types.TokenInventoryItem, 0, len(in))
+	for _, it := range in {
+		if it == nil {
+			continue
+		}
+		item := types.TokenInventoryItem{
+			TokenID: big(it.GetTokenId()),
+			Owner:   it.GetOwner(),
+		}
+		if uri := it.GetTokenUri(); uri != "" {
+			item.TokenURI = &uri
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
 func mapBalances(in []*indexerv1.TokenBalance) []types.Balance {
 	if len(in) == 0 {
 		return nil

@@ -274,6 +274,19 @@ func (p *Provider) GetTokenHolders(ctx context.Context, tokenAddress string, lim
 	return mapTokenHolders(resp.GetHolders()), resp.GetPage().GetTotalItems(), nil
 }
 
+func (p *Provider) GetTokenInventory(ctx context.Context, tokenAddress string, tokenID string, limit int, offset int) ([]types.TokenInventoryItem, int64, error) {
+	page := offset/limit + 1
+	resp, err := p.client.ListTokenInventory(ctx, &indexerv1.ListTokenInventoryRequest{
+		TokenAddress: tokenAddress,
+		TokenId:      tokenID,
+		Page:         &indexerv1.OffsetPageRequest{Page: int32(page), PageSize: int32(limit)},
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	return mapTokenInventoryItems(resp.GetItems()), resp.GetPage().GetTotalItems(), nil
+}
+
 func (p *Provider) GetTokenBalances(ctx context.Context, address string) ([]types.Balance, error) {
 	resp, err := p.client.ListTokenBalances(ctx, &indexerv1.ListTokenBalancesRequest{Address: address})
 	if err != nil {
