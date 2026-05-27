@@ -122,6 +122,17 @@ func (s *Server) Start(ctx context.Context) error {
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", s.port),
 		Handler: s.router,
+		// Aikido SAST (severity 65 / medium): the public-API listener is
+		// internet-facing once deployed; without a header-read deadline it's
+		// vulnerable to slowloris-style header-trickle DoS where a client
+		// holds a TCP connection by sending one byte at a time. 5s is
+		// generous for any legitimate client (HTTP headers are <1KB in
+		// practice) and tight enough that slow attackers get pruned. We
+		// don't set ReadTimeout / WriteTimeout because some explorer
+		// endpoints stream large block ranges and would tail off legit
+		// long reads; ReadHeaderTimeout alone closes the slowloris path
+		// without affecting payload throughput.
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	go func() {

@@ -626,6 +626,26 @@ function TryIt({ endpoint }: { endpoint: Endpoint }) {
     const qs = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
     const url = `${BASE_URL}${path}${qs}`;
 
+    // Aikido SAST (severity 15 / low SSRF): `path` is composed from the
+    // OpenAPI spec + user-supplied path parameters. The user input is
+    // URL-encoded in the substitution loop above, but to defend against
+    // a malicious or compromised spec that re-introduces protocol-relative
+    // segments (e.g. "//evil.com"), confirm the resolved URL still belongs
+    // to BASE_URL's origin before we fetch.
+    try {
+      const resolved = new URL(url);
+      const trusted = new URL(BASE_URL);
+      if (resolved.origin !== trusted.origin) {
+        setResponse(`Error: refusing to fetch off-origin URL ${resolved.origin}`);
+        setLoading(false);
+        return;
+      }
+    } catch {
+      setResponse('Error: invalid request URL');
+      setLoading(false);
+      return;
+    }
+
     try {
       const res = await fetch(url);
       setStatus(res.status);

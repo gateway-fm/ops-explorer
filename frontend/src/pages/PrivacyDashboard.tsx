@@ -228,6 +228,10 @@ export function PrivacyDashboard() {
                             <span className="font-mono text-xs">{disclosed.ownerDid}</span>
                           </TooltipContent>
                         </Tooltip>
+                        {/* RD-928: View-as initiator moved to the privacy-proxy
+                            admin dashboard's user list. See PR description.
+                            The disclosure-table location conflated audit-the-
+                            discloser with permission-grant verification. */}
                       </td>
                       <td className="hidden sm:table-cell">
                         <span className={`text-sm ${
