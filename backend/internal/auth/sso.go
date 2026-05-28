@@ -15,11 +15,11 @@ import (
 	"time"
 )
 
-
 type SSOClient struct {
 	privacyProxyURL       string // backend-to-backend (Docker internal)
 	privacyProxyPublicURL string // browser-facing (for OAuth redirects)
 	clientID              string
+	clientSecret          string // RD-1006: presented at /oauth/token via HTTP Basic; empty in dev/local until operators set it
 	redirectURI           string
 	httpClient            *http.Client
 
@@ -67,7 +67,7 @@ const (
 	MaxStateEntries      = 1000
 )
 
-func NewSSOClient(privacyProxyURL, privacyProxyPublicURL, clientID, redirectURI string) *SSOClient {
+func NewSSOClient(privacyProxyURL, privacyProxyPublicURL, clientID, clientSecret, redirectURI string) *SSOClient {
 	if privacyProxyPublicURL == "" {
 		privacyProxyPublicURL = privacyProxyURL
 	}
@@ -75,6 +75,7 @@ func NewSSOClient(privacyProxyURL, privacyProxyPublicURL, clientID, redirectURI 
 		privacyProxyURL:       strings.TrimSuffix(privacyProxyURL, "/"),
 		privacyProxyPublicURL: strings.TrimSuffix(privacyProxyPublicURL, "/"),
 		clientID:              clientID,
+		clientSecret:          clientSecret,
 		redirectURI:           redirectURI,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
@@ -156,6 +157,13 @@ func (c *SSOClient) ExchangeCode(ctx context.Context, code string) (*OAuthTokenR
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	// RD-1006: authenticate to the proxy at the token endpoint via RFC 6749
+	// client_secret_basic. Omitted in dev when the secret is unset — the
+	// proxy only enforces the gate when the client is on its first-party
+	// allowlist, so unconfigured local stacks keep working unchanged.
+	if c.clientSecret != "" {
+		req.SetBasicAuth(c.clientID, c.clientSecret)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

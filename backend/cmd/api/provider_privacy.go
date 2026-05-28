@@ -35,7 +35,7 @@ func chooseProvider(cfg *config.Config, _ *db.DB, _ *rpc.Client) (*privacy.Clien
 	}
 
 	privacyClient := privacy.NewClient(cfg.PrivacyProxyURL)
-	ssoClient := auth.NewSSOClient(cfg.PrivacyProxyURL, cfg.PrivacyProxyPublicURL, cfg.SSOClientID, cfg.SSORedirectURI)
+	ssoClient := auth.NewSSOClient(cfg.PrivacyProxyURL, cfg.PrivacyProxyPublicURL, cfg.SSOClientID, cfg.SSOClientSecret, cfg.SSORedirectURI)
 	dataProvider := api.NewProxyDataProvider(cfg.PrivacyProxyURL)
 	log.Info("privacy build: reads routed through privacy-proxy", "proxy_url", cfg.PrivacyProxyURL)
 	return privacyClient, ssoClient, dataProvider

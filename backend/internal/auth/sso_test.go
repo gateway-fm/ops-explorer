@@ -181,7 +181,7 @@ func TestRefreshTokens_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewSSOClient(srv.URL, srv.URL, "client-id", "http://redirect")
+	c := NewSSOClient(srv.URL, srv.URL, "client-id", "", "http://redirect")
 	got, err := c.RefreshTokens(context.Background(), wantRefresh)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -217,7 +217,7 @@ func TestRefreshTokens_Revoked(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			c := NewSSOClient(srv.URL, srv.URL, "client-id", "http://redirect")
+			c := NewSSOClient(srv.URL, srv.URL, "client-id", "", "http://redirect")
 			_, err := c.RefreshTokens(context.Background(), "revoked-token")
 			if err == nil {
 				t.Fatal("expected error, got nil")
@@ -236,7 +236,7 @@ func TestRefreshTokens_ServerError_500(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewSSOClient(srv.URL, srv.URL, "client-id", "http://redirect")
+	c := NewSSOClient(srv.URL, srv.URL, "client-id", "", "http://redirect")
 	_, err := c.RefreshTokens(context.Background(), "some-token")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -251,7 +251,7 @@ func TestRefreshTokens_NetworkError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	srv.Close()
 
-	c := NewSSOClient(srv.URL, srv.URL, "client-id", "http://redirect")
+	c := NewSSOClient(srv.URL, srv.URL, "client-id", "", "http://redirect")
 	_, err := c.RefreshTokens(context.Background(), "some-token")
 	if err == nil {
 		t.Fatal("expected error, got nil")

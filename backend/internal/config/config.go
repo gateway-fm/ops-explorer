@@ -57,6 +57,7 @@ type Config struct {
 	// browser needs to reach it via localhost or a public hostname.
 	PrivacyProxyPublicURL string `mapstructure:"privacy_proxy_public_url"`
 	SSOClientID           string `mapstructure:"sso_client_id"`
+	SSOClientSecret       string `mapstructure:"sso_client_secret"` // RD-1006: sent at /oauth/token via HTTP Basic so the proxy can authenticate this client
 	SSORedirectURI        string `mapstructure:"sso_redirect_uri"`
 	// PostLoginRedirectURL, if set, overrides the post-OAuth redirect
 	// target. Use this when the explorer UI is embedded in another app
@@ -117,6 +118,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("privacy_proxy_url", "")
 	v.SetDefault("privacy_proxy_public_url", "")
 	v.SetDefault("sso_client_id", "explorer")
+	v.SetDefault("sso_client_secret", "")
 	v.SetDefault("sso_redirect_uri", "http://localhost:8080/api/auth/callback")
 	v.SetDefault("post_login_redirect_url", "")
 
@@ -186,6 +188,7 @@ func Load() (*Config, error) {
 		cfg.PrivacyProxyPublicURL = cfg.PrivacyProxyURL
 	}
 	cfg.SSOClientID = v.GetString("sso_client_id")
+	cfg.SSOClientSecret = v.GetString("sso_client_secret")
 	cfg.SSORedirectURI = v.GetString("sso_redirect_uri")
 	cfg.PostLoginRedirectURL = v.GetString("post_login_redirect_url")
 
