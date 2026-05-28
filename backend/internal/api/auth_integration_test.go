@@ -127,7 +127,7 @@ func TestAuthIntegration_FullFlow(t *testing.T) {
 	defer explorer.Close()
 
 	// Now that we know the explorer URL, create the real SSOClient.
-	s.ssoClient = auth.NewSSOClient(proxy.URL, "", "test-client", explorer.URL+"/api/auth/callback")
+	s.ssoClient = auth.NewSSOClient(proxy.URL, "", "test-client", "", explorer.URL+"/api/auth/callback")
 
 	// Use a cookie jar so cookies persist across redirects.
 	jar, err := cookiejar.New(nil)
@@ -280,7 +280,7 @@ func TestAuthIntegration_CallbackInvalidState(t *testing.T) {
 	proxy := newMockProxyServer(t)
 	defer proxy.Close()
 
-	ssoClient := auth.NewSSOClient(proxy.URL, "", "test-client", "http://localhost/api/auth/callback")
+	ssoClient := auth.NewSSOClient(proxy.URL, "", "test-client", "", "http://localhost/api/auth/callback")
 	s := &Server{
 		ssoClient: ssoClient,
 		router:    chi.NewRouter(),
@@ -308,7 +308,7 @@ func TestAuthIntegration_CallbackInvalidCode(t *testing.T) {
 	proxy := newMockProxyServer(t)
 	defer proxy.Close()
 
-	ssoClient := auth.NewSSOClient(proxy.URL, "", "test-client", "http://localhost/api/auth/callback")
+	ssoClient := auth.NewSSOClient(proxy.URL, "", "test-client", "", "http://localhost/api/auth/callback")
 
 	// Generate a valid state so we pass state validation.
 	state, err := ssoClient.GenerateState("/")
@@ -360,7 +360,7 @@ func TestAuthIntegration_OpenRedirectProtection(t *testing.T) {
 
 	t.Run("login rejects absolute return_url", func(t *testing.T) {
 		s := &Server{
-			ssoClient: auth.NewSSOClient(proxy.URL, "", "test-client", callbackURL),
+			ssoClient: auth.NewSSOClient(proxy.URL, "", "test-client", "", callbackURL),
 			router:    chi.NewRouter(),
 		}
 		s.router.Route("/api/auth", func(r chi.Router) {
@@ -394,7 +394,7 @@ func TestAuthIntegration_OpenRedirectProtection(t *testing.T) {
 
 	t.Run("login rejects protocol-relative return_url", func(t *testing.T) {
 		s := &Server{
-			ssoClient: auth.NewSSOClient(proxy.URL, "", "test-client", callbackURL),
+			ssoClient: auth.NewSSOClient(proxy.URL, "", "test-client", "", callbackURL),
 			router:    chi.NewRouter(),
 		}
 		s.router.Route("/api/auth", func(r chi.Router) {
@@ -405,7 +405,7 @@ func TestAuthIntegration_OpenRedirectProtection(t *testing.T) {
 		defer explorer.Close()
 
 		// Recreate the SSO client with the real explorer URL as redirect_uri.
-		realClient := auth.NewSSOClient(proxy.URL, "", "test-client", explorer.URL+"/api/auth/callback")
+		realClient := auth.NewSSOClient(proxy.URL, "", "test-client", "", explorer.URL+"/api/auth/callback")
 		s.ssoClient = realClient
 
 		client := &http.Client{
