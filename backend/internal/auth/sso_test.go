@@ -181,7 +181,7 @@ func TestRefreshTokens_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewSSOClient(srv.URL, srv.URL, "client-id", "http://redirect")
+	c := NewSSOClient(srv.URL, srv.URL, "client-id", "", "http://redirect")
 	got, err := c.RefreshTokens(context.Background(), wantRefresh)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -217,7 +217,7 @@ func TestRefreshTokens_Revoked(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			c := NewSSOClient(srv.URL, srv.URL, "client-id", "http://redirect")
+			c := NewSSOClient(srv.URL, srv.URL, "client-id", "", "http://redirect")
 			_, err := c.RefreshTokens(context.Background(), "revoked-token")
 			if err == nil {
 				t.Fatal("expected error, got nil")
@@ -236,7 +236,7 @@ func TestRefreshTokens_ServerError_500(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewSSOClient(srv.URL, srv.URL, "client-id", "http://redirect")
+	c := NewSSOClient(srv.URL, srv.URL, "client-id", "", "http://redirect")
 	_, err := c.RefreshTokens(context.Background(), "some-token")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -251,7 +251,7 @@ func TestRefreshTokens_NetworkError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	srv.Close()
 
-	c := NewSSOClient(srv.URL, srv.URL, "client-id", "http://redirect")
+	c := NewSSOClient(srv.URL, srv.URL, "client-id", "", "http://redirect")
 	_, err := c.RefreshTokens(context.Background(), "some-token")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -290,5 +290,75 @@ func TestRevokeToken_NetworkError(t *testing.T) {
 	c := &SSOClient{privacyProxyURL: closed.URL, httpClient: closed.Client()}
 	if err := c.RevokeToken(context.Background(), "tok"); err == nil {
 		t.Fatal("expected error on network failure")
+	}
+}
+
+// TestExchangeCode_ClientAuthHeader — RD-1006: when SSO_CLIENT_SECRET is set,
+// ExchangeCode must send RFC 6749 client_secret_basic at /oauth/token so the
+// proxy can authenticate this first-party client. When the secret is empty
+// (default), no Authorization header should be set — preserves the pre-RD-1006
+// behaviour for unconfigured local/dev stacks.
+func TestExchangeCode_ClientAuthHeader(t *testing.T) {
+	tests := []struct {
+		name          string
+		clientID      string
+		clientSecret  string
+		wantBasic     bool
+		wantBasicUser string
+		wantBasicPass string
+	}{
+		{
+			name:          "secret set → HTTP Basic with client_id:client_secret",
+			clientID:      "explorer-test",
+			clientSecret:  "super-secret-value",
+			wantBasic:     true,
+			wantBasicUser: "explorer-test",
+			wantBasicPass: "super-secret-value",
+		},
+		{
+			name:         "secret empty → no Authorization header",
+			clientID:     "explorer-test",
+			clientSecret: "",
+			wantBasic:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotAuth string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotAuth = r.Header.Get("Authorization")
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(OAuthTokenResponse{
+					AccessToken: "access-tok",
+					TokenType:   "Bearer",
+					ExpiresIn:   3600,
+				})
+			}))
+			defer srv.Close()
+
+			c := NewSSOClient(srv.URL, srv.URL, tt.clientID, tt.clientSecret, "http://redirect")
+			if _, err := c.ExchangeCode(context.Background(), "any-code"); err != nil {
+				t.Fatalf("ExchangeCode failed: %v", err)
+			}
+
+			if !tt.wantBasic {
+				if gotAuth != "" {
+					t.Fatalf("expected no Authorization header, got %q", gotAuth)
+				}
+				return
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Header.Set("Authorization", gotAuth)
+			user, pass, ok := req.BasicAuth()
+			if !ok {
+				t.Fatalf("Authorization header is not Basic: %q", gotAuth)
+			}
+			if user != tt.wantBasicUser || pass != tt.wantBasicPass {
+				t.Fatalf("Basic auth = %q:%q, want %q:%q",
+					user, pass, tt.wantBasicUser, tt.wantBasicPass)
+			}
+		})
 	}
 }

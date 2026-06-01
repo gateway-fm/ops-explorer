@@ -42,7 +42,7 @@ func chooseProvider(cfg *config.Config, database *db.DB, rpcClient *rpc.Client) 
 		// Do NOT wrap with cache here — privacy-proxy responses are
 		// auth-scoped per caller and a shared cache would leak across users.
 		privacyClient := privacy.NewClient(cfg.PrivacyProxyURL)
-		ssoClient := auth.NewSSOClient(cfg.PrivacyProxyURL, cfg.PrivacyProxyPublicURL, cfg.SSOClientID, cfg.SSORedirectURI)
+		ssoClient := auth.NewSSOClient(cfg.PrivacyProxyURL, cfg.PrivacyProxyPublicURL, cfg.SSOClientID, cfg.SSOClientSecret, cfg.SSORedirectURI)
 		dataProvider := api.NewProxyDataProvider(cfg.PrivacyProxyURL)
 		log.Info("privacy/proxy mode enabled", "proxy_url", cfg.PrivacyProxyURL)
 		return privacyClient, ssoClient, dataProvider

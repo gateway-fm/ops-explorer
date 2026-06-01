@@ -13,7 +13,7 @@ import (
 )
 
 func TestHandleAuthLogin_RedirectsToSSO(t *testing.T) {
-	ssoClient := auth.NewSSOClient("https://proxy.example.com", "", "test-client", "https://explorer.example.com/api/auth/callback")
+	ssoClient := auth.NewSSOClient("https://proxy.example.com", "", "test-client", "", "https://explorer.example.com/api/auth/callback")
 
 	s := &Server{
 		ssoClient: ssoClient,
@@ -56,7 +56,7 @@ func TestHandleAuthLogin_NoSSO(t *testing.T) {
 }
 
 func TestHandleAuthLogin_DefaultReturnURL(t *testing.T) {
-	ssoClient := auth.NewSSOClient("https://proxy.example.com", "", "test-client", "https://explorer.example.com/api/auth/callback")
+	ssoClient := auth.NewSSOClient("https://proxy.example.com", "", "test-client", "", "https://explorer.example.com/api/auth/callback")
 
 	s := &Server{
 		ssoClient: ssoClient,
@@ -123,7 +123,7 @@ func TestHandleAuthCallback_SetsBothCookies(t *testing.T) {
 	mockSrv := newMockTokenServer("access-tok", "refresh-tok")
 	defer mockSrv.Close()
 
-	ssoClient := auth.NewSSOClient(mockSrv.URL, mockSrv.URL, "client-id", "http://redirect")
+	ssoClient := auth.NewSSOClient(mockSrv.URL, mockSrv.URL, "client-id", "", "http://redirect")
 	s := &Server{ssoClient: ssoClient}
 
 	// Pre-generate a valid state so the callback can validate it.
@@ -162,7 +162,7 @@ func TestHandleAuthCallback_NoRefreshToken(t *testing.T) {
 	mockSrv := newMockTokenServer("access-tok", "")
 	defer mockSrv.Close()
 
-	ssoClient := auth.NewSSOClient(mockSrv.URL, mockSrv.URL, "client-id", "http://redirect")
+	ssoClient := auth.NewSSOClient(mockSrv.URL, mockSrv.URL, "client-id", "", "http://redirect")
 	s := &Server{ssoClient: ssoClient}
 
 	state, err := ssoClient.GenerateState("/")
@@ -220,7 +220,7 @@ func TestRefreshAuthMiddleware_FreshToken(t *testing.T) {
 	}))
 	defer mockSrv.Close()
 
-	ssoClient := auth.NewSSOClient(mockSrv.URL, mockSrv.URL, "client-id", "http://redirect")
+	ssoClient := auth.NewSSOClient(mockSrv.URL, mockSrv.URL, "client-id", "", "http://redirect")
 	s := &Server{ssoClient: ssoClient}
 
 	called := false
@@ -295,7 +295,7 @@ func TestRefreshAuthMiddleware_NearExpiry_Success(t *testing.T) {
 	}))
 	defer mockSrv.Close()
 
-	ssoClient := auth.NewSSOClient(mockSrv.URL, mockSrv.URL, "client-id", "http://redirect")
+	ssoClient := auth.NewSSOClient(mockSrv.URL, mockSrv.URL, "client-id", "", "http://redirect")
 	s := &Server{ssoClient: ssoClient}
 
 	called := false
@@ -349,7 +349,7 @@ func TestRefreshAuthMiddleware_NearExpiry_Revoked(t *testing.T) {
 	}))
 	defer mockSrv.Close()
 
-	ssoClient := auth.NewSSOClient(mockSrv.URL, mockSrv.URL, "client-id", "http://redirect")
+	ssoClient := auth.NewSSOClient(mockSrv.URL, mockSrv.URL, "client-id", "", "http://redirect")
 	s := &Server{ssoClient: ssoClient}
 
 	called := false
@@ -389,7 +389,7 @@ func TestRefreshAuthMiddleware_NoRefreshCookie(t *testing.T) {
 	}))
 	defer mockSrv.Close()
 
-	ssoClient := auth.NewSSOClient(mockSrv.URL, mockSrv.URL, "client-id", "http://redirect")
+	ssoClient := auth.NewSSOClient(mockSrv.URL, mockSrv.URL, "client-id", "", "http://redirect")
 	s := &Server{ssoClient: ssoClient}
 
 	called := false
@@ -451,7 +451,7 @@ func TestRefreshAuthMiddleware_NetworkError_DoesNotClearCookies(t *testing.T) {
 	closedSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	closedSrv.Close()
 
-	ssoClient := auth.NewSSOClient(closedSrv.URL, closedSrv.URL, "client-id", "http://redirect")
+	ssoClient := auth.NewSSOClient(closedSrv.URL, closedSrv.URL, "client-id", "", "http://redirect")
 	s := &Server{ssoClient: ssoClient}
 
 	called := false
@@ -499,7 +499,7 @@ func TestHandleAuthLogout_RevokesServerSide(t *testing.T) {
 	}))
 	defer mockSrv.Close()
 
-	ssoClient := auth.NewSSOClient(mockSrv.URL, mockSrv.URL, "client-id", "http://redirect")
+	ssoClient := auth.NewSSOClient(mockSrv.URL, mockSrv.URL, "client-id", "", "http://redirect")
 	s := &Server{ssoClient: ssoClient}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
