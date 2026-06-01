@@ -6,20 +6,24 @@ import { useAuth } from '../lib/auth';
 import { redirectToLogin } from '../lib/login';
 
 /**
- * RD-928 — cross-origin "View as user" entry point.
+ * RD-928 / RD-994 — cross-origin "View as user" entry point.
  *
  * The privacy-proxy admin dashboard (port 5173) is the primary initiator for
  * the View-as flow: an org admin clicks "View as in Explorer" on a user-list
- * row, which opens a new tab at /view-as?did=<target_did> here. This route
- * mints a session against the BFF on the admin's behalf and lands them on
- * the explorer home with the banner active.
+ * row, which opens a new tab at /view-as?did=<target_did>&org=<org_id> here.
+ * This route mints a session against the BFF on the admin's behalf (bound to
+ * the explicit org) and lands them on the explorer home with the banner
+ * active.
  *
  * Failure modes:
  *  - Not authenticated: redirect to login, resume here after login.
  *  - Missing/empty ?did=: render an instructional error.
- *  - Cross-org / non-admin / unknown target: the BFF returns 404 which
- *    surfaces here as a user-facing error (no info leak — same 404 shape
- *    that an attempt to impersonate a non-existent user produces).
+ *  - Missing/empty ?org=: render an instructional error (RD-994 — the org is
+ *    mandatory; the dashboard always supplies the currently-selected org).
+ *  - Target-not-in-org / unknown target: the BFF returns 404 which surfaces
+ *    here as a user-facing error (no info leak — same 404 shape that an
+ *    attempt to impersonate a non-existent user produces).
+ *  - Org not administered by the caller: the BFF returns 403.
  *  - Another session already active: stop() it first, then start the new
  *    one. The hook's no-chaining guard normally throws on this; the entry
  *    route is the one place where "switch targets" is the intended UX.
@@ -33,12 +37,14 @@ export function ViewAsEntry() {
   const [message, setMessage] = useState<string>('');
 
   const targetDID = params.get('did')?.trim() ?? '';
+  const orgID = params.get('org')?.trim() ?? '';
 
   useEffect(() => {
     if (authLoading) return;
 
     if (!isAuthenticated) {
-      // Preserve the current URL so login flow returns us here with ?did= intact.
+      // Preserve the current URL so login flow returns us here with ?did= and
+      // ?org= intact.
       redirectToLogin(window.location.pathname + window.location.search);
       return;
     }
@@ -46,6 +52,12 @@ export function ViewAsEntry() {
     if (!targetDID) {
       setStage('error');
       setMessage('Missing target DID. The URL must include a ?did=<target> parameter.');
+      return;
+    }
+
+    if (!orgID) {
+      setStage('error');
+      setMessage('Missing organization. The URL must include an ?org=<org_id> parameter. Open View-as from the admin dashboard with an org selected.');
       return;
     }
 
@@ -60,7 +72,7 @@ export function ViewAsEntry() {
         if (isActive) {
           await stop();
         }
-        await start(targetDID);
+        await start(targetDID, orgID);
         if (cancelled) return;
         setStage('success');
         // Hand off to the home page; the banner is already active because
@@ -77,10 +89,10 @@ export function ViewAsEntry() {
     return () => {
       cancelled = true;
     };
-    // Intentionally key off targetDID + auth state. The hook callbacks are
-    // stable references from useImpersonation/useAuth contexts.
+    // Intentionally key off targetDID + org + auth state. The hook callbacks
+    // are stable references from useImpersonation/useAuth contexts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetDID, isAuthenticated, authLoading]);
+  }, [targetDID, orgID, isAuthenticated, authLoading]);
 
   if (authLoading || stage === 'idle' || stage === 'starting') {
     return (

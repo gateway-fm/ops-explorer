@@ -19,9 +19,14 @@ import (
 func newImpersonationTestServer(t *testing.T, probeStatus int) (*Server, *httptest.Server) {
 	t.Helper()
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Only the admin-impersonate probe path is expected.
+		// Only the admin-impersonate probe path is expected, and (RD-994) it
+		// must carry the explicit /in/<org>/ segment.
 		if !strings.HasPrefix(r.URL.Path, "/api/v1/admin/impersonate/") {
 			http.Error(w, "unexpected upstream path: "+r.URL.Path, http.StatusBadRequest)
+			return
+		}
+		if !strings.Contains(r.URL.Path, "/in/") {
+			http.Error(w, "probe path missing /in/<org>: "+r.URL.Path, http.StatusBadRequest)
 			return
 		}
 		w.WriteHeader(probeStatus)
@@ -57,7 +62,7 @@ func addAuthCookie(req *http.Request, sub string) {
 func TestHandleStartImpersonation_OK(t *testing.T) {
 	s, _ := newImpersonationTestServer(t, http.StatusOK)
 
-	body := strings.NewReader(`{"target_did":"did:p:target"}`)
+	body := strings.NewReader(`{"target_did":"did:p:target","org_id":"org-7"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/impersonation/start", body)
 	addAuthCookie(req, "did:p:admin")
 	w := httptest.NewRecorder()
@@ -77,21 +82,41 @@ func TestHandleStartImpersonation_OK(t *testing.T) {
 	if resp.TargetDID != "did:p:target" {
 		t.Fatalf("unexpected target_did echo: %s", resp.TargetDID)
 	}
+	if resp.OrgID != "org-7" {
+		t.Fatalf("unexpected org_id echo: %s", resp.OrgID)
+	}
 
-	// The store should now hold a session for this token bound to the admin.
+	// The store should now hold a session for this token bound to the admin,
+	// target AND org.
 	session, err := s.impersonations.Lookup(context.Background(), resp.Token)
 	if err != nil {
 		t.Fatalf("Lookup after mint: %v", err)
 	}
-	if session.AdminDID != "did:p:admin" || session.TargetDID != "did:p:target" {
+	if session.AdminDID != "did:p:admin" || session.TargetDID != "did:p:target" || session.OrgID != "org-7" {
 		t.Fatalf("unexpected session: %+v", session)
+	}
+}
+
+// RD-994 — org_id is mandatory. A start request without it is a 400 and never
+// reaches the probe.
+func TestHandleStartImpersonation_RejectsMissingOrg(t *testing.T) {
+	s, _ := newImpersonationTestServer(t, http.StatusOK)
+
+	body := strings.NewReader(`{"target_did":"did:p:target"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/impersonation/start", body)
+	addAuthCookie(req, "did:p:admin")
+	w := httptest.NewRecorder()
+
+	s.router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing org_id, got %d body=%s", w.Code, w.Body.String())
 	}
 }
 
 func TestHandleStartImpersonation_RejectsSelf(t *testing.T) {
 	s, _ := newImpersonationTestServer(t, http.StatusOK)
 
-	body := strings.NewReader(`{"target_did":"did:p:admin"}`)
+	body := strings.NewReader(`{"target_did":"did:p:admin","org_id":"org-7"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/impersonation/start", body)
 	addAuthCookie(req, "did:p:admin")
 	w := httptest.NewRecorder()
@@ -104,7 +129,7 @@ func TestHandleStartImpersonation_RejectsSelf(t *testing.T) {
 
 func TestHandleStartImpersonation_NoAuth(t *testing.T) {
 	s, _ := newImpersonationTestServer(t, http.StatusOK)
-	body := strings.NewReader(`{"target_did":"did:p:target"}`)
+	body := strings.NewReader(`{"target_did":"did:p:target","org_id":"org-7"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/impersonation/start", body)
 	w := httptest.NewRecorder()
 	s.router.ServeHTTP(w, req)
@@ -126,7 +151,7 @@ func TestHandleStartImpersonation_PropagatesProxyStatus(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(http.StatusText(tc.probe), func(t *testing.T) {
 			s, _ := newImpersonationTestServer(t, tc.probe)
-			body := strings.NewReader(`{"target_did":"did:p:target"}`)
+			body := strings.NewReader(`{"target_did":"did:p:target","org_id":"org-7"}`)
 			req := httptest.NewRequest(http.MethodPost, "/api/impersonation/start", body)
 			addAuthCookie(req, "did:p:admin")
 			w := httptest.NewRecorder()
@@ -174,7 +199,7 @@ func TestHandleStopImpersonation_Idempotent(t *testing.T) {
 
 	// Mint then stop with the matching admin → 204, and lookup returns missing.
 	tok, _, err := s.impersonations.Mint(context.Background(), ImpersonationSession{
-		AdminDID: "did:p:admin", TargetDID: "did:p:target",
+		AdminDID: "did:p:admin", TargetDID: "did:p:target", OrgID: "org-7",
 	}, time.Minute)
 	if err != nil {
 		t.Fatalf("Mint: %v", err)
@@ -200,7 +225,7 @@ func TestHandleStopImpersonation_WrongCaller(t *testing.T) {
 	s, _ := newImpersonationTestServer(t, http.StatusOK)
 
 	tok, _, err := s.impersonations.Mint(context.Background(), ImpersonationSession{
-		AdminDID: "did:p:alice", TargetDID: "did:p:bob",
+		AdminDID: "did:p:alice", TargetDID: "did:p:bob", OrgID: "org-7",
 	}, time.Minute)
 	if err != nil {
 		t.Fatalf("Mint: %v", err)
@@ -226,6 +251,7 @@ func TestHandleGetImpersonation_OK(t *testing.T) {
 	tok, _, err := s.impersonations.Mint(context.Background(), ImpersonationSession{
 		AdminDID:  "did:p:admin",
 		TargetDID: "did:p:target",
+		OrgID:     "org-7",
 	}, time.Hour)
 	if err != nil {
 		t.Fatalf("Mint: %v", err)
@@ -246,6 +272,9 @@ func TestHandleGetImpersonation_OK(t *testing.T) {
 	if resp.TargetDID != "did:p:target" {
 		t.Fatalf("unexpected target: %s", resp.TargetDID)
 	}
+	if resp.OrgID != "org-7" {
+		t.Fatalf("unexpected org: %s", resp.OrgID)
+	}
 }
 
 func TestHandleGetImpersonation_WrongAdmin(t *testing.T) {
@@ -253,6 +282,7 @@ func TestHandleGetImpersonation_WrongAdmin(t *testing.T) {
 	tok, _, err := s.impersonations.Mint(context.Background(), ImpersonationSession{
 		AdminDID:  "did:p:alice",
 		TargetDID: "did:p:target",
+		OrgID:     "org-7",
 	}, time.Hour)
 	if err != nil {
 		t.Fatalf("Mint: %v", err)
@@ -289,9 +319,10 @@ func TestApplyImpersonationPath_RewriteAndEscape(t *testing.T) {
 	ctx := WithImpersonation(context.Background(), ImpersonationSession{
 		AdminDID:  "did:p:admin",
 		TargetDID: "did:p:target",
+		OrgID:     "org-7",
 	})
 	got := applyImpersonationPath(ctx, "/api/v1/explorer/blocks?limit=10")
-	want := "/api/v1/admin/impersonate/did:p:target/api/v1/explorer/blocks?limit=10"
+	want := "/api/v1/admin/impersonate/did:p:target/in/org-7/api/v1/explorer/blocks?limit=10"
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
@@ -300,9 +331,28 @@ func TestApplyImpersonationPath_RewriteAndEscape(t *testing.T) {
 	ctx = WithImpersonation(context.Background(), ImpersonationSession{
 		AdminDID:  "did:p:admin",
 		TargetDID: "did:method:has/slash",
+		OrgID:     "org-7",
 	})
 	got = applyImpersonationPath(ctx, "/api/v1/explorer/blocks")
 	if !strings.Contains(got, "did:method:has%2Fslash") {
 		t.Fatalf("expected slash to be escaped, got %s", got)
+	}
+	if !strings.Contains(got, "/in/org-7/") {
+		t.Fatalf("expected /in/org-7/ segment, got %s", got)
+	}
+}
+
+// RD-994 — a session present without a bound org must NOT produce a malformed
+// /in// path; applyImpersonationPath returns the path unchanged so the proxy's
+// bare-route 400 surfaces.
+func TestApplyImpersonationPath_NoOrgPassthrough(t *testing.T) {
+	ctx := WithImpersonation(context.Background(), ImpersonationSession{
+		AdminDID:  "did:p:admin",
+		TargetDID: "did:p:target",
+		// OrgID intentionally empty
+	})
+	got := applyImpersonationPath(ctx, "/api/v1/explorer/blocks")
+	if got != "/api/v1/explorer/blocks" {
+		t.Fatalf("expected pass-through when org missing, got %s", got)
 	}
 }
