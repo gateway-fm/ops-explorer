@@ -282,6 +282,13 @@ type TokenHolder struct {
 	AddressMetadata map[string]string `json:"addressMetadata,omitempty"`
 }
 
+// TokenInventoryItem is one NFT in an ERC721 collection's inventory.
+type TokenInventoryItem struct {
+	TokenID  string  `json:"tokenId"`
+	Owner    string  `json:"owner"`
+	TokenURI *string `json:"tokenUri,omitempty"`
+}
+
 const (
 	TransferTypeTransfer   = "transfer"
 	TransferTypeMint       = "mint"

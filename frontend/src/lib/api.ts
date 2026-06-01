@@ -255,6 +255,12 @@ export interface TokenHolder {
   addressMetadata?: Record<string, VisibilityReason>;
 }
 
+export interface NFTItem {
+  tokenId: string;
+  owner: string;
+  tokenUri?: string;
+}
+
 export interface ChainInfo {
   chainId: string;
   chainIdDecimal: number;
@@ -554,6 +560,17 @@ export const api = {
   getTokenTransfers: (address: string, page = 1, pageSize = 25) => {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     return fetchAPI<OffsetPaginatedResponse<TokenTransfer>>(`/tokens/${address}/transfers?${params}`);
+  },
+
+  getTokenInventory: (address: string, page = 1, pageSize = 25) => {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    return fetchAPI<OffsetPaginatedResponse<NFTItem>>(`/tokens/${address}/inventory?${params}`);
+  },
+
+  getNftItem: async (address: string, tokenId: string): Promise<NFTItem | null> => {
+    const params = new URLSearchParams({ tokenId, page: '1', pageSize: '1' });
+    const res = await fetchAPI<OffsetPaginatedResponse<NFTItem>>(`/tokens/${address}/inventory?${params}`);
+    return res.data?.[0] ?? null;
   },
 
   getAllTokenTransfers: (page = 1, pageSize = 25) => {

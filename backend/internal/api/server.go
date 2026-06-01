@@ -268,6 +268,7 @@ func (s *Server) setupAPIRoutes(r chi.Router) {
 			// decimals needed for correct value formatting.
 			r.Get("/", s.handleGetToken)
 			r.Get("/holders", s.handleGetTokenHolders)
+			r.Get("/inventory", s.handleGetTokenInventory)
 			r.Get("/transfers", s.handleGetTokenTransfers)
 		})
 	})
