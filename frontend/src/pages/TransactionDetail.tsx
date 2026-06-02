@@ -9,6 +9,7 @@ import { formatTokenValue } from '../lib/formatToken';
 import { useTokenMap } from '../hooks/useTokenMap';
 import { AddressLink, TokenAddressLink } from '../components/AddressLink';
 import { AddressLabel } from '../components/AddressLabel';
+import { CallTraceTree } from '../components/CallTraceTree';
 
 import { PageHeader } from '../components/PageHeader';
 import { CopyButton } from '../components/CopyButton';
@@ -49,7 +50,7 @@ function TxCategoryBadges({ categories }: { categories?: TxCategory[] }) {
 
 export function TransactionDetail() {
   const { hash } = useParams<{ hash: string }>();
-  const [activeTab, setActiveTab] = useState<'overview' | 'logs'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'logs' | 'trace'>('overview');
   const [showMore, setShowMore] = useState(false);
 
   const { data: tx, isLoading, error } = useQuery({
@@ -69,6 +70,13 @@ export function TransactionDetail() {
   const { data: logs } = useQuery({
     queryKey: ['transaction-logs', hash],
     queryFn: () => api.getTransactionLogs(hash!),
+    enabled: !!hash,
+    retry: false,
+  });
+
+  const { data: internalTxs } = useQuery({
+    queryKey: ['transaction-internal', hash],
+    queryFn: () => api.getTransactionInternalTxs(hash!),
     enabled: !!hash,
     retry: false,
   });
@@ -102,13 +110,14 @@ export function TransactionDetail() {
   const toReason = tx.to ? tx.addressMetadata?.[tx.to.toLowerCase()] : undefined;
 
   const hasLogs = logs && logs.length > 0;
+  const hasTrace = internalTxs && internalTxs.length > 0;
 
   return (
     <div className="space-y-6">
       <PageHeader title="Transaction Details" />
 
-      {/* Tabs - only show when logs exist */}
-      {hasLogs && (
+      {/* Tabs - only show when there are logs or internal calls to display */}
+      {(hasLogs || hasTrace) && (
         <div className="tabs">
           <button
             onClick={() => setActiveTab('overview')}
@@ -116,12 +125,22 @@ export function TransactionDetail() {
           >
             Overview
           </button>
-          <button
-            onClick={() => setActiveTab('logs')}
-            className={activeTab === 'logs' ? 'tab-active' : 'tab'}
-          >
-            Logs ({logs?.length || 0})
-          </button>
+          {hasLogs && (
+            <button
+              onClick={() => setActiveTab('logs')}
+              className={activeTab === 'logs' ? 'tab-active' : 'tab'}
+            >
+              Logs ({logs?.length || 0})
+            </button>
+          )}
+          {hasTrace && (
+            <button
+              onClick={() => setActiveTab('trace')}
+              className={activeTab === 'trace' ? 'tab-active' : 'tab'}
+            >
+              Internal Txns ({internalTxs?.length || 0})
+            </button>
+          )}
         </div>
       )}
 
@@ -326,6 +345,11 @@ export function TransactionDetail() {
             <LogCard key={`${log.txHash}-${log.logIndex}`} log={log} />
           ))}
         </div>
+      )}
+
+      {/* Internal Transactions / Call Trace Tab */}
+      {activeTab === 'trace' && internalTxs && (
+        <CallTraceTree tx={tx} internalTxs={internalTxs} />
       )}
     </div>
   );
