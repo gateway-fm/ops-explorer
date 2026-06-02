@@ -298,11 +298,13 @@ func (p *Provider) GetTokenBalances(ctx context.Context, address string) ([]type
 // ----- Contracts -----
 
 func (p *Provider) GetContract(ctx context.Context, address string) (*types.Contract, error) {
-	// Returns chain-facts only (address / bytecode / deployer / creation
-	// tx / deployment block). If the caller needs ABI / verification
-	// metadata it must merge from the SQL-backed GetContract —
-	// DirectDBProvider. In standalone deployments this override can be
-	// disabled (comment it out) to get the full SQL path.
+	// Chain facts (address / bytecode / deployer / creation tx / deployment
+	// block) come from the indexer. ABI / verification metadata (name,
+	// compiler, source code, ABI) live in the explorer's own SQL store, so we
+	// merge them in from the SQL-backed DirectDBProvider — without this the
+	// contract tab can never show verified source, and the "View UML diagram"
+	// feature (which renders that source via sol2uml) would have nothing to
+	// work with.
 	resp, err := p.client.GetContract(ctx, &indexerv1.GetContractRequest{Address: address})
 	if err != nil {
 		if isNotFound(err) {
@@ -310,7 +312,31 @@ func (p *Provider) GetContract(ctx context.Context, address string) (*types.Cont
 		}
 		return nil, err
 	}
-	return mapContract(resp), nil
+	contract := mapContract(resp)
+
+	verification, vErr := p.DirectDBProvider.GetContract(ctx, address)
+	if vErr == nil && verification != nil && verification.IsVerified {
+		mergeVerification(contract, verification)
+	}
+	return contract, nil
+}
+
+// mergeVerification overlays SQL-sourced verification metadata onto a
+// chain-facts contract, leaving the on-chain fields (bytecode, creator,
+// creation tx, deployment block) intact.
+func mergeVerification(dst, v *types.Contract) {
+	dst.IsVerified = true
+	dst.ContractName = v.ContractName
+	dst.CompilerVersion = v.CompilerVersion
+	dst.OptimizationUsed = v.OptimizationUsed
+	dst.OptimizationRuns = v.OptimizationRuns
+	dst.EVMVersion = v.EVMVersion
+	dst.LicenseType = v.LicenseType
+	dst.SourceCode = v.SourceCode
+	dst.ConstructorArgs = v.ConstructorArgs
+	if len(v.ABI) > 0 {
+		dst.ABI = v.ABI
+	}
 }
 
 func (p *Provider) IsContract(ctx context.Context, address string) (bool, error) {

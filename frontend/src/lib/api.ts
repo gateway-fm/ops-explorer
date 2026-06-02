@@ -509,6 +509,19 @@ export const api = {
 
   getContract: (address: string) => fetchAPI<Contract>(`/addresses/${address}/contract`),
 
+  // Returns a sol2uml class diagram (SVG markup) for a verified contract.
+  getContractUML: async (address: string): Promise<string> => {
+    const res = await fetch(`${API_BASE}/addresses/${address}/contract/uml`, {
+      credentials: 'include',
+      headers: defaultHeaders(),
+    });
+    if (!res.ok) {
+      const detail = (await res.text()).trim();
+      throw new Error(detail || `API error: ${res.status}`);
+    }
+    return res.text();
+  },
+
   getAddressTransfers: (address: string, limit = 25, before?: number) => {
     const params = new URLSearchParams({ limit: String(limit) });
     if (before) params.set('before', String(before));
