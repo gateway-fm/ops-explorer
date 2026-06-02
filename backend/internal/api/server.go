@@ -248,6 +248,7 @@ func (s *Server) setupAPIRoutes(r chi.Router) {
 		r.Get("/transactions", s.handleGetAddressTransactions)
 		r.Get("/transfers", s.handleGetAddressTransfers)
 		r.Get("/contract", s.handleGetContract)
+		r.Get("/contract/uml", s.handleGetContractUML)
 		r.Post("/abi", s.handleUpdateContractABI)
 		r.Get("/internal", s.handleGetAddressInternalTxs)
 		r.Get("/logs", s.handleGetAddressLogs)

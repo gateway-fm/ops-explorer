@@ -18,7 +18,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /api ./cmd/api
 FROM alpine:3.22
 
 RUN apk update --no-cache && apk upgrade --no-cache
-RUN apk --no-cache add ca-certificates libc6-compat
+RUN apk --no-cache add ca-certificates libc6-compat nodejs npm
 
 # Download solc static binaries for contract verification
 RUN mkdir -p /opt/solc && \
@@ -27,6 +27,11 @@ RUN mkdir -p /opt/solc && \
             https://github.com/ethereum/solidity/releases/download/v${version}/solc-static-linux && \
         chmod +x /opt/solc/solc-${version}; \
     done
+
+# sol2uml renders contract UML class diagrams for the "View UML diagram"
+# feature on the address contract tab. It's a Node CLI invoked from the Go
+# backend (see internal/umlgen). Pinned to a major version for reproducibility.
+RUN npm install -g sol2uml@2 && sol2uml --version
 
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
