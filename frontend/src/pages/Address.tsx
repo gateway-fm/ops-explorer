@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -1475,7 +1475,19 @@ function UmlDiagram({ address }: { address: string }) {
     retry: false,
   });
 
-  const downloadHref = data ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(data)}` : undefined;
+  // Render the SVG via an object URL behind an <img> rather than injecting the
+  // markup into the DOM. The diagram is derived from contract source (which is
+  // attacker-influenced), and an <img> loads SVG with scripting disabled —
+  // avoiding any XSS sink. The blob URL is revoked when it changes / unmounts.
+  const svgUrl = useMemo(
+    () => (data ? URL.createObjectURL(new Blob([data], { type: 'image/svg+xml' })) : undefined),
+    [data],
+  );
+  useEffect(() => {
+    return () => {
+      if (svgUrl) URL.revokeObjectURL(svgUrl);
+    };
+  }, [svgUrl]);
 
   return (
     <section className="overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-50">
@@ -1485,9 +1497,9 @@ function UmlDiagram({ address }: { address: string }) {
           UML class diagram
         </h3>
         <div className="flex items-center gap-3">
-          {open && downloadHref && (
+          {open && svgUrl && (
             <a
-              href={downloadHref}
+              href={svgUrl}
               download={`${address}-uml.svg`}
               className="inline-flex items-center gap-1.5 text-xs text-primary transition-colors hover:text-primary-600"
             >
@@ -1517,12 +1529,10 @@ function UmlDiagram({ address }: { address: string }) {
               {(error as Error)?.message || 'Failed to generate UML diagram.'}
             </p>
           )}
-          {data && (
-            <div
-              className="max-h-[32rem] overflow-auto rounded-xl border border-neutral-200 bg-white p-4 [&_svg]:h-auto [&_svg]:max-w-none"
-              // sol2uml output is trusted server-generated SVG markup.
-              dangerouslySetInnerHTML={{ __html: data }}
-            />
+          {svgUrl && (
+            <div className="max-h-[32rem] overflow-auto rounded-xl border border-neutral-200 bg-white p-4">
+              <img src={svgUrl} alt={`UML class diagram for contract ${address}`} className="h-auto max-w-none" />
+            </div>
           )}
         </div>
       )}
