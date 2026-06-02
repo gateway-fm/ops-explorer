@@ -497,6 +497,8 @@ export const api = {
 
   getTransactionLogs: (hash: string) => fetchAPI<Log[]>(`/transactions/${hash}/logs`),
 
+  getTransactionInternalTxs: (hash: string) => fetchAPI<InternalTransaction[]>(`/transactions/${hash}/internal`),
+
   getAddress: (address: string) => fetchAPI<AddressInfo>(`/addresses/${address}`),
 
   getAddressTransactions: (address: string, limit = 25, before?: number) => {
