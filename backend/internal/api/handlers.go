@@ -981,6 +981,60 @@ func (s *Server) handleGetTokenHolders(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleGetTokenInventory(w http.ResponseWriter, r *http.Request) {
+	address := chi.URLParam(r, "address")
+	if !common.IsHexAddress(address) {
+		http.Error(w, "invalid address", http.StatusBadRequest)
+		return
+	}
+	address = common.HexToAddress(address).Hex()
+
+	pageStr := r.URL.Query().Get("page")
+	pageSizeStr := r.URL.Query().Get("pageSize")
+
+	page := 1
+	if pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+
+	pageSize := 25
+	if pageSizeStr != "" {
+		if ps, err := strconv.Atoi(pageSizeStr); err == nil && ps > 0 && ps <= 100 {
+			pageSize = ps
+		}
+	}
+
+	// Optional: filter to a single token id (powers the per-NFT detail page).
+	tokenID := r.URL.Query().Get("tokenId")
+
+	offset := (page - 1) * pageSize
+	items, total, err := s.provider.GetTokenInventory(r.Context(), address, tokenID, pageSize, offset)
+	if err != nil {
+		log.Warn("token inventory lookup failed", "address", address, "error", err)
+		http.Error(w, "failed to get token inventory", http.StatusInternalServerError)
+		return
+	}
+
+	if items == nil {
+		items = []types.TokenInventoryItem{}
+	}
+
+	totalPages := int(total) / pageSize
+	if int(total)%pageSize > 0 {
+		totalPages++
+	}
+
+	writeJSON(w, types.OffsetPaginatedResponse[types.TokenInventoryItem]{
+		Data:       items,
+		Total:      total,
+		Page:       page,
+		PageSize:   pageSize,
+		TotalPages: totalPages,
+	})
+}
+
 func (s *Server) handleGetTokenTransfers(w http.ResponseWriter, r *http.Request) {
 	address := chi.URLParam(r, "address")
 	if !common.IsHexAddress(address) {

@@ -31,6 +31,12 @@ contracts/cache/
 contracts/out/
 contracts/broadcast/
 
+# Local ERC-721 test fixtures (contracts, deploy scripts, large source images)
+contracts/erc-721/
+# NFT test artwork is served locally by contracts/erc-721/serve-images.sh,
+# never committed into the frontend bundle.
+frontend/public/apes/
+
 # Backup files from sed/patching
 *.bak
 

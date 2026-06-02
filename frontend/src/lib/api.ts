@@ -255,6 +255,12 @@ export interface TokenHolder {
   addressMetadata?: Record<string, VisibilityReason>;
 }
 
+export interface NFTItem {
+  tokenId: string;
+  owner: string;
+  tokenUri?: string;
+}
+
 export interface ChainInfo {
   chainId: string;
   chainIdDecimal: number;
@@ -491,6 +497,8 @@ export const api = {
 
   getTransactionLogs: (hash: string) => fetchAPI<Log[]>(`/transactions/${hash}/logs`),
 
+  getTransactionInternalTxs: (hash: string) => fetchAPI<InternalTransaction[]>(`/transactions/${hash}/internal`),
+
   getAddress: (address: string) => fetchAPI<AddressInfo>(`/addresses/${address}`),
 
   getAddressTransactions: (address: string, limit = 25, before?: number) => {
@@ -500,6 +508,19 @@ export const api = {
   },
 
   getContract: (address: string) => fetchAPI<Contract>(`/addresses/${address}/contract`),
+
+  // Returns a sol2uml class diagram (SVG markup) for a verified contract.
+  getContractUML: async (address: string): Promise<string> => {
+    const res = await fetch(`${API_BASE}/addresses/${address}/contract/uml`, {
+      credentials: 'include',
+      headers: defaultHeaders(),
+    });
+    if (!res.ok) {
+      const detail = (await res.text()).trim();
+      throw new Error(detail || `API error: ${res.status}`);
+    }
+    return res.text();
+  },
 
   getAddressTransfers: (address: string, limit = 25, before?: number) => {
     const params = new URLSearchParams({ limit: String(limit) });
@@ -554,6 +575,17 @@ export const api = {
   getTokenTransfers: (address: string, page = 1, pageSize = 25) => {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     return fetchAPI<OffsetPaginatedResponse<TokenTransfer>>(`/tokens/${address}/transfers?${params}`);
+  },
+
+  getTokenInventory: (address: string, page = 1, pageSize = 25) => {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    return fetchAPI<OffsetPaginatedResponse<NFTItem>>(`/tokens/${address}/inventory?${params}`);
+  },
+
+  getNftItem: async (address: string, tokenId: string): Promise<NFTItem | null> => {
+    const params = new URLSearchParams({ tokenId, page: '1', pageSize: '1' });
+    const res = await fetchAPI<OffsetPaginatedResponse<NFTItem>>(`/tokens/${address}/inventory?${params}`);
+    return res.data?.[0] ?? null;
   },
 
   getAllTokenTransfers: (page = 1, pageSize = 25) => {

@@ -2,20 +2,21 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { api } from '../lib/api';
-import type { Contract, Token, TokenHolder, TokenTransfer } from '../lib/api';
+import type { Contract, NFTItem, Token, TokenHolder, TokenTransfer } from '../lib/api';
 import { AddressLink } from '../components/AddressLink';
 import { AddressLabel } from '../components/AddressLabel';
 import { CopyButton } from '../components/CopyButton';
 import { TokenAvatar } from '../components/TokenAvatar';
+import { NftCard } from '../components/NftCard';
 import { formatTokenType, formatTokenValue } from '../lib/formatToken';
 import { formatTimeAgo } from '../lib/utils';
 
 const PAGE_SIZE = 25;
 
-type Tab = 'transfers' | 'holders' | 'contract';
+type Tab = 'transfers' | 'inventory' | 'holders' | 'contract';
 
 function tabFromParams(s: string | null): Tab {
-  if (s === 'holders' || s === 'contract') return s;
+  if (s === 'holders' || s === 'contract' || s === 'inventory') return s;
   return 'transfers';
 }
 
@@ -41,6 +42,23 @@ export default function TokenDetail() {
     queryKey: ['tokenTransfers', address, page],
     queryFn: () => api.getTokenTransfers(address!, page, PAGE_SIZE),
     enabled: !!address && activeTab === 'transfers',
+  });
+
+  const { data: inventory, isLoading: inventoryLoading } = useQuery({
+    queryKey: ['tokenInventory', address, page],
+    queryFn: () => api.getTokenInventory(address!, page, PAGE_SIZE),
+    enabled: !!address && activeTab === 'inventory',
+  });
+
+  // Inventory total for the tab badge — fetched whenever the token is an NFT
+  // collection, independent of which tab is active (1 row, just for the count).
+  const isNftCollection =
+    token?.tokenType === 'ERC721' || token?.tokenType === 'ERC1155';
+  const { data: inventoryCount } = useQuery({
+    queryKey: ['tokenInventoryCount', address],
+    queryFn: () => api.getTokenInventory(address!, 1, 1),
+    enabled: !!address && isNftCollection,
+    select: (r) => r.total,
   });
 
   const { data: contract, isLoading: contractLoading } = useQuery({
@@ -108,10 +126,15 @@ export default function TokenDetail() {
     );
   }
 
-  const totalPages =
-    (activeTab === 'holders' ? holders?.totalPages : transfers?.totalPages) ?? 1;
-  const dataLength =
-    (activeTab === 'holders' ? holders?.data?.length : transfers?.data?.length) ?? 0;
+  const isNFT = token.tokenType === 'ERC721' || token.tokenType === 'ERC1155';
+  const activePage =
+    activeTab === 'holders'
+      ? holders
+      : activeTab === 'inventory'
+      ? inventory
+      : transfers;
+  const totalPages = activePage?.totalPages ?? 1;
+  const dataLength = activePage?.data?.length ?? 0;
 
   return (
     <div className="space-y-6">
@@ -126,6 +149,8 @@ export default function TokenDetail() {
         onChange={handleTabChange}
         transfersCount={token.transferCount}
         holdersCount={token.holderCount}
+        showInventory={isNFT}
+        inventoryCount={inventoryCount}
       />
 
       <div>
@@ -135,6 +160,14 @@ export default function TokenDetail() {
             creationInput={creationTx?.inputData}
             loading={contractLoading || creationTxLoading}
           />
+        ) : activeTab === 'inventory' ? (
+          inventoryLoading ? (
+            <CardGridSkeleton />
+          ) : (inventory?.data || []).length === 0 ? (
+            <EmptyState>No NFTs found in this collection.</EmptyState>
+          ) : (
+            <InventoryGrid items={inventory!.data} collection={token.address} />
+          )
         ) : activeTab === 'transfers' ? (
           transfersLoading ? (
             <TableSkeleton rows={6} />
@@ -234,18 +267,31 @@ function TypeBadge({ type }: { type: string }) {
 // ---------- Stat bar ----------
 
 function StatBar({ token }: { token: Token }) {
+  const isNFT = token.tokenType === 'ERC721' || token.tokenType === 'ERC1155';
   // Always 4 stats so the grid stays balanced. Price (when available) lives in
-  // the hero as inline metadata, not in this bar.
-  const items: { label: string; value: string; unit?: string }[] = [
-    {
-      label: 'Max total supply',
-      value: formatTokenValue(token.totalSupply || '0', token.decimals),
-      unit: token.symbol,
-    },
-    { label: 'Holders', value: token.holderCount.toLocaleString() },
-    { label: 'Transfers', value: token.transferCount.toLocaleString() },
-    { label: 'Decimals', value: String(token.decimals) },
-  ];
+  // the hero as inline metadata, not in this bar. NFTs have no decimals, so the
+  // last tile shows the token standard instead, and supply is an item count.
+  const items: { label: string; value: string; unit?: string }[] = isNFT
+    ? [
+        {
+          label: 'Total supply',
+          value: formatTokenValue(token.totalSupply || '0', 0),
+          unit: 'items',
+        },
+        { label: 'Holders', value: token.holderCount.toLocaleString() },
+        { label: 'Transfers', value: token.transferCount.toLocaleString() },
+        { label: 'Token standard', value: formatTokenType(token.tokenType) },
+      ]
+    : [
+        {
+          label: 'Max total supply',
+          value: formatTokenValue(token.totalSupply || '0', token.decimals),
+          unit: token.symbol,
+        },
+        { label: 'Holders', value: token.holderCount.toLocaleString() },
+        { label: 'Transfers', value: token.transferCount.toLocaleString() },
+        { label: 'Decimals', value: String(token.decimals) },
+      ];
 
   return (
     <dl className="grid grid-cols-2 overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-50 sm:grid-cols-4">
@@ -282,14 +328,21 @@ function Tabs({
   onChange,
   transfersCount,
   holdersCount,
+  showInventory,
+  inventoryCount,
 }: {
   active: Tab;
   onChange: (t: Tab) => void;
   transfersCount: number;
   holdersCount: number;
+  showInventory: boolean;
+  inventoryCount?: number;
 }) {
   const tabs: { id: Tab; label: string; count?: number }[] = [
     { id: 'transfers', label: 'Transfers', count: transfersCount },
+    ...(showInventory
+      ? [{ id: 'inventory' as Tab, label: 'Inventory', count: inventoryCount }]
+      : []),
     { id: 'holders', label: 'Holders', count: holdersCount },
     { id: 'contract', label: 'Contract' },
   ];
@@ -474,6 +527,37 @@ function HoldersTable({
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ---------- Inventory ----------
+
+function InventoryGrid({ items, collection }: { items: NFTItem[]; collection: string }) {
+  return (
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+      {items.map((it) => (
+        <NftCard key={it.tokenId} item={it} collection={collection} />
+      ))}
+    </div>
+  );
+}
+
+function CardGridSkeleton({ count = 8 }: { count?: number }) {
+  return (
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+      {Array.from({ length: count }).map((_, i) => (
+        <div
+          key={i}
+          className="overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-50"
+        >
+          <div className="aspect-square w-full animate-pulse bg-neutral-200" />
+          <div className="space-y-2 p-3">
+            <div className="h-3 w-16 animate-pulse rounded bg-neutral-200" />
+            <div className="h-3 w-24 animate-pulse rounded bg-neutral-200/70" />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
