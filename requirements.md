@@ -58,8 +58,18 @@ This document outlines the core functional requirements of the Block Explorer an
     the access token has ≤ 5 minutes remaining. Privacy-proxy rotates the refresh token
     on every call (old token is revoked, new token is issued). Both the access and refresh
     tokens are stored as `HttpOnly` cookies.
-  - If the refresh token is revoked (banned user, logout from another tab, admin revocation),
-    both cookies are cleared and the user is redirected to the login screen.
+  - Because rotation is single-use, concurrent refreshes for one session (a page load
+    fires several API requests at once, all carrying the same refresh cookie) are collapsed
+    into a single `/refresh` call. Exactly one rotation happens and every in-flight request
+    receives the same new token pair — otherwise the losing requests would present the
+    just-rotated token, be rejected as "revoked", and tear the session down (the cause of
+    spurious "logged out after a page refresh" reports).
+  - If the refresh token is revoked (banned user, logout from another tab, admin revocation)
+    **and the current access token has also expired**, both cookies are cleared and the
+    user is redirected to the login screen. A revocation seen while the access token is
+    still valid is treated as a lost rotation race (a sibling request already rotated the
+    pair) and does not force an immediate logout; that session ends when its access token
+    expires — within the same ≤ AccessTokenTTL window, so the enforcement bound is unchanged.
   - **Do not increase AccessTokenTTL without reconsidering ban enforcement.** A longer
     access token TTL widens the window during which a banned user can still act.
   - Status: [x] Implemented

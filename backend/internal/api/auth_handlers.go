@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -26,8 +28,15 @@ const (
 	// Matches RefreshTokenTTL on privacy-proxy (7 days).
 	RefreshCookieMaxAge = 7 * 24 * 60 * 60 // 7 days
 
-	// refreshThreshold is how close to JWT expiry we trigger a token refresh.
-	// Must be > AccessTokenTTL so we always refresh before the token expires.
+	// refreshThreshold is how close to access-token expiry we trigger a silent
+	// refresh. Per block-explorer REQ-5.3 it tracks AccessTokenTTL (5 min): the
+	// access token is refreshed once it has ≤ this long remaining. Because a
+	// freshly minted token already has < TTL left, an active session refreshes on
+	// use and slides forward, maximizing how long a user stays logged in. Many
+	// concurrent requests can qualify at once, but they are collapsed into a
+	// single privacy-proxy /refresh by refreshGroup (single-flight), so this does
+	// NOT reopen the rotation race. An idle session lapses when its current access
+	// token expires (the documented ban-enforcement window).
 	refreshThreshold = 5 * time.Minute
 )
 
@@ -218,18 +227,25 @@ func writeError(w http.ResponseWriter, status int, message string) {
 //
 //  1. If the JWT has > refreshThreshold remaining — pass through unchanged.
 //  2. If the JWT has ≤ refreshThreshold remaining — call privacy-proxy /refresh
-//     with the refresh token cookie to obtain a new access + refresh token pair.
-//     The server rotates the refresh token on every call, so we must write back
-//     both updated cookies.
-//  3. If the refresh token is missing, invalid, or explicitly revoked (banned
-//     user) — clear both cookies immediately. The frontend will detect the
-//     missing auth cookie at the next /api/auth/status poll and show "Sign In".
+//     with the refresh token cookie to obtain a new access + refresh token pair
+//     and write both updated cookies. privacy-proxy rotates the refresh token
+//     single-use, so concurrent requests for the same session are collapsed into
+//     ONE /refresh call (see refreshGroup) — otherwise the losers would present
+//     an already-rotated token and be told it was revoked.
+//  3. If /refresh is explicitly rejected (ErrRefreshRevoked) we clear both
+//     cookies ONLY when the current access token has also expired — that combo
+//     means the session is genuinely dead. A revoke while the access token is
+//     still valid is treated as a lost rotation race (a sibling already rotated
+//     the pair): we keep the session and ride the existing access token until it
+//     expires. A missing refresh cookie or a transient error also passes through
+//     without clearing.
 //
-// Security note: access tokens are intentionally short-lived (5 min). This
-// creates a bounded window between when a user is banned in the admin panel and
-// when they are actually locked out. The window is at most AccessTokenTTL.
-// Extending the TTL would widen that window; do not increase it without
-// reconsidering the ban enforcement strategy.
+// Security note: access tokens are intentionally short-lived (5 min). The ban
+// enforcement window is at most AccessTokenTTL — a banned user keeps acting until
+// their current access token expires, because privacy-proxy validates that token
+// on every call (the explorer cookie is not the security boundary). Not clearing
+// the cookie on a revoke-while-valid does NOT widen this window. Do not increase
+// the TTL without reconsidering the ban enforcement strategy.
 func (s *Server) refreshAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		accessCookie, err := r.Cookie(AuthCookieName)
@@ -267,21 +283,40 @@ func (s *Server) refreshAuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		newTokens, err := s.ssoClient.RefreshTokens(r.Context(), refreshCookie.Value)
-		if err != nil {
-			if errors.Is(err, auth.ErrRefreshRevoked) {
-				// Explicitly rejected: banned user, revoked token, or expired.
-				// Clear cookies immediately — the session is dead.
-				log.Info("sso refresh: token rejected by server, clearing session")
+		// Single-flight the refresh. A browser page load fires many API requests
+		// in parallel, all carrying the SAME refresh-token cookie. privacy-proxy
+		// rotates refresh tokens single-use: the first /refresh call mints a new
+		// pair and REVOKES the presented token, so any sibling that races in with
+		// the same (now-revoked) token gets a 401. Collapsing the burst into one
+		// /refresh call — keyed by the refresh token — means exactly one rotation
+		// happens and every waiter receives the same freshly-minted pair, instead
+		// of N-1 of them being told "revoked" and tearing the session down.
+		res, refreshErr, _ := s.refreshGroup.Do(refreshKey(refreshCookie.Value), func() (any, error) {
+			return s.ssoClient.RefreshTokens(r.Context(), refreshCookie.Value)
+		})
+		if refreshErr != nil {
+			// Only end the session when the refresh token is explicitly rejected
+			// AND our access token has now expired too — that combination means
+			// the session is genuinely dead (banned user, expired refresh token).
+			//
+			// An ErrRefreshRevoked while the access token is STILL valid is almost
+			// always a lost rotation race: a sibling request already rotated the
+			// pair and installed the new cookies, and this request's revoked token
+			// is simply the old one. Clearing here would destroy a healthy session
+			// (the original "logged out after a page refresh" bug). Instead we ride
+			// the still-valid access token; the session lapses on its own when that
+			// token expires (bounded by AccessTokenTTL — the designed ban window).
+			// Transient errors (network, 5xx) fall through the same way and retry
+			// on the next request.
+			if errors.Is(refreshErr, auth.ErrRefreshRevoked) && claims.IsExpired() {
+				log.Info("sso refresh: token rejected by server and access token expired, clearing session")
 				clearAuthCookies(w)
 			}
-			// For transient errors (network, 5xx) do NOT clear cookies.
-			// The existing access token (still valid for a few more minutes)
-			// carries the request through. The next request retries the refresh.
 			next.ServeHTTP(w, r)
 			return
 		}
 
+		newTokens := res.(*auth.RefreshResponse)
 		secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 		http.SetCookie(w, &http.Cookie{
 			Name:     AuthCookieName,
@@ -310,4 +345,12 @@ func (s *Server) refreshAuthMiddleware(next http.Handler) http.Handler {
 func clearAuthCookies(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{Name: AuthCookieName, Value: "", Path: "/", MaxAge: -1})
 	http.SetCookie(w, &http.Cookie{Name: RefreshCookieName, Value: "", Path: "/", MaxAge: -1})
+}
+
+// refreshKey derives a stable single-flight key from a refresh token. We hash
+// it so the raw secret never lives as a map key; the key only needs to be equal
+// across the concurrent requests that share one refresh-token cookie.
+func refreshKey(refreshToken string) string {
+	sum := sha256.Sum256([]byte(refreshToken))
+	return hex.EncodeToString(sum[:])
 }
