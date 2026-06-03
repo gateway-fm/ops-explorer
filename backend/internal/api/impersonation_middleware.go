@@ -115,38 +115,38 @@ func isImpersonationDisallowedMethod(method string) bool {
 	}
 }
 
-// impersonationTargetDID is a tiny accessor so callers that only need the
-// target DID don't have to unpack the full session struct.
-func impersonationTargetDID(ctx context.Context) string {
-	session, ok := ImpersonationFromContext(ctx)
-	if !ok {
-		return ""
-	}
-	return session.TargetDID
-}
-
 // applyImpersonationPath rewrites an outbound request path to its
 // admin-impersonate equivalent when the request context carries an active
-// "View as user" session. For example, with target DID "did:p:42":
+// "View as user" session. RD-994 — the bound org is prepended as /in/<org_id>.
+// For example, with target DID "did:p:42" and org "org-7":
 //
-//	/api/v1/explorer/blocks  ->  /api/v1/admin/impersonate/did:p:42/api/v1/explorer/blocks
-//	/api/v1/explorer/stats   ->  /api/v1/admin/impersonate/did:p:42/api/v1/explorer/stats
+//	/api/v1/explorer/blocks  ->  /api/v1/admin/impersonate/did:p:42/in/org-7/api/v1/explorer/blocks
+//	/api/v1/explorer/stats   ->  /api/v1/admin/impersonate/did:p:42/in/org-7/api/v1/explorer/stats
 //
-// When no impersonation is active the path is returned unchanged. Used by
-// ProxyDataProvider so every chain-data read transparently honours the
-// active view-as session.
+// The org is read from the bound session (the token store), never from the
+// inbound request — a session minted for one org cannot be redirected to
+// another by tampering with the request path.
+//
+// When no impersonation is active the path is returned unchanged. If a session
+// is somehow active without a bound org (should be impossible — Mint requires
+// it), the path is also returned unchanged so the proxy's bare-route 400
+// surfaces rather than a malformed /in// path. Used by ProxyDataProvider so
+// every chain-data read transparently honours the active view-as session.
 func applyImpersonationPath(ctx context.Context, path string) string {
-	target := impersonationTargetDID(ctx)
-	if target == "" {
+	session, ok := ImpersonationFromContext(ctx)
+	if !ok || session.TargetDID == "" || session.OrgID == "" {
 		return path
 	}
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
-	// PathEscape the DID — DIDs include colons which are technically reserved
-	// but accepted in path segments; escaping is defensive against future
-	// DID-method changes that introduce slashes or query-significant chars.
-	return "/api/v1/admin/impersonate/" + pathEscapeDID(target) + path
+	// PathEscape the DID and org — DIDs include colons which are technically
+	// reserved but accepted in path segments; escaping is defensive against
+	// future DID-method changes that introduce slashes or query-significant
+	// chars. Org IDs are UUIDs today but we escape them too for the same
+	// reason.
+	return "/api/v1/admin/impersonate/" + pathEscapeDID(session.TargetDID) +
+		"/in/" + pathEscapeDID(session.OrgID) + path
 }
 
 // pathEscapeDID escapes a DID for use as a single path segment. Defined

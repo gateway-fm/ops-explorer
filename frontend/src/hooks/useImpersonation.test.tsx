@@ -35,34 +35,55 @@ afterEach(() => {
 });
 
 describe('useImpersonation', () => {
-  it('starts a session and exposes target DID + token', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(
-      mockFetch([
-        {
-          status: 200,
-          body: {
-            token: 'TOK-1',
-            expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-            target_did: 'did:p:target',
-          },
-        },
-      ]) as unknown as typeof fetch
+  it('starts a session and exposes target DID + org + token', async () => {
+    const fetchSpy = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          token: 'TOK-1',
+          expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+          target_did: 'did:p:target',
+          org_id: 'org-7',
+        }),
+        { status: 200 }
+      )
     );
+    vi.spyOn(globalThis, 'fetch').mockImplementation(fetchSpy as unknown as typeof fetch);
 
     const { result } = renderHook(() => useImpersonation(), { wrapper });
     expect(result.current.isActive).toBe(false);
 
     await act(async () => {
-      await result.current.start('did:p:target');
+      await result.current.start('did:p:target', 'org-7');
     });
 
     expect(result.current.isActive).toBe(true);
     expect(result.current.token).toBe('TOK-1');
     expect(result.current.targetDID).toBe('did:p:target');
+    expect(result.current.orgID).toBe('org-7');
+    // The start request must carry both target_did and org_id (RD-994).
+    const startCall = fetchSpy.mock.calls.find(
+      (c) => String(c[0]).includes('/api/impersonation/start')
+    );
+    expect(startCall).toBeDefined();
+    const sentBody = JSON.parse(String((startCall![1] as RequestInit).body));
+    expect(sentBody).toEqual({ target_did: 'did:p:target', org_id: 'org-7' });
     // URL must carry ?as=TOK-1 so refreshes preserve view-as state.
     expect(new URLSearchParams(window.location.search).get('as')).toBe('TOK-1');
     // The module-level mirror used by fetch wrapper sees the same token.
     await waitFor(() => expect(getImpersonationTokenHeader()).toBe('TOK-1'));
+  });
+
+  // RD-994 — start without an org throws before any fetch is made.
+  it('rejects start when no org is provided', async () => {
+    const fetchSpy = vi.fn();
+    vi.spyOn(globalThis, 'fetch').mockImplementation(fetchSpy as unknown as typeof fetch);
+
+    const { result } = renderHook(() => useImpersonation(), { wrapper });
+    await act(async () => {
+      await expect(result.current.start('did:p:target', '')).rejects.toThrow(/organization/i);
+    });
+    expect(result.current.isActive).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('rejects chained start while a session is active', async () => {
@@ -74,17 +95,18 @@ describe('useImpersonation', () => {
             token: 'TOK-1',
             expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
             target_did: 'did:p:a',
+            org_id: 'org-7',
           },
         },
       ]) as unknown as typeof fetch
     );
     const { result } = renderHook(() => useImpersonation(), { wrapper });
     await act(async () => {
-      await result.current.start('did:p:a');
+      await result.current.start('did:p:a', 'org-7');
     });
 
     await act(async () => {
-      await expect(result.current.start('did:p:b')).rejects.toThrow();
+      await expect(result.current.start('did:p:b', 'org-7')).rejects.toThrow();
     });
     expect(result.current.targetDID).toBe('did:p:a');
   });
@@ -102,6 +124,7 @@ describe('useImpersonation', () => {
             token: 'TOK-X',
             expires_at: new Date(Date.now() + 1000 * 60 * 60).toISOString(),
             target_did: 'did:p:x',
+            org_id: 'org-7',
           }),
           { status: 200 }
         )
@@ -110,7 +133,7 @@ describe('useImpersonation', () => {
 
     const { result } = renderHook(() => useImpersonation(), { wrapper });
     await act(async () => {
-      await result.current.start('did:p:x');
+      await result.current.start('did:p:x', 'org-7');
     });
     expect(result.current.isActive).toBe(true);
 
@@ -132,7 +155,7 @@ describe('useImpersonation', () => {
     const { result } = renderHook(() => useImpersonation(), { wrapper });
 
     await act(async () => {
-      await expect(result.current.start('did:p:nonexistent')).rejects.toThrow(/not found/);
+      await expect(result.current.start('did:p:nonexistent', 'org-7')).rejects.toThrow(/not found/);
     });
     expect(result.current.isActive).toBe(false);
     expect(result.current.error).toMatch(/not found/i);

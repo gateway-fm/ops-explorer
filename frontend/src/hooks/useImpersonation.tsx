@@ -26,6 +26,8 @@ import {
 export interface ImpersonationSession {
   token: string;
   targetDID: string;
+  /** RD-994: the org this session is anchored to. */
+  orgID: string;
   expiresAt: Date;
 }
 
@@ -34,16 +36,18 @@ export interface ImpersonationContextValue {
   /** Convenience aliases — common access pattern, avoids `?.` everywhere. */
   token: string | null;
   targetDID: string | null;
+  orgID: string | null;
   expiresAt: Date | null;
   isActive: boolean;
   /** Last error message thrown by start/stop; null if none. */
   error: string | null;
   /**
-   * Mint a session for the given target. Throws if a session is already
-   * active (no chained impersonation), or if the backend rejects (cross-org
-   * or non-admin produces a 404 here, mirrored from the privacy-proxy).
+   * Mint a session for the given target IN the given org (RD-994). Throws if
+   * a session is already active (no chained impersonation), or if the backend
+   * rejects (target-not-in-org or unknown target produces a 404 here;
+   * org-not-administered produces a 403; both mirrored from the privacy-proxy).
    */
-  start: (targetDID: string) => Promise<void>;
+  start: (targetDID: string, orgID: string) => Promise<void>;
   /** Revoke + clear current session. Safe to call when no session. */
   stop: () => Promise<void>;
 }
@@ -58,6 +62,7 @@ interface StartResponse {
   token: string;
   expires_at: string;
   target_did: string;
+  org_id: string;
 }
 
 function readTokenFromURL(): string | null {
@@ -121,9 +126,17 @@ export function ImpersonationProvider({ children }: { children: ReactNode }) {
   }, [internalStop, session]);
 
   const start = useCallback(
-    async (targetDID: string) => {
+    async (targetDID: string, orgID: string) => {
       if (session) {
         const msg = 'Already viewing as another user — stop the current view-as session first.';
+        setError(msg);
+        throw new Error(msg);
+      }
+      if (!orgID) {
+        // RD-994: the org is mandatory. The dashboard always supplies it; a
+        // missing org means the entry URL lacked ?org=. Fail fast with a
+        // clear, actionable message rather than letting the BFF 400.
+        const msg = 'No organization selected for view-as. Open it from the admin dashboard with an org selected.';
         setError(msg);
         throw new Error(msg);
       }
@@ -132,22 +145,26 @@ export function ImpersonationProvider({ children }: { children: ReactNode }) {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target_did: targetDID }),
+        body: JSON.stringify({ target_did: targetDID, org_id: orgID }),
       });
       if (!resp.ok) {
-        // Mirror the BFF response shape. 404 is "target not visible" (could
-        // be cross-org or simply nonexistent); 403 is "not allowed". We keep
-        // the wording generic to avoid information leak.
+        // Mirror the BFF response shape. 404 is "target not visible in this
+        // org" (could be cross-org or simply nonexistent); 403 is "you don't
+        // administer that org / not allowed". We keep the wording generic to
+        // avoid information leak.
         let msg: string;
         switch (resp.status) {
           case 404:
-            msg = 'User not found or not visible from your org.';
+            msg = 'User not found or not a member of the selected org.';
             break;
           case 403:
-            msg = 'You are not authorised to use view-as for this user.';
+            msg = 'You are not authorised to view-as in the selected org.';
             break;
           case 401:
             msg = 'You must be signed in to use view-as.';
+            break;
+          case 400:
+            msg = 'Invalid view-as request (missing org).';
             break;
           default:
             msg = `Failed to start view-as session (${resp.status}).`;
@@ -159,6 +176,7 @@ export function ImpersonationProvider({ children }: { children: ReactNode }) {
       const next: ImpersonationSession = {
         token: data.token,
         targetDID: data.target_did,
+        orgID: data.org_id,
         expiresAt: new Date(data.expires_at),
       };
       setSession(next);
@@ -204,6 +222,7 @@ export function ImpersonationProvider({ children }: { children: ReactNode }) {
     setSession({
       token: tok,
       targetDID: '',
+      orgID: '',
       expiresAt: new Date(Date.now() + 60 * 60 * 1000), // optimistic upper bound
     });
     // Best-effort: ping the BFF to load the real session metadata. The
@@ -216,10 +235,11 @@ export function ImpersonationProvider({ children }: { children: ReactNode }) {
           credentials: 'include',
         });
         if (resp.ok) {
-          const data = (await resp.json()) as { target_did: string; expires_at: string };
+          const data = (await resp.json()) as { target_did: string; org_id: string; expires_at: string };
           setSession({
             token: tok,
             targetDID: data.target_did,
+            orgID: data.org_id,
             expiresAt: new Date(data.expires_at),
           });
         } else if (resp.status === 401 || resp.status === 404) {
@@ -240,6 +260,7 @@ export function ImpersonationProvider({ children }: { children: ReactNode }) {
       session,
       token: session?.token ?? null,
       targetDID: session?.targetDID ?? null,
+      orgID: session?.orgID ?? null,
       expiresAt: session?.expiresAt ?? null,
       isActive: session !== null,
       error,
