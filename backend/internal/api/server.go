@@ -20,6 +20,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/rs/cors"
+	"golang.org/x/sync/singleflight"
 )
 
 type Server struct {
@@ -41,6 +42,14 @@ type Server struct {
 	port                 int
 	router               *chi.Mux
 	etherscanResults     sync.Map // guid -> *etherscanVerifyResult
+
+	// refreshGroup collapses concurrent access-token refreshes for the same
+	// session into a single privacy-proxy /refresh call. privacy-proxy rotates
+	// refresh tokens single-use, so without this a page load's parallel
+	// requests would race — one rotates the token and the rest get 401s, which
+	// would otherwise tear the session down. Keyed by the refresh token.
+	// See refreshAuthMiddleware.
+	refreshGroup singleflight.Group
 
 	// impersonations is the session store backing the "View as user" (RD-928)
 	// admin diagnostic flow. nil when the feature is not configured (e.g.
