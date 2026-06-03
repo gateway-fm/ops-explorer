@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -338,11 +340,18 @@ func TestRefreshAuthMiddleware_NearExpiry_Success(t *testing.T) {
 	}
 }
 
-func TestRefreshAuthMiddleware_NearExpiry_Revoked(t *testing.T) {
-	// Token expires in 3 minutes — within the threshold.
+func TestRefreshAuthMiddleware_NearExpiry_RevokedButAccessValid_KeepsSession(t *testing.T) {
+	// Token still valid (3 min left, within the refresh window) but the proxy
+	// returns 401 for the refresh. In production this is almost always a LOST
+	// ROTATION RACE: a sibling request already rotated the single-use refresh
+	// token, so this request's copy is the now-revoked old one. The middleware
+	// must NOT clear cookies while the access token is still valid — doing so
+	// destroyed healthy sessions (the "logged out after a page refresh" bug).
+	// The request rides its existing access token; the session lapses on its own
+	// when that token expires. This is the regression guard for that bug.
 	jwt := makeTestJWT("did:example:user", time.Now().Add(3*time.Minute))
 
-	// Mock server returns 401 to simulate revocation.
+	// Mock server returns 401 to simulate a revoked/already-rotated token.
 	mockSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		w.Write([]byte(`{"error":"token revoked"}`))
@@ -369,14 +378,11 @@ func TestRefreshAuthMiddleware_NearExpiry_Revoked(t *testing.T) {
 	}
 
 	resp := w.Result()
-	authCookie := findCookie(resp, AuthCookieName)
-	refreshCookie := findCookie(resp, RefreshCookieName)
-
-	if authCookie == nil || authCookie.MaxAge != -1 {
-		t.Fatal("expected auth cookie to be cleared (MaxAge=-1)")
+	if authCookie := findCookie(resp, AuthCookieName); authCookie != nil && authCookie.MaxAge == -1 {
+		t.Fatal("auth cookie must NOT be cleared while the access token is still valid")
 	}
-	if refreshCookie == nil || refreshCookie.MaxAge != -1 {
-		t.Fatal("expected refresh cookie to be cleared (MaxAge=-1)")
+	if refreshCookie := findCookie(resp, RefreshCookieName); refreshCookie != nil && refreshCookie.MaxAge == -1 {
+		t.Fatal("refresh cookie must NOT be cleared while the access token is still valid")
 	}
 }
 
@@ -479,6 +485,117 @@ func TestRefreshAuthMiddleware_NetworkError_DoesNotClearCookies(t *testing.T) {
 	refreshCookie := findCookie(resp, RefreshCookieName)
 	if refreshCookie != nil && refreshCookie.MaxAge == -1 {
 		t.Fatal("refresh cookie must not be cleared on network error")
+	}
+}
+
+func TestRefreshAuthMiddleware_SingleFlight_ConcurrentRefresh(t *testing.T) {
+	// A browser page load fires many parallel requests carrying the SAME refresh
+	// cookie. privacy-proxy rotates refresh tokens single-use, so the burst MUST
+	// collapse into exactly ONE /refresh call — otherwise the losers receive 401s
+	// and (previously) tore the session down. This guards that the single-flight
+	// dedup holds and every concurrent request receives the same rotated pair.
+	jwt := makeTestJWT("did:example:user", time.Now().Add(3*time.Minute)) // within window
+
+	var callCount int32
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	mockSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&callCount, 1) == 1 {
+			started <- struct{}{} // signal the (single) refresh is in flight
+			<-release             // hold it open so siblings pile into single-flight
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(auth.RefreshResponse{
+			AccessToken:  "sf-access",
+			RefreshToken: "sf-refresh",
+			TokenType:    "Bearer",
+			ExpiresIn:    300,
+		})
+	}))
+	defer mockSrv.Close()
+
+	ssoClient := auth.NewSSOClient(mockSrv.URL, mockSrv.URL, "client-id", "", "http://redirect")
+	s := &Server{ssoClient: ssoClient}
+	handler := s.refreshAuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	const n = 8
+	results := make([]*http.Response, n)
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			defer wg.Done()
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.AddCookie(&http.Cookie{Name: AuthCookieName, Value: jwt})
+			req.AddCookie(&http.Cookie{Name: RefreshCookieName, Value: "shared-refresh"})
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			results[i] = rec.Result()
+		}(i)
+	}
+
+	// Wait until the one in-flight refresh has begun, give the other goroutines a
+	// moment to pile onto the same single-flight key, then release them all.
+	<-started
+	time.Sleep(150 * time.Millisecond)
+	close(release)
+	wg.Wait()
+
+	if got := atomic.LoadInt32(&callCount); got != 1 {
+		t.Fatalf("expected exactly 1 /refresh call for %d concurrent requests, got %d", n, got)
+	}
+	for i, resp := range results {
+		authCookie := findCookie(resp, AuthCookieName)
+		if authCookie == nil || authCookie.Value != "sf-access" {
+			t.Fatalf("request %d: expected rotated auth cookie %q, got %+v", i, "sf-access", authCookie)
+		}
+	}
+}
+
+func TestRefreshAuthMiddleware_RevokedAndAccessExpired_ClearsSession(t *testing.T) {
+	// Fail-closed guarantee: when /refresh is explicitly rejected (401) AND the
+	// access token has expired, the session is genuinely dead and BOTH cookies
+	// must be cleared. The token gets ~1s of life — valid when the middleware
+	// enters (the entry guard is second-granular and won't trip) — and /refresh
+	// blocks ~2.5s, so the access token crosses expiry while the refresh is in
+	// flight and the POST-refresh IsExpired() re-check is what fires the clear.
+	// This exercises the new "revoked AND access expired" branch rather than the
+	// entry guard (which TestRefreshAuthMiddleware_ExpiredToken already covers).
+	jwt := makeTestJWT("did:example:user", time.Now().Add(1*time.Second))
+
+	mockSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(2500 * time.Millisecond) // outlive the access token, then reject
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error":"token revoked"}`))
+	}))
+	defer mockSrv.Close()
+
+	ssoClient := auth.NewSSOClient(mockSrv.URL, mockSrv.URL, "client-id", "", "http://redirect")
+	s := &Server{ssoClient: ssoClient}
+
+	called := false
+	handler := s.refreshAuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: AuthCookieName, Value: jwt})
+	req.AddCookie(&http.Cookie{Name: RefreshCookieName, Value: "revoked-refresh"})
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if !called {
+		t.Fatal("expected next handler to be called")
+	}
+	resp := w.Result()
+	if authCookie := findCookie(resp, AuthCookieName); authCookie == nil || authCookie.MaxAge != -1 {
+		t.Fatal("expected auth cookie to be cleared when refresh is revoked and the access token has expired")
+	}
+	if refreshCookie := findCookie(resp, RefreshCookieName); refreshCookie == nil || refreshCookie.MaxAge != -1 {
+		t.Fatal("expected refresh cookie to be cleared when refresh is revoked and the access token has expired")
 	}
 }
 
