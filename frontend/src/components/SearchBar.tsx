@@ -174,9 +174,11 @@ export function SearchBar({ variant = 'default', autoFocus }: SearchBarProps) {
                 : 'input pl-11 pr-12'
             }
           />
-          <kbd className={`absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-xs font-mono rounded ${isHero ? 'text-neutral-400 bg-neutral-100 border border-neutral-200' : 'text-neutral-400 bg-neutral-100 border border-neutral-200'}`}>
-            /
-          </kbd>
+          {!search && (
+            <kbd className={`absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-xs font-mono rounded ${isHero ? 'text-neutral-400 bg-neutral-100 border border-neutral-200' : 'text-neutral-400 bg-neutral-100 border border-neutral-200'}`}>
+              /
+            </kbd>
+          )}
         </div>
       </form>
 
