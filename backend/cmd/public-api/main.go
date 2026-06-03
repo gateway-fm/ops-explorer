@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -76,6 +77,13 @@ func main() {
 		log.Fatal("failed to construct indexerclient provider", "error", err)
 	}
 	chainInfo := chaininfo.NewService(rpcClient, 10*time.Minute)
+	// RD-1031: expose the canonical browser-facing JSON-RPC endpoint so
+	// wallets connect to a reachable, redaction-enforcing endpoint. Derived
+	// from the proxy public URL (+ "/rpc") when set; empty otherwise so the
+	// frontend derives a same-origin URL rather than inventing localhost.
+	if publicURL := strings.TrimSpace(os.Getenv("PRIVACY_PROXY_PUBLIC_URL")); publicURL != "" {
+		chainInfo.SetBrowserRPCURL(strings.TrimSuffix(publicURL, "/") + "/rpc")
+	}
 
 	server := publicapi.NewServer(dataProvider, nil, chainInfo, port, rateLimit, rateWindow)
 

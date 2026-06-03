@@ -3,8 +3,8 @@ import { BrowserProvider, Contract, parseUnits } from 'ethers';
 import type { Eip1193Provider } from 'ethers';
 import type { AbiFragment, AbiInput } from '../lib/api';
 import { ChevronDown, ChevronUp, Loader2, Wallet, AlertCircle, CheckCircle } from 'lucide-react';
-import { getConfig } from '../lib/runtimeConfig';
 import { getNetworkCurrency } from '../lib/utils';
+import { resolveRpcUrl } from '../lib/metamask';
 import { useImpersonation } from '../hooks/useImpersonation';
 
 // Extend Window interface for ethereum provider
@@ -13,9 +13,6 @@ declare global {
     ethereum?: Eip1193Provider;
   }
 }
-
-// Get RPC URL from environment
-const RPC_URL = getConfig('VITE_RPC_URL', 'http://localhost:8545');
 
 interface ContractInteractionProps {
   address: string;
@@ -116,9 +113,11 @@ function FunctionCard({ contractAddress, abiFragment, index, type, isExpanded, o
     setResult(null);
 
     try {
-      // Use JSON-RPC provider for read operations
+      // Use JSON-RPC provider for read operations. resolveRpcUrl never
+      // returns the old localhost fallback: it prefers the backend-provided
+      // proxy /rpc URL, then VITE_RPC_URL, then the current page origin.
       const { JsonRpcProvider } = await import('ethers');
-      const provider = new JsonRpcProvider(RPC_URL);
+      const provider = new JsonRpcProvider(resolveRpcUrl());
       const contract = new Contract(contractAddress, [abiFragment], provider);
 
       const args = (abiFragment.inputs || []).map((input) => {

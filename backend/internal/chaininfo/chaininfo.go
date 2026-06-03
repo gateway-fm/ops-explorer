@@ -6,14 +6,23 @@ import (
 	"sync"
 	"time"
 
-	"explorer/pkg/log"
 	"explorer/internal/rpc"
+	"explorer/pkg/log"
 )
 
 // Info holds cached chain metadata fetched from the node.
 type Info struct {
-	ChainID         string `json:"chainId"`
-	ChainIDDecimal  uint64 `json:"chainIdDecimal"`
+	ChainID        string `json:"chainId"`
+	ChainIDDecimal uint64 `json:"chainIdDecimal"`
+	// RPCURL is the canonical browser-facing JSON-RPC endpoint that wallets
+	// (e.g. MetaMask) should connect to. It is NOT fetched from the node —
+	// the node only knows its own internal address. It is injected by the
+	// API server from PRIVACY_PROXY_PUBLIC_URL (+ "/rpc"). In privacy mode
+	// all chain access must go through the privacy-proxy, so this is the
+	// proxy's public /rpc endpoint, never a direct node/localhost address.
+	// Empty (and omitted) when not configured; the frontend then derives a
+	// same-origin RPC URL rather than inventing localhost.
+	RPCURL          string `json:"rpcUrl,omitempty"`
 	NetworkID       string `json:"networkId"`
 	ClientVersion   string `json:"clientVersion"`
 	ProtocolVersion string `json:"protocolVersion"`
@@ -31,6 +40,11 @@ type Service struct {
 	mu       sync.RWMutex
 	cached   *Info
 	interval time.Duration
+	// browserRPCURL is the static, browser-facing JSON-RPC endpoint exposed
+	// to wallets via Info.RPCURL. It is configured once at startup (from
+	// PRIVACY_PROXY_PUBLIC_URL) and never changes; the periodic node refresh
+	// does not touch it.
+	browserRPCURL string
 }
 
 // NewService creates a chain info service that refreshes at the given interval.
@@ -39,6 +53,16 @@ func NewService(rpcClient *rpc.Client, interval time.Duration) *Service {
 		rpc:      rpcClient,
 		interval: interval,
 	}
+}
+
+// SetBrowserRPCURL sets the canonical browser-facing JSON-RPC endpoint that
+// wallets should connect to (returned as Info.RPCURL). Callers should pass the
+// privacy-proxy public URL with the "/rpc" suffix. An empty value leaves
+// Info.RPCURL unset so the frontend can derive a same-origin endpoint instead.
+func (s *Service) SetBrowserRPCURL(url string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.browserRPCURL = url
 }
 
 // Start fetches chain info immediately, then refreshes on a timer until ctx is cancelled.
@@ -58,14 +82,19 @@ func (s *Service) Start(ctx context.Context) {
 	}
 }
 
-// Get returns the most recently cached chain info.
+// Get returns the most recently cached chain info. The returned value is a
+// copy with the browser-facing RPCURL injected, so callers never mutate the
+// internal cache and the periodically-refreshed node fields stay separate from
+// the statically-configured RPC URL.
 func (s *Service) Get() *Info {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if s.cached == nil {
-		return &Info{}
+	out := Info{}
+	if s.cached != nil {
+		out = *s.cached
 	}
-	return s.cached
+	out.RPCURL = s.browserRPCURL
+	return &out
 }
 
 func (s *Service) refresh(ctx context.Context) {

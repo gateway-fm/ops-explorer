@@ -264,6 +264,11 @@ export interface NFTItem {
 export interface ChainInfo {
   chainId: string;
   chainIdDecimal: number;
+  // rpcUrl is the canonical browser-facing JSON-RPC endpoint wallets
+  // (MetaMask) should connect to — the privacy-proxy public /rpc endpoint.
+  // Optional: omitted by the backend when PRIVACY_PROXY_PUBLIC_URL is unset,
+  // in which case the frontend derives a same-origin RPC URL.
+  rpcUrl?: string;
   networkId: string;
   clientVersion: string;
   protocolVersion: string;

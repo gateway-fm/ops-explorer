@@ -6,8 +6,7 @@ import { api } from '../lib/api';
 import type { SearchSuggestion } from '../lib/api';
 import { NavDropdown } from './NavDropdown';
 import { MobileNetworkList } from './NetworkMenu';
-import { MetaMaskFox } from './MetaMask';
-import { addNetworkToMetaMask } from '../lib/metamask';
+import { AddNetworkButton } from './AddNetworkButton';
 import { usePrivacyEnabled } from '../hooks/usePrivacyEnabled';
 import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip';
 import { ImpersonationBanner } from './ImpersonationBanner';
@@ -434,13 +433,7 @@ export function Layout() {
                 <a href={branding.website} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary-600 transition-colors">{branding.company}</a></>)}.
                 Search transactions, blocks, addresses, tokens, and more.
               </p>
-              <button
-                onClick={addNetworkToMetaMask}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors"
-              >
-                <MetaMaskFox className="w-4 h-4" />
-                Add Network to MetaMask
-              </button>
+              <AddNetworkButton variant="footer" />
             </div>
 
             {/* Quick Links */}

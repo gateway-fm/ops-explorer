@@ -59,6 +59,11 @@ type ServerConfig struct {
 	MetricsEnabled       bool
 	PostLoginRedirectURL string
 	EnableGasPrices      bool
+	// BrowserRPCURL is the canonical browser-facing JSON-RPC endpoint that
+	// wallets (MetaMask) should connect to, surfaced via GET /chain-info as
+	// rpcUrl. In privacy mode this is the privacy-proxy public URL + "/rpc";
+	// empty when not configured (frontend then derives a same-origin URL).
+	BrowserRPCURL string
 }
 
 // New constructs the api Server. The idx parameter is retained for
@@ -109,6 +114,12 @@ func New(database APIDatabase, rpcClient *rpc.Client, idx any, priceService *pri
 
 	// gas prices are served via provider.GetGasPrices; no in-process tracker.
 	s.chainInfo = chaininfo.NewService(rpcClient, 10*time.Minute)
+	if cfg != nil {
+		// RD-1031: expose the canonical browser RPC endpoint (privacy-proxy
+		// /rpc) so MetaMask connects to a reachable, redaction-enforcing
+		// endpoint instead of the old localhost:8545 fallback.
+		s.chainInfo.SetBrowserRPCURL(cfg.BrowserRPCURL)
+	}
 
 	s.setupRoutes()
 	return s

@@ -68,9 +68,41 @@ chain-indexer (gRPC) ──► privacy-proxy ──► block-explorer api ──
 - Both set → `log.Fatal`. No mixed-mode is supported.
 - Exactly one set → starts in the corresponding mode.
 
+`PRIVACY_PROXY_PUBLIC_URL` also drives the **MetaMask "Add Network"**
+integration: the api derives the canonical browser-facing JSON-RPC URL as
+`PRIVACY_PROXY_PUBLIC_URL` + `/rpc` and returns it from
+`GET /api/v1/chain-info` as `rpcUrl`. The frontend uses that value (and the
+authoritative `chainId`) when adding the network to a wallet. If
+`PRIVACY_PROXY_PUBLIC_URL` is unset, `rpcUrl` is omitted and the frontend
+falls back to `VITE_RPC_URL` (below) or the explorer's own page origin + `/rpc`
+— never a direct node or `localhost`.
+
 There is no longer a block-explorer indexer service — the separate
 `Indexer Service` section has been removed. Run chain-indexer as a
 sibling deployment; see its repo for its own env vars.
+
+### Frontend Service
+
+The frontend reads `VITE_*` variables at container startup (injected into
+`window.__runtimeConfig`). These are **fallbacks** for the MetaMask "Add
+Network" button and contract read calls — the authoritative `chainId` and
+`rpcUrl` come from `GET /api/v1/chain-info`.
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `VITE_API_URL` | No | Path/URL to the internal API. Default: `/api` (proxied by nginx/ingress). |
+| `VITE_RPC_URL` | Recommended | Browser-facing JSON-RPC URL for the MetaMask "Add Network" button and contract reads. **Must be the privacy-proxy `/rpc` endpoint** (e.g. `https://proxy.yourdomain.com/rpc`), never a direct node or `localhost` — all chain access must go through the proxy. Used only when the backend does not supply `rpcUrl`. |
+| `VITE_CHAIN_ID` | Recommended | Chain ID in **decimal** (e.g. `4242`) for the MetaMask "Add Network" button. Used only when the backend does not supply `chainId`. A wrong value here is what causes MetaMask to add the network with the wrong chain. |
+| `VITE_NETWORK_NAME` | No | Network name shown in MetaMask. |
+| `VITE_NETWORK_CURRENCY` | No | Native currency symbol shown in MetaMask. Default: `ETH`. |
+
+> **Why both backend and frontend config?** The backend (`/chain-info`) is the
+> source of truth, so a correctly-configured `PRIVACY_PROXY_PUBLIC_URL` is
+> enough on its own. `VITE_RPC_URL` / `VITE_CHAIN_ID` exist as deploy-time
+> fallbacks (and for standalone deployments where the proxy public URL is not
+> set). The base `docker-compose.yml` and `docker-compose.prod.yml` default
+> `VITE_RPC_URL` from `PRIVACY_PROXY_PUBLIC_URL` + `/rpc` so a stock privacy
+> deploy works without extra wiring.
 
 ---
 
