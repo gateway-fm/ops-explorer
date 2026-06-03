@@ -18,6 +18,12 @@ import (
 // startImpersonationRequest is the body of POST /api/impersonation/start.
 type startImpersonationRequest struct {
 	TargetDID string `json:"target_did"`
+	// OrgID is the organization the View-as session is anchored to (RD-994).
+	// Supplied by the dashboard from the admin's currently-selected org. It
+	// is bound to the minted token and prepended to every outbound proxy
+	// path as /in/<org_id>, so the proxy resolves the impersonated view
+	// against exactly this org.
+	OrgID string `json:"org_id"`
 }
 
 // startImpersonationResponse is the JSON returned on a successful mint. The
@@ -30,6 +36,9 @@ type startImpersonationResponse struct {
 	// <DID>") without making a second round-trip. It lives in the response
 	// body only — never in the URL.
 	TargetDID string `json:"target_did"`
+	// OrgID is echoed back so the UI can show / restore which org the session
+	// is anchored to.
+	OrgID string `json:"org_id"`
 }
 
 // handleStartImpersonation mints a short-lived opaque token that maps to a
@@ -70,6 +79,15 @@ func (s *Server) handleStartImpersonation(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "target_did is required")
 		return
 	}
+	// RD-994: the org must be explicit. The dashboard always supplies it from
+	// the currently-selected org; without it we cannot anchor the session, so
+	// we reject early rather than mint a session the proxy would 400 on every
+	// request.
+	req.OrgID = strings.TrimSpace(req.OrgID)
+	if req.OrgID == "" {
+		writeError(w, http.StatusBadRequest, "org_id is required")
+		return
+	}
 	// Defensive: a self-view-as is meaningless and is rejected by the proxy as
 	// well. Mirror that here so we don't even bother probing.
 	if strings.EqualFold(req.TargetDID, adminDID) {
@@ -78,10 +96,11 @@ func (s *Server) handleStartImpersonation(w http.ResponseWriter, r *http.Request
 	}
 
 	// Probe privacy-proxy to confirm the caller is allowed to view-as this
-	// target. Same-org + tier-2 admin checks live on the proxy side; we just
-	// surface the result. Cross-org / non-admin / unknown target all return
-	// 404 (no info leak).
-	status, err := s.probeImpersonationGate(r.Context(), adminToken, req.TargetDID)
+	// target IN THIS ORG. The org-membership (404), admin-not-in-org (403),
+	// and tier-2 admin checks live on the proxy side; we just surface the
+	// result. Cross-org target / unknown target both return 404 (no info
+	// leak); an org the admin doesn't administer returns 403.
+	status, err := s.probeImpersonationGate(r.Context(), adminToken, req.TargetDID, req.OrgID)
 	if err != nil {
 		log.Warn("impersonation probe failed", "err", err)
 		writeError(w, http.StatusBadGateway, "Failed to verify impersonation eligibility")
@@ -100,6 +119,11 @@ func (s *Server) handleStartImpersonation(w http.ResponseWriter, r *http.Request
 		// Hide existence: pretend the target is not visible.
 		writeError(w, http.StatusNotFound, "Target user not found")
 		return
+	case status == http.StatusBadRequest:
+		// The proxy rejected the request shape (e.g. missing org). Surface as
+		// a generic 400 — should not happen since we validate org_id above.
+		writeError(w, http.StatusBadRequest, "Invalid impersonation request")
+		return
 	default:
 		writeError(w, http.StatusBadGateway, "Failed to verify impersonation eligibility")
 		return
@@ -108,6 +132,7 @@ func (s *Server) handleStartImpersonation(w http.ResponseWriter, r *http.Request
 	token, expiresAt, err := s.impersonations.Mint(r.Context(), ImpersonationSession{
 		AdminDID:  adminDID,
 		TargetDID: req.TargetDID,
+		OrgID:     req.OrgID,
 	}, DefaultImpersonationTTL)
 	if err != nil {
 		log.Error("impersonation mint failed", "err", err)
@@ -119,6 +144,7 @@ func (s *Server) handleStartImpersonation(w http.ResponseWriter, r *http.Request
 		Token:     token,
 		ExpiresAt: expiresAt,
 		TargetDID: req.TargetDID,
+		OrgID:     req.OrgID,
 	})
 }
 
@@ -214,22 +240,25 @@ func (s *Server) handleGetImpersonation(w http.ResponseWriter, r *http.Request) 
 		Token:     token,
 		ExpiresAt: session.ExpiresAt,
 		TargetDID: session.TargetDID,
+		OrgID:     session.OrgID,
 	})
 }
 
 // probeImpersonationGate makes a HEAD-like read call under the impersonation
 // URL prefix and returns the upstream status code. Privacy-proxy decides the
-// outcome:
+// outcome (RD-994 — the org is explicit in the probe path):
 //
-//   - 200 → caller is a tier-2 admin in the same org as target_did.
-//   - 404 → cross-org, not a tier-2 admin, or unknown target (same shape).
-//   - 403 → policy rejects (e.g. self-impersonation, locked target).
+//   - 200 → caller is a tier-2 admin of orgID and target is a member of it.
+//   - 404 → target not a member of orgID, or unknown target (same shape).
+//   - 403 → caller does not administer orgID, or super-admin token.
 //   - 401 → admin's JWT is no longer valid.
+//   - 400 → malformed (e.g. missing org) — should not happen here.
 //
 // We deliberately use a chain-info-shaped read (a tiny endpoint that exists
 // on the proxy explorer surface) so the probe is cheap and side-effect-free.
-// The path is the impersonation prefix + the standard explorer chain-id path.
-func (s *Server) probeImpersonationGate(ctx context.Context, adminToken, targetDID string) (int, error) {
+// The path is the impersonation prefix + /in/<orgID> + the standard explorer
+// chain-id path.
+func (s *Server) probeImpersonationGate(ctx context.Context, adminToken, targetDID, orgID string) (int, error) {
 	if s.privacyProxyURL == "" {
 		return 0, fmt.Errorf("privacy proxy URL not configured")
 	}
@@ -237,6 +266,8 @@ func (s *Server) probeImpersonationGate(ctx context.Context, adminToken, targetD
 		s.privacyProxyURL,
 		"/api/v1/admin/impersonate/",
 		targetDID,
+		"/in/",
+		orgID,
 		"/api/v1/explorer/chain-id",
 	)
 	if err != nil {

@@ -5,6 +5,9 @@ import { useImpersonation } from '../hooks/useImpersonation';
 interface ViewAsButtonProps {
   /** Target user DID to start a view-as session for. */
   targetDID: string;
+  /** RD-994: org the view-as session is anchored to. Mandatory — the proxy
+   *  resolves the impersonated view against this org. */
+  orgID: string;
   /** Visual variant. "button" is full-size; "inline" is a smaller chip-like
    *  affordance suitable for being placed next to a DID link. */
   variant?: 'button' | 'inline';
@@ -26,6 +29,7 @@ interface ViewAsButtonProps {
  */
 export function ViewAsButton({
   targetDID,
+  orgID,
   variant = 'button',
   className,
   onStarted,
@@ -42,7 +46,7 @@ export function ViewAsButton({
     }
     setPending(true);
     try {
-      await start(targetDID);
+      await start(targetDID, orgID);
       onStarted?.();
     } catch (e) {
       // start() already populated the context error; mirror locally so the

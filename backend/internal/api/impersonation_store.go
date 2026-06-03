@@ -24,8 +24,16 @@ type ImpersonationSession struct {
 	// be replayed by a different user.
 	AdminDID string
 	// TargetDID is the DID being viewed-as. All proxied requests are routed
-	// under /api/v1/admin/impersonate/<TargetDID>/... on privacy-proxy.
+	// under /api/v1/admin/impersonate/<TargetDID>/in/<OrgID>/... on
+	// privacy-proxy.
 	TargetDID string
+	// OrgID is the organization the session is anchored to (RD-994). It is
+	// chosen by the admin at start time (the org selected in the dashboard)
+	// and bound to the token here. Every outbound impersonated request routes
+	// under /in/<OrgID>, so a session minted for Org A can never be replayed
+	// against Org B by tampering with the URL — the org comes from the token,
+	// not the request path.
+	OrgID string
 	// ExpiresAt is when this token stops being honored. The store also runs a
 	// periodic GC to drop entries past their expiry, but the per-lookup check
 	// is the authoritative one in case GC has not yet swept.
@@ -114,6 +122,9 @@ func (s *memoryImpersonationStore) Mint(_ context.Context, session Impersonation
 	}
 	if session.TargetDID == "" {
 		return "", time.Time{}, errors.New("impersonation: TargetDID required")
+	}
+	if session.OrgID == "" {
+		return "", time.Time{}, errors.New("impersonation: OrgID required")
 	}
 	if ttl <= 0 {
 		ttl = DefaultImpersonationTTL

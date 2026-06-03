@@ -14,6 +14,7 @@ func TestMemoryImpersonationStore_MintAndLookup(t *testing.T) {
 	tok, exp, err := s.Mint(context.Background(), ImpersonationSession{
 		AdminDID:  "did:p:admin",
 		TargetDID: "did:p:user",
+		OrgID:     "org-7",
 	}, time.Minute)
 	if err != nil {
 		t.Fatalf("Mint: %v", err)
@@ -29,7 +30,7 @@ func TestMemoryImpersonationStore_MintAndLookup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lookup: %v", err)
 	}
-	if got.AdminDID != "did:p:admin" || got.TargetDID != "did:p:user" {
+	if got.AdminDID != "did:p:admin" || got.TargetDID != "did:p:user" || got.OrgID != "org-7" {
 		t.Fatalf("unexpected session: %+v", got)
 	}
 	if !got.ExpiresAt.Equal(exp) {
@@ -57,6 +58,7 @@ func TestMemoryImpersonationStore_Expiry(t *testing.T) {
 	tok, _, err := s.Mint(context.Background(), ImpersonationSession{
 		AdminDID:  "did:p:a",
 		TargetDID: "did:p:b",
+		OrgID:     "org-7",
 	}, time.Minute)
 	if err != nil {
 		t.Fatalf("Mint: %v", err)
@@ -92,6 +94,7 @@ func TestMemoryImpersonationStore_Revoke(t *testing.T) {
 	tok, _, err := s.Mint(context.Background(), ImpersonationSession{
 		AdminDID:  "did:p:a",
 		TargetDID: "did:p:b",
+		OrgID:     "org-7",
 	}, time.Minute)
 	if err != nil {
 		t.Fatalf("Mint: %v", err)
@@ -119,13 +122,13 @@ func TestMemoryImpersonationStore_Sweep(t *testing.T) {
 
 	// Mint two: one short, one long.
 	short, _, err := s.Mint(context.Background(), ImpersonationSession{
-		AdminDID: "a", TargetDID: "b",
+		AdminDID: "a", TargetDID: "b", OrgID: "org-7",
 	}, time.Minute)
 	if err != nil {
 		t.Fatalf("Mint short: %v", err)
 	}
 	long, _, err := s.Mint(context.Background(), ImpersonationSession{
-		AdminDID: "a", TargetDID: "c",
+		AdminDID: "a", TargetDID: "c", OrgID: "org-7",
 	}, 1*time.Hour)
 	if err != nil {
 		t.Fatalf("Mint long: %v", err)
@@ -151,8 +154,9 @@ func TestMemoryImpersonationStore_MintValidation(t *testing.T) {
 		name string
 		sess ImpersonationSession
 	}{
-		{name: "missing admin", sess: ImpersonationSession{TargetDID: "x"}},
-		{name: "missing target", sess: ImpersonationSession{AdminDID: "x"}},
+		{name: "missing admin", sess: ImpersonationSession{TargetDID: "x", OrgID: "o"}},
+		{name: "missing target", sess: ImpersonationSession{AdminDID: "x", OrgID: "o"}},
+		{name: "missing org", sess: ImpersonationSession{AdminDID: "x", TargetDID: "y"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -177,6 +181,7 @@ func TestMemoryImpersonationStore_Concurrent(t *testing.T) {
 			tok, _, err := s.Mint(context.Background(), ImpersonationSession{
 				AdminDID:  "admin",
 				TargetDID: "target",
+				OrgID:     "org-7",
 			}, time.Minute)
 			if err != nil {
 				t.Errorf("Mint: %v", err)

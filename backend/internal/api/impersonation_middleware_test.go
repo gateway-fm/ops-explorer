@@ -70,7 +70,7 @@ func TestImpersonationMiddleware_BoundAdminMismatch(t *testing.T) {
 	h := s.impersonationMiddleware(captured.handler())
 
 	tok, _, err := store.Mint(context.Background(), ImpersonationSession{
-		AdminDID: "did:p:alice", TargetDID: "did:p:target",
+		AdminDID: "did:p:alice", TargetDID: "did:p:target", OrgID: "org-7",
 	}, time.Minute)
 	if err != nil {
 		t.Fatalf("Mint: %v", err)
@@ -96,7 +96,7 @@ func TestImpersonationMiddleware_StripsHeaderAndAttachesSession(t *testing.T) {
 	h := s.impersonationMiddleware(captured.handler())
 
 	tok, _, err := store.Mint(context.Background(), ImpersonationSession{
-		AdminDID: "did:p:alice", TargetDID: "did:p:target",
+		AdminDID: "did:p:alice", TargetDID: "did:p:target", OrgID: "org-7",
 	}, time.Minute)
 	if err != nil {
 		t.Fatalf("Mint: %v", err)
@@ -129,7 +129,7 @@ func TestImpersonationMiddleware_RejectsWriteMethods(t *testing.T) {
 	h := s.impersonationMiddleware(captured.handler())
 
 	tok, _, err := store.Mint(context.Background(), ImpersonationSession{
-		AdminDID: "did:p:alice", TargetDID: "did:p:target",
+		AdminDID: "did:p:alice", TargetDID: "did:p:target", OrgID: "org-7",
 	}, time.Minute)
 	if err != nil {
 		t.Fatalf("Mint: %v", err)
