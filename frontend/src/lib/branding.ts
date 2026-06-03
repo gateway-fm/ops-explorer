@@ -34,7 +34,7 @@ export const branding = {
 
   // Social
   twitter: env('VITE_BRAND_TWITTER', 'https://x.com/gateway_eth'),
-  linkedin: env('VITE_BRAND_LINKEDIN', 'https://www.linkedin.com/company/gatewayfm'),
+  linkedin: env('VITE_BRAND_LINKEDIN', 'https://www.linkedin.com/company/gateway-fm/'),
   discord: env('VITE_BRAND_DISCORD', 'https://discord.gg/grPXnEbAyv'),
   telegram: env('VITE_BRAND_TELEGRAM', 'https://t.me/gateway_fm'),
 } as const;
