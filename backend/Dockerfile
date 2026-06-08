@@ -1,4 +1,8 @@
-FROM golang:1.25-alpine AS builder
+# D-1: pin the builder to go1.25.11 in lockstep with go.mod's `toolchain
+# go1.25.11` so the runtime binary is built against the patched stdlib that
+# clears GO-2026-5039 (net/textproto, privacy path) and GO-2026-5037
+# (crypto/x509). Do not float below 1.25.11.
+FROM golang:1.25.11-alpine AS builder
 
 # Upgrade system packages
 RUN apk update --no-cache && apk upgrade --no-cache
