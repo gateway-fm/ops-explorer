@@ -132,6 +132,13 @@ func TestLoadPrivacyProxyPublicURLDefaulting(t *testing.T) {
 	// Contract (config.go:187-189): PrivacyProxyPublicURL defaults to
 	// PrivacyProxyURL when not explicitly set.
 	t.Setenv("PRIVACY_PROXY_URL", "http://proxy.internal:8081")
+	// Forward-compat with the audit/privacy-hardening branch: once that lands,
+	// privacy mode (PRIVACY_PROXY_URL set) is fail-closed and Load() rejects an
+	// empty CORS_ALLOWED_ORIGINS. Setting it here is a harmless no-op on this
+	// branch alone (the var is not yet read) and keeps this test green after the
+	// two branches merge. The behaviour under test (public-URL defaulting) is
+	// unaffected.
+	t.Setenv("CORS_ALLOWED_ORIGINS", "https://explorer.example")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
