@@ -109,7 +109,17 @@ func New(database APIDatabase, rpcClient *rpc.Client, idx any, priceService *pri
 		s.wsHub = ws.NewHub(eventBus, s.wsConfig.MaxConnections)
 	}
 
-	if cfg != nil && cfg.SolcPath != "" {
+	// P-2: in privacy mode the default (!privacy) binary must NOT build the
+	// verifier or mount any local-DB write surface — those persist
+	// attacker-controlled source/ABI into block-explorer's own Postgres,
+	// bypassing privacy-proxy redaction. Skip verifier construction entirely
+	// (even when SolcPath is the default /opt/solc) and recommend the
+	// -tags privacy image. Route gating happens in setupRoutes via
+	// inPrivacyMode(). This is fail-safe: no write surface, no fatal.
+	if s.inPrivacyMode() {
+		log.Warn("privacy mode: contract-verification + Sourcify write surfaces are disabled; " +
+			"build/deploy the `-tags privacy` image to compile them out entirely")
+	} else if cfg != nil && cfg.SolcPath != "" {
 		s.verifier = verifier.NewVerifier(database, rpcClient, &verifier.Config{
 			SolcPath:            cfg.SolcPath,
 			UseSourcifyFallback: cfg.UseSourcifyFallback,
@@ -121,6 +131,14 @@ func New(database APIDatabase, rpcClient *rpc.Client, idx any, priceService *pri
 
 	s.setupRoutes()
 	return s
+}
+
+// inPrivacyMode reports whether this server instance is serving privacy mode
+// (reads routed through privacy-proxy). Used to gate local-DB write surfaces
+// that would bypass privacy-proxy's redaction (P-2). True only when a privacy
+// client is wired and enabled — i.e. PRIVACY_PROXY_URL was set.
+func (s *Server) inPrivacyMode() bool {
+	return s.privacyClient != nil && s.privacyClient.IsEnabled()
 }
 
 func (s *Server) setupRoutes() {
@@ -225,7 +243,14 @@ func (s *Server) setupAPIRoutes(r chi.Router) {
 	// is registered via the build-tagged verification helper so privacy
 	// builds can compile it out entirely. See verification_routes_*.go.
 	// (In standalone mode this also adds /verify/* below.)
-	s.registerVerificationAPI(r)
+	//
+	// P-2: the privacy build no-ops registerVerificationAPI, but the DEFAULT
+	// (!privacy) binary can also serve privacy mode — there the helper is the
+	// real one, so gate it at runtime too. These routes persist source/ABI into
+	// block-explorer's own Postgres, bypassing privacy-proxy redaction.
+	if !s.inPrivacyMode() {
+		s.registerVerificationAPI(r)
+	}
 
 	r.Get("/stats", s.handleGetStats)
 	r.Get("/chain-info", s.handleGetChainInfo)
@@ -262,8 +287,12 @@ func (s *Server) setupAPIRoutes(r chi.Router) {
 		r.Get("/internal", s.handleGetAddressInternalTxs)
 		r.Get("/logs", s.handleGetAddressLogs)
 		r.Get("/balances", s.handleGetAddressTokenBalances)
-		// Sourcify lookups are also build-tagged (privacy build = no-op).
-		s.registerSourcifyAddressRoutes(r)
+		// Sourcify lookups are also build-tagged (privacy build = no-op) and,
+		// like /verify, runtime-gated off in privacy mode for the default
+		// binary (P-2) — Sourcify writes verified source to the local DB too.
+		if !s.inPrivacyMode() {
+			s.registerSourcifyAddressRoutes(r)
+		}
 	})
 
 	// /verify/* moved into the build-tagged registerVerificationAPI helper
