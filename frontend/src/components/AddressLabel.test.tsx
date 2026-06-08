@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { AddressLabel, LABEL_CONFIG } from './AddressLabel';
+import { AddressLabel } from './AddressLabel';
+import { LABEL_CONFIG } from './addressLabelConfig';
 import type { AddressVisibility, VisibilityReason } from '../lib/api';
 
 // Contract under test (REQ-5.5 visibility labels): AddressLabel renders the

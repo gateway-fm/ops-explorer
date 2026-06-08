@@ -1,21 +1,11 @@
 import type { AddressVisibility, VisibilityReason } from '../lib/api';
+import { LABEL_CONFIG } from './addressLabelConfig';
 
 interface AddressLabelProps {
   reason?: VisibilityReason;
   visibility?: AddressVisibility | null;
   className?: string;
 }
-
-// Exported so tests can assert every configured reason renders its label
-// (by iterating Object.keys(LABEL_CONFIG)) without duplicating the mapping.
-export const LABEL_CONFIG: Record<string, { text: string; classes: string }> = {
-  own_address:          { text: 'Mine',                 classes: 'bg-success-50 text-success-700' },
-  rbac_group_member:    { text: 'My Org',               classes: 'bg-warning-50 text-warning-700' },
-  public_address:       { text: 'Public',               classes: 'bg-neutral-100 text-neutral-500' },
-  disclosure_grant:     { text: 'Disclosed',             classes: 'bg-purple-100 text-purple-700' },
-  visible_to_grant:    { text: 'Shared',                classes: 'bg-blue-100 text-blue-700' },
-  participant_override: { text: 'Counterparty',         classes: 'bg-primary-50 text-primary-700' },
-};
 
 export function AddressLabel({ reason, visibility, className = '' }: AddressLabelProps) {
   // If visibility data is available and address is not visible,
