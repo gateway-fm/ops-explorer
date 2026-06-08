@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -76,6 +77,15 @@ type Config struct {
 	EnableGasPrices     bool `mapstructure:"enable_gas_prices"`
 	EnableProviderCache bool `mapstructure:"enable_provider_cache"`
 
+	// Price (CoinGecko) egress. EnablePrice gates the background price
+	// refresher and /price endpoint data source. P-4: default OFF in privacy
+	// mode (no unexpected third-party egress for confidential/air-gapped
+	// deployments), ON in standalone. PriceCoinID / PriceCurrency make the
+	// CoinGecko query configurable per chain.
+	EnablePrice   bool   `mapstructure:"enable_price"`
+	PriceCoinID   string `mapstructure:"price_coin_id"`
+	PriceCurrency string `mapstructure:"price_currency"`
+
 	EnableOPDeposits      bool          `mapstructure:"enable_op_deposits"`
 	L1RPCURL              string        `mapstructure:"l1_rpc_url"`
 	OptimismPortalAddress string        `mapstructure:"optimism_portal_address"`
@@ -128,6 +138,9 @@ func setDefaults(v *viper.Viper) {
 
 	v.SetDefault("enable_gas_prices", false)
 	v.SetDefault("enable_provider_cache", true)
+	v.SetDefault("enable_price", true)
+	v.SetDefault("price_coin_id", "ethereum")
+	v.SetDefault("price_currency", "usd")
 	v.SetDefault("enable_op_deposits", false)
 	v.SetDefault("l1_rpc_url", "")
 	v.SetDefault("optimism_portal_address", "")
@@ -196,6 +209,20 @@ func Load() (*Config, error) {
 
 	cfg.EnableGasPrices = v.GetBool("enable_gas_prices")
 	cfg.EnableProviderCache = v.GetBool("enable_provider_cache")
+	cfg.PriceCoinID = v.GetString("price_coin_id")
+	cfg.PriceCurrency = v.GetString("price_currency")
+
+	// P-4: privacy-aware default for the CoinGecko egress. When ENABLE_PRICE is
+	// set explicitly (env or .env) honour it; otherwise default OFF in privacy
+	// mode (no unexpected third-party egress for confidential/air-gapped
+	// deployments) and ON in standalone. os.LookupEnv is used rather than
+	// viper.IsSet because AutomaticEnv + a registered default makes IsSet
+	// unreliable for distinguishing "unset" from "defaulted".
+	if _, explicit := os.LookupEnv("ENABLE_PRICE"); explicit {
+		cfg.EnablePrice = v.GetBool("enable_price")
+	} else {
+		cfg.EnablePrice = cfg.PrivacyProxyURL == ""
+	}
 	cfg.EnableOPDeposits = v.GetBool("enable_op_deposits")
 	cfg.L1RPCURL = v.GetString("l1_rpc_url")
 	cfg.OptimismPortalAddress = v.GetString("optimism_portal_address")
