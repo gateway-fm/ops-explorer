@@ -60,6 +60,13 @@ type Config struct {
 	SSOClientID           string `mapstructure:"sso_client_id"`
 	SSOClientSecret       string `mapstructure:"sso_client_secret"` // RD-1006: sent at /oauth/token via HTTP Basic so the proxy can authenticate this client
 	SSORedirectURI        string `mapstructure:"sso_redirect_uri"`
+	// SSOJWKSURL is privacy-proxy's JWKS endpoint. When set, the auth-cookie JWT
+	// is signature-verified in-process (A-2, alg-confusion-safe) before its
+	// subject is used for any local decision; SSOIssuer/SSOAudience are checked
+	// only when non-empty. Required to enable "View as user" impersonation.
+	SSOJWKSURL  string `mapstructure:"sso_jwks_url"`
+	SSOIssuer   string `mapstructure:"sso_issuer"`
+	SSOAudience string `mapstructure:"sso_audience"`
 	// PostLoginRedirectURL, if set, overrides the post-OAuth redirect
 	// target. Use this when the explorer UI is embedded in another app
 	// (e.g. an iframe in a parent dashboard) so the user lands on the
@@ -135,6 +142,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("sso_client_id", "explorer")
 	v.SetDefault("sso_client_secret", "")
 	v.SetDefault("sso_redirect_uri", "http://localhost:8080/api/auth/callback")
+	v.SetDefault("sso_jwks_url", "")
+	v.SetDefault("sso_issuer", "")
+	v.SetDefault("sso_audience", "")
 	v.SetDefault("post_login_redirect_url", "")
 
 	v.SetDefault("log_level", "info")
@@ -210,6 +220,9 @@ func Load() (*Config, error) {
 	cfg.SSOClientID = v.GetString("sso_client_id")
 	cfg.SSOClientSecret = v.GetString("sso_client_secret")
 	cfg.SSORedirectURI = v.GetString("sso_redirect_uri")
+	cfg.SSOJWKSURL = v.GetString("sso_jwks_url")
+	cfg.SSOIssuer = v.GetString("sso_issuer")
+	cfg.SSOAudience = v.GetString("sso_audience")
 	cfg.PostLoginRedirectURL = v.GetString("post_login_redirect_url")
 
 	cfg.LogLevel = v.GetString("log_level")

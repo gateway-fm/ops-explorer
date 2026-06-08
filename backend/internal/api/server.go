@@ -40,6 +40,11 @@ type Server struct {
 	postLoginRedirectURL string
 	gasPricesEnabled     bool
 	cfg                  *ServerConfig // retained for CORS allowlist / privacy-mode flags (W-1, A-3)
+	// jwtVerifier verifies the auth-cookie JWT signature against privacy-proxy's
+	// JWKS (A-2). nil unless SSO_JWKS_URL is configured; when nil, GetAuthDID
+	// falls back to display-only ExtractClaims. The impersonation caller-DID
+	// binding requires this to be non-nil (the JWKS-required path).
+	jwtVerifier          *auth.Verifier
 	port                 int
 	router               *chi.Mux
 	etherscanResults     sync.Map // guid -> *etherscanVerifyResult
@@ -81,6 +86,16 @@ type ServerConfig struct {
 	// fail-closed defaults (W-1 CORS, A-3 cookie Secure) without re-reading the
 	// process env.
 	PrivacyMode bool
+
+	// JWT signature verification (A-2). When SSOJWKSURL is set, the auth-cookie
+	// JWT is signature-verified (alg-confusion-safe) against this JWKS before
+	// GetAuthDID trusts the subject; SSOIssuer/SSOAudience are checked only when
+	// non-empty. When unset, GetAuthDID is display-only (ExtractClaims) and the
+	// impersonation feature is disabled (its caller-DID binding requires a
+	// verified DID).
+	SSOJWKSURL  string
+	SSOIssuer   string
+	SSOAudience string
 }
 
 // New constructs the api Server. The idx parameter is retained for
@@ -101,17 +116,39 @@ func New(database APIDatabase, rpcClient *rpc.Client, idx any, priceService *pri
 		router:        chi.NewRouter(),
 	}
 
-	if privacyClient != nil && privacyClient.IsEnabled() {
-		s.privacyProxyURL = privacyClient.BaseURL()
-		// "View as user" (RD-928): only meaningful when privacy-proxy is
-		// reachable — without it there is nothing to impersonate against.
-		s.impersonations = NewMemoryImpersonationStore(0)
-	}
-
 	if cfg != nil {
 		s.cfg = cfg
 		s.postLoginRedirectURL = cfg.PostLoginRedirectURL
 		s.gasPricesEnabled = cfg.EnableGasPrices
+
+		// A-2: build the JWKS signature verifier when configured. GetAuthDID
+		// uses it to verify the auth-cookie JWT before trusting the subject.
+		if cfg.SSOJWKSURL != "" {
+			s.jwtVerifier = auth.NewVerifier(auth.VerifierConfig{
+				JWKSURL:  cfg.SSOJWKSURL,
+				Issuer:   cfg.SSOIssuer,
+				Audience: cfg.SSOAudience,
+			})
+		}
+	}
+
+	if privacyClient != nil && privacyClient.IsEnabled() {
+		s.privacyProxyURL = privacyClient.BaseURL()
+		// "View as user" (RD-928): only meaningful when privacy-proxy is
+		// reachable — without it there is nothing to impersonate against.
+		//
+		// A-2 (JWKS-required path): the impersonation caller-DID binding makes a
+		// local authz decision keyed off GetAuthDID, so it must be a VERIFIED
+		// DID. Enable the feature only when a JWT verifier is configured
+		// (SSO_JWKS_URL set); otherwise leave s.impersonations nil so start/stop
+		// return 503 and the middleware is a no-op — fail-closed rather than bind
+		// against an unverified, spoofable DID.
+		if s.jwtVerifier != nil {
+			s.impersonations = NewMemoryImpersonationStore(0)
+		} else {
+			log.Warn("privacy mode: 'View as user' impersonation is DISABLED because SSO_JWKS_URL is not set — " +
+				"the caller-DID binding requires a signature-verified DID (A-2). Set SSO_JWKS_URL to enable it.")
+		}
 	}
 
 	if cfg != nil && cfg.MetricsEnabled {

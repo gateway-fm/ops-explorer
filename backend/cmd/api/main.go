@@ -95,6 +95,9 @@ func main() {
 		EnableGasPrices:      cfg.EnableGasPrices,
 		CORSAllowedOrigins:   cfg.CORSAllowedOrigins,
 		PrivacyMode:          cfg.PrivacyProxyURL != "",
+		SSOJWKSURL:           cfg.SSOJWKSURL,
+		SSOIssuer:            cfg.SSOIssuer,
+		SSOAudience:          cfg.SSOAudience,
 	}
 
 	// chooseProvider decides which chain-data source the api will serve

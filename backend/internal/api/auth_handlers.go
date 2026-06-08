@@ -194,12 +194,32 @@ func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"logged_out": true})
 }
 
+// GetAuthDID returns the DID from the auth cookie.
+//
+// A-2: when a JWKS verifier is configured (SSO_JWKS_URL set), the cookie JWT is
+// signature-verified (alg-confusion-safe; iss/aud/exp checked) before its
+// subject is trusted — so callers that make local authz decisions on this DID
+// (the impersonation caller-DID binding) act on a verified identity. When NO
+// verifier is configured this is DISPLAY-ONLY: the subject is decoded from an
+// unverified token and must not be the sole basis for any authorization
+// decision (the impersonation feature is disabled in that case — see New). The
+// raw cookie is still forwarded as the Bearer and privacy-proxy re-validates it
+// on every call; the proxy remains the authoritative gate.
 func (s *Server) GetAuthDID(r *http.Request) string {
 	cookie, err := r.Cookie(AuthCookieName)
 	if err != nil || cookie.Value == "" {
 		return ""
 	}
 
+	if s.jwtVerifier != nil {
+		claims, err := s.jwtVerifier.VerifyToken(cookie.Value)
+		if err != nil {
+			return ""
+		}
+		return claims.GetDID()
+	}
+
+	// Display-only fallback (no JWKS configured).
 	claims, err := auth.ExtractClaims(cookie.Value)
 	if err != nil || claims.IsExpired() {
 		return ""
