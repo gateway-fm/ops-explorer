@@ -70,6 +70,11 @@ type Config struct {
 
 	LogLevel string `mapstructure:"log_level"`
 
+	// CORSAllowedOrigins is the parsed CORS_ALLOWED_ORIGINS allowlist
+	// (comma-separated). W-1: REQUIRED in privacy mode (fail-closed in
+	// Validate); empty is permitted in standalone (reflect-any + warn).
+	CORSAllowedOrigins []string `mapstructure:"-"`
+
 	// HiddenTxTypes is a comma-separated list of transaction type numbers to
 	// exclude from the default transaction listings (e.g. "126" for OP deposit TXs).
 	HiddenTxTypes string `mapstructure:"hidden_tx_types"`
@@ -133,6 +138,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("post_login_redirect_url", "")
 
 	v.SetDefault("log_level", "info")
+
+	v.SetDefault("cors_allowed_origins", "")
 
 	v.SetDefault("hidden_tx_types", "126") // OP deposit system transactions hidden by default
 
@@ -206,6 +213,7 @@ func Load() (*Config, error) {
 	cfg.PostLoginRedirectURL = v.GetString("post_login_redirect_url")
 
 	cfg.LogLevel = v.GetString("log_level")
+	cfg.CORSAllowedOrigins = splitAndTrim(v.GetString("cors_allowed_origins"))
 
 	cfg.EnableGasPrices = v.GetBool("enable_gas_prices")
 	cfg.EnableProviderCache = v.GetBool("enable_provider_cache")
@@ -237,9 +245,34 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
+// splitAndTrim splits a comma-separated string into a slice, trimming spaces
+// and dropping empty entries. Returns nil for an empty/whitespace input.
+func splitAndTrim(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func (c *Config) Validate() error {
 	if c.RPCURL == "" {
 		return fmt.Errorf("RPC_URL is required")
+	}
+	// W-1: privacy mode is FAIL-CLOSED on CORS. A confidential deployment must
+	// not fall back to reflecting any Origin with credentials, so require an
+	// explicit allowlist. This is an intentional breaking change for privacy
+	// operators (standalone keeps the permissive empty-allowlist default).
+	if c.PrivacyProxyURL != "" && len(c.CORSAllowedOrigins) == 0 {
+		return fmt.Errorf("CORS_ALLOWED_ORIGINS is required in privacy mode (PRIVACY_PROXY_URL set): " +
+			"refusing to fall back to reflecting any Origin with credentials. " +
+			"Set CORS_ALLOWED_ORIGINS to a comma-separated list of trusted browser origins")
 	}
 	if c.DatabaseURL == "" {
 		return fmt.Errorf("DATABASE_URL is required")

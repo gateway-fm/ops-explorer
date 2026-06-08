@@ -39,6 +39,7 @@ type Server struct {
 	ssoClient            *auth.SSOClient
 	postLoginRedirectURL string
 	gasPricesEnabled     bool
+	cfg                  *ServerConfig // retained for CORS allowlist / privacy-mode flags (W-1, A-3)
 	port                 int
 	router               *chi.Mux
 	etherscanResults     sync.Map // guid -> *etherscanVerifyResult
@@ -68,6 +69,18 @@ type ServerConfig struct {
 	MetricsEnabled       bool
 	PostLoginRedirectURL string
 	EnableGasPrices      bool
+
+	// CORSAllowedOrigins is the allowlist of browser Origins permitted to make
+	// credentialed cross-origin requests (W-1). When non-empty, only these
+	// Origins are reflected into Access-Control-Allow-Origin. When empty in
+	// standalone mode the server reflects any Origin (legacy permissive
+	// behavior + a startup warning); privacy mode requires a non-empty
+	// allowlist (enforced fail-closed in config.Validate).
+	CORSAllowedOrigins []string
+	// PrivacyMode mirrors cfg.PrivacyProxyURL != "" so the server can apply
+	// fail-closed defaults (W-1 CORS, A-3 cookie Secure) without re-reading the
+	// process env.
+	PrivacyMode bool
 }
 
 // New constructs the api Server. The idx parameter is retained for
@@ -96,6 +109,7 @@ func New(database APIDatabase, rpcClient *rpc.Client, idx any, priceService *pri
 	}
 
 	if cfg != nil {
+		s.cfg = cfg
 		s.postLoginRedirectURL = cfg.PostLoginRedirectURL
 		s.gasPricesEnabled = cfg.EnableGasPrices
 	}
@@ -141,6 +155,44 @@ func (s *Server) inPrivacyMode() bool {
 	return s.privacyClient != nil && s.privacyClient.IsEnabled()
 }
 
+// corsAllowOriginFunc builds the CORS origin matcher (W-1). With a non-empty
+// allowlist, only listed Origins are permitted (exact match) — paired with
+// AllowCredentials this avoids the dangerous reflect-any-Origin + credentials
+// combination. With an empty allowlist the behavior depends on mode:
+//   - privacy mode: this is unreachable in production (config.Validate rejects
+//     an empty allowlist), but if it ever happens we fail closed (deny all).
+//   - standalone: legacy permissive behavior — reflect any Origin — with a
+//     one-time startup warning.
+func (s *Server) corsAllowOriginFunc() func(string) bool {
+	var allowed []string
+	privacyMode := false
+	if s.cfg != nil {
+		allowed = s.cfg.CORSAllowedOrigins
+		privacyMode = s.cfg.PrivacyMode
+	}
+
+	if len(allowed) > 0 {
+		set := make(map[string]struct{}, len(allowed))
+		for _, o := range allowed {
+			set[o] = struct{}{}
+		}
+		return func(origin string) bool {
+			_, ok := set[origin]
+			return ok
+		}
+	}
+
+	// Empty allowlist.
+	if privacyMode {
+		// Defense-in-depth: config.Validate already fails closed here, so this
+		// path should never run in privacy mode. Deny all rather than reflect.
+		log.Warn("CORS: empty allowlist in privacy mode — denying all cross-origin requests (this should have been rejected at startup)")
+		return func(string) bool { return false }
+	}
+	log.Warn("CORS: no CORS_ALLOWED_ORIGINS configured — reflecting any Origin with credentials (standalone permissive default). Set CORS_ALLOWED_ORIGINS to restrict.")
+	return func(string) bool { return true }
+}
+
 func (s *Server) setupRoutes() {
 	s.router.Use(log.HTTPMiddleware)
 	s.router.Use(middleware.Recoverer)
@@ -151,7 +203,7 @@ func (s *Server) setupRoutes() {
 	}
 
 	corsOpts := cors.Options{
-		AllowOriginFunc:  func(origin string) bool { return true },
+		AllowOriginFunc:  s.corsAllowOriginFunc(),
 		AllowedMethods:   []string{"GET", "POST", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Content-Type", "Cookie"},
 		AllowCredentials: true,

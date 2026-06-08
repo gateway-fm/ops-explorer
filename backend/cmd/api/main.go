@@ -93,6 +93,8 @@ func main() {
 		MetricsEnabled:       cfg.MetricsEnabled,
 		PostLoginRedirectURL: cfg.PostLoginRedirectURL,
 		EnableGasPrices:      cfg.EnableGasPrices,
+		CORSAllowedOrigins:   cfg.CORSAllowedOrigins,
+		PrivacyMode:          cfg.PrivacyProxyURL != "",
 	}
 
 	// chooseProvider decides which chain-data source the api will serve

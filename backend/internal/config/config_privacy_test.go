@@ -1,6 +1,74 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+// W-1: privacy mode is FAIL-CLOSED on CORS — CORS_ALLOWED_ORIGINS is REQUIRED.
+// With PRIVACY_PROXY_URL set and no allowlist, config.Load must return an error
+// at startup rather than fall back to reflect-any-Origin + credentials
+// (PROD_READINESS_AUDIT §W-1). Standalone with an empty allowlist must still
+// load (permissive + warn, preserving current behavior).
+func TestCORSAllowlistRequiredInPrivacyMode(t *testing.T) {
+	t.Run("privacy mode + empty allowlist -> Load error (fail-closed)", func(t *testing.T) {
+		t.Setenv("PRIVACY_PROXY_URL", "https://proxy.example.com")
+		t.Setenv("INDEXER_URL", "")
+		t.Setenv("CORS_ALLOWED_ORIGINS", "")
+
+		_, err := Load()
+		if err == nil {
+			t.Fatal("expected Load to fail-closed when privacy mode has no CORS_ALLOWED_ORIGINS, got nil error")
+		}
+		if !strings.Contains(strings.ToUpper(err.Error()), "CORS_ALLOWED_ORIGINS") {
+			t.Errorf("error should name CORS_ALLOWED_ORIGINS, got: %v", err)
+		}
+	})
+
+	t.Run("privacy mode + allowlist set -> loads", func(t *testing.T) {
+		t.Setenv("PRIVACY_PROXY_URL", "https://proxy.example.com")
+		t.Setenv("INDEXER_URL", "")
+		t.Setenv("CORS_ALLOWED_ORIGINS", "https://app.example.com")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load should succeed with a non-empty allowlist in privacy mode: %v", err)
+		}
+		if len(cfg.CORSAllowedOrigins) != 1 || cfg.CORSAllowedOrigins[0] != "https://app.example.com" {
+			t.Errorf("CORSAllowedOrigins = %#v, want [https://app.example.com]", cfg.CORSAllowedOrigins)
+		}
+	})
+
+	t.Run("standalone + empty allowlist -> loads (permissive)", func(t *testing.T) {
+		t.Setenv("PRIVACY_PROXY_URL", "")
+		t.Setenv("INDEXER_URL", "indexer:50051")
+		t.Setenv("CORS_ALLOWED_ORIGINS", "")
+
+		if _, err := Load(); err != nil {
+			t.Fatalf("standalone with empty allowlist must still load, got: %v", err)
+		}
+	})
+
+	t.Run("allowlist parses comma-separated and trims spaces", func(t *testing.T) {
+		t.Setenv("PRIVACY_PROXY_URL", "")
+		t.Setenv("INDEXER_URL", "indexer:50051")
+		t.Setenv("CORS_ALLOWED_ORIGINS", "https://a.example.com, https://b.example.com ,https://c.example.com")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		want := []string{"https://a.example.com", "https://b.example.com", "https://c.example.com"}
+		if len(cfg.CORSAllowedOrigins) != len(want) {
+			t.Fatalf("CORSAllowedOrigins = %#v, want %#v", cfg.CORSAllowedOrigins, want)
+		}
+		for i := range want {
+			if cfg.CORSAllowedOrigins[i] != want[i] {
+				t.Errorf("CORSAllowedOrigins[%d] = %q, want %q", i, cfg.CORSAllowedOrigins[i], want[i])
+			}
+		}
+	})
+}
 
 // P-4: CoinGecko egress must be off by default in privacy mode (a
 // confidential/air-gapped deployment must not make unexpected third-party
@@ -11,6 +79,8 @@ func TestEnablePriceDefault_PrivacyVsStandalone(t *testing.T) {
 		// Only PRIVACY_PROXY_URL set; ENABLE_PRICE left unset.
 		t.Setenv("PRIVACY_PROXY_URL", "https://proxy.example.com")
 		t.Setenv("INDEXER_URL", "")
+		// W-1: privacy mode now requires CORS_ALLOWED_ORIGINS to Load.
+		t.Setenv("CORS_ALLOWED_ORIGINS", "https://app.example.com")
 
 		cfg, err := Load()
 		if err != nil {
@@ -37,6 +107,8 @@ func TestEnablePriceDefault_PrivacyVsStandalone(t *testing.T) {
 	t.Run("explicit ENABLE_PRICE=true overrides the privacy default", func(t *testing.T) {
 		t.Setenv("PRIVACY_PROXY_URL", "https://proxy.example.com")
 		t.Setenv("ENABLE_PRICE", "true")
+		// W-1: privacy mode now requires CORS_ALLOWED_ORIGINS to Load.
+		t.Setenv("CORS_ALLOWED_ORIGINS", "https://app.example.com")
 
 		cfg, err := Load()
 		if err != nil {
