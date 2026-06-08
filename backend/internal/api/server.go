@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -190,6 +192,77 @@ func New(database APIDatabase, rpcClient *rpc.Client, idx any, priceService *pri
 	return s
 }
 
+// csrfProtect is a method-gated Origin/Referer-allowlist CSRF middleware (A-1).
+// On state-changing methods (POST/PUT/PATCH/DELETE) it requires the request's
+// Origin (preferred) or Referer to match the configured CORS allowlist, and
+// fails closed when BOTH are absent. Safe methods (GET/HEAD/OPTIONS) always
+// pass. When the allowlist is empty (standalone default) it is a no-op — which
+// privacy mode never hits because W-1 makes the allowlist mandatory there.
+//
+// This complements SameSite=Lax (which a top-level cross-site navigation can
+// still defeat) with an explicit Origin/Referer check on every cookie-authed
+// write.
+func (s *Server) csrfProtect(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isSafeMethod(r.Method) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		var allowed []string
+		if s.cfg != nil {
+			allowed = s.cfg.CORSAllowedOrigins
+		}
+		if len(allowed) == 0 {
+			// No allowlist configured (standalone) — CSRF check is a no-op.
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if !originOrRefererAllowed(r, allowed) {
+			writeError(w, http.StatusForbidden, "cross-origin request rejected")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func isSafeMethod(method string) bool {
+	switch strings.ToUpper(method) {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
+		return true
+	default:
+		return false
+	}
+}
+
+// originOrRefererAllowed returns true iff the request's Origin (preferred) or,
+// failing that, its Referer origin matches one of the allowed origins. Returns
+// false when neither header is present (fail-closed).
+func originOrRefererAllowed(r *http.Request, allowed []string) bool {
+	if origin := r.Header.Get("Origin"); origin != "" {
+		return originInList(origin, allowed)
+	}
+	if ref := r.Header.Get("Referer"); ref != "" {
+		u, err := url.Parse(ref)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			return false
+		}
+		return originInList(u.Scheme+"://"+u.Host, allowed)
+	}
+	// Neither Origin nor Referer present on a state-changing request: fail closed.
+	return false
+}
+
+func originInList(origin string, allowed []string) bool {
+	for _, a := range allowed {
+		if a == origin {
+			return true
+		}
+	}
+	return false
+}
+
 // inPrivacyMode reports whether this server instance is serving privacy mode
 // (reads routed through privacy-proxy). Used to gate local-DB write surfaces
 // that would bypass privacy-proxy's redaction (P-2). True only when a privacy
@@ -295,6 +368,10 @@ func (s *Server) setupRoutes() {
 	// authenticated as the real admin user, never under another view-as token.
 	if s.impersonations != nil {
 		s.router.Route("/api/impersonation", func(r chi.Router) {
+			// A-1: CSRF-protect the state-changing impersonation routes
+			// (POST /start, DELETE /{token}). Method-gated, so the GET /{token}
+			// restore endpoint is never blocked.
+			r.Use(s.csrfProtect)
 			r.Post("/start", s.handleStartImpersonation)
 			r.Delete("/{token}", s.handleStopImpersonation)
 			// Cold-mount restore: lets the frontend translate ?as=<token>
@@ -306,6 +383,9 @@ func (s *Server) setupRoutes() {
 
 	if s.ssoClient != nil && s.ssoClient.IsEnabled() {
 		s.router.Route("/api/auth", func(r chi.Router) {
+			// A-1: CSRF-protect POST /logout (method-gated, so the GET login/
+			// callback/status routes pass through).
+			r.Use(s.csrfProtect)
 			r.Get("/login", s.handleAuthLogin)
 			r.Get("/callback", s.handleAuthCallback)
 			r.Get("/status", s.handleAuthStatus)
@@ -325,6 +405,9 @@ func (s *Server) setupRoutes() {
 		})
 
 		s.router.Route("/api/eth", func(r chi.Router) {
+			// A-1: CSRF-protect the eth-link writes (POST challenge/verify,
+			// DELETE address). Method-gated, so GET /addresses passes through.
+			r.Use(s.csrfProtect)
 			r.Get("/addresses", s.handleGetLinkedAddresses)
 			r.Post("/link/challenge", s.handleCreateLinkChallenge)
 			r.Post("/link/verify", s.handleVerifyLink)
@@ -378,7 +461,12 @@ func (s *Server) setupAPIRoutes(r chi.Router) {
 		r.Get("/transfers", s.handleGetAddressTransfers)
 		r.Get("/contract", s.handleGetContract)
 		r.Get("/contract/uml", s.handleGetContractUML)
-		r.Post("/abi", s.handleUpdateContractABI)
+		// A-1: CSRF-protect the ABI write. In privacy mode this forwards to
+		// privacy-proxy (not the local DB — see P-2 audit correction), but it is
+		// still a cookie-authed state-changing call, so it needs the
+		// Origin/Referer check. csrfProtect is method-gated and a no-op when no
+		// allowlist is configured (standalone).
+		r.With(s.csrfProtect).Post("/abi", s.handleUpdateContractABI)
 		r.Get("/internal", s.handleGetAddressInternalTxs)
 		r.Get("/logs", s.handleGetAddressLogs)
 		r.Get("/balances", s.handleGetAddressTokenBalances)
