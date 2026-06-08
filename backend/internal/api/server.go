@@ -87,6 +87,12 @@ type ServerConfig struct {
 	// process env.
 	PrivacyMode bool
 
+	// CookieSecure controls the Secure flag on auth cookies (A-3): "true"
+	// always, "false" never, "auto" only when the request is actually HTTPS
+	// (r.TLS set or X-Forwarded-Proto: https from a trusted proxy). Privacy mode
+	// defaults to "true" (forced); standalone defaults to "auto".
+	CookieSecure string
+
 	// JWT signature verification (A-2). When SSOJWKSURL is set, the auth-cookie
 	// JWT is signature-verified (alg-confusion-safe) against this JWKS before
 	// GetAuthDID trusts the subject; SSOIssuer/SSOAudience are checked only when

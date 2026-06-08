@@ -95,6 +95,7 @@ func main() {
 		EnableGasPrices:      cfg.EnableGasPrices,
 		CORSAllowedOrigins:   cfg.CORSAllowedOrigins,
 		PrivacyMode:          cfg.PrivacyProxyURL != "",
+		CookieSecure:         cfg.CookieSecure,
 		SSOJWKSURL:           cfg.SSOJWKSURL,
 		SSOIssuer:            cfg.SSOIssuer,
 		SSOAudience:          cfg.SSOAudience,

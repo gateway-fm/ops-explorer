@@ -82,6 +82,12 @@ type Config struct {
 	// Validate); empty is permitted in standalone (reflect-any + warn).
 	CORSAllowedOrigins []string `mapstructure:"-"`
 
+	// CookieSecure controls the Secure flag on auth cookies (A-3): "auto"
+	// (default in standalone — Secure only over real HTTPS / trusted
+	// X-Forwarded-Proto), "true" (default in privacy mode — always Secure), or
+	// "false" (never; local HTTP dev only).
+	CookieSecure string `mapstructure:"cookie_secure"`
+
 	// HiddenTxTypes is a comma-separated list of transaction type numbers to
 	// exclude from the default transaction listings (e.g. "126" for OP deposit TXs).
 	HiddenTxTypes string `mapstructure:"hidden_tx_types"`
@@ -150,6 +156,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("log_level", "info")
 
 	v.SetDefault("cors_allowed_origins", "")
+	v.SetDefault("cookie_secure", "auto")
 
 	v.SetDefault("hidden_tx_types", "126") // OP deposit system transactions hidden by default
 
@@ -227,6 +234,17 @@ func Load() (*Config, error) {
 
 	cfg.LogLevel = v.GetString("log_level")
 	cfg.CORSAllowedOrigins = splitAndTrim(v.GetString("cors_allowed_origins"))
+
+	// A-3: privacy-aware default for the cookie Secure flag. Honour an explicit
+	// COOKIE_SECURE; otherwise force "true" in privacy mode (no non-Secure
+	// session cookies on a default bring-up) and "auto" in standalone.
+	if _, explicit := os.LookupEnv("COOKIE_SECURE"); explicit {
+		cfg.CookieSecure = v.GetString("cookie_secure")
+	} else if cfg.PrivacyProxyURL != "" {
+		cfg.CookieSecure = "true"
+	} else {
+		cfg.CookieSecure = "auto"
+	}
 
 	cfg.EnableGasPrices = v.GetBool("enable_gas_prices")
 	cfg.EnableProviderCache = v.GetBool("enable_provider_cache")

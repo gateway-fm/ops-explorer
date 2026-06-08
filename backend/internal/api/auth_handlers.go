@@ -104,7 +104,7 @@ func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	secure := s.cookieSecure(r) // A-3: config-driven, not from a spoofable header
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     AuthCookieName,
@@ -337,7 +337,7 @@ func (s *Server) refreshAuthMiddleware(next http.Handler) http.Handler {
 		}
 
 		newTokens := res.(*auth.RefreshResponse)
-		secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+		secure := s.cookieSecure(r) // A-3: config-driven, not from a spoofable header
 		http.SetCookie(w, &http.Cookie{
 			Name:     AuthCookieName,
 			Value:    newTokens.AccessToken,
@@ -359,6 +359,30 @@ func (s *Server) refreshAuthMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// cookieSecure resolves the Secure flag for auth cookies from explicit config
+// (A-3), so a default bring-up cannot emit non-Secure session cookies off a
+// spoofable/absent X-Forwarded-Proto:
+//   - "true"  -> always Secure (privacy-mode default).
+//   - "false" -> never Secure (local HTTP dev only).
+//   - "auto"  (or unset) -> Secure only when the request is actually HTTPS
+//     (r.TLS set) or carries X-Forwarded-Proto: https. Only honor that header
+//     behind a trusted proxy that sets it (the bundled nginx now does — see
+//     nginx.conf / nginx.custom.conf).
+func (s *Server) cookieSecure(r *http.Request) bool {
+	mode := "auto"
+	if s.cfg != nil && s.cfg.CookieSecure != "" {
+		mode = s.cfg.CookieSecure
+	}
+	switch mode {
+	case "true":
+		return true
+	case "false":
+		return false
+	default: // "auto"
+		return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	}
 }
 
 // clearAuthCookies removes both the access and refresh cookies.
