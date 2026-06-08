@@ -31,10 +31,11 @@ export default defineConfig({
     css: false,
     coverage: {
       provider: 'v8',
-      // Count untested source files in the denominator so coverage reflects the
-      // whole app, not just the files that happen to have a test. New 0%
-      // files cannot inflate the number by being invisible.
-      all: true,
+      // `include` makes coverage span ALL matching source files, not just the
+      // ones a test happens to import — so untested files count toward the
+      // denominator at 0% and new 0% files cannot inflate the number by being
+      // invisible. (vitest 4 dropped the explicit `all` flag; `include` is the
+      // supported way to get whole-app coverage.)
       include: ['src/**/*.{ts,tsx}'],
       exclude: [
         'src/**/*.test.{ts,tsx}',
@@ -46,12 +47,13 @@ export default defineConfig({
       reporter: ['text', 'text-summary', 'html', 'lcov'],
       // Low-but-real floor; ratchet upward as more units land. The point is to
       // fail CI if coverage REGRESSES, not to gate at a high bar yet. Set just
-      // below the current whole-app numbers (vitest --coverage with all:true).
+      // below the current whole-app numbers (vitest --coverage with all:true:
+      // ~8.4% stmts / 8.5% lines / 5.9% funcs / 5.4% branches after A11).
       thresholds: {
-        lines: 5,
-        statements: 5,
-        functions: 4,
-        branches: 3,
+        lines: 8,
+        statements: 8,
+        functions: 5,
+        branches: 5,
       },
     },
   },
