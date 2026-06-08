@@ -958,7 +958,7 @@ func (s *Server) handleGetTokenHolders(w http.ResponseWriter, r *http.Request) {
 	offset := (page - 1) * pageSize
 	holders, total, err := s.provider.GetTokenHolders(r.Context(), address, pageSize, offset)
 	if err != nil {
-		log.Warn("token holders lookup failed", "address", address, "error", err)
+		log.Warn("token holders lookup failed", "error", err) // P-3: address omitted (PII in privacy mode)
 		http.Error(w, "failed to get token holders", http.StatusInternalServerError)
 		return
 	}
@@ -1012,7 +1012,7 @@ func (s *Server) handleGetTokenInventory(w http.ResponseWriter, r *http.Request)
 	offset := (page - 1) * pageSize
 	items, total, err := s.provider.GetTokenInventory(r.Context(), address, tokenID, pageSize, offset)
 	if err != nil {
-		log.Warn("token inventory lookup failed", "address", address, "error", err)
+		log.Warn("token inventory lookup failed", "error", err) // P-3: address omitted (PII in privacy mode)
 		http.Error(w, "failed to get token inventory", http.StatusInternalServerError)
 		return
 	}
@@ -1326,7 +1326,7 @@ func (s *Server) handleGetAddressTokenBalances(w http.ResponseWriter, r *http.Re
 
 	balances, err := s.provider.GetTokenBalances(r.Context(), address)
 	if err != nil {
-		log.Warn("token balances lookup failed", "address", address, "error", err)
+		log.Warn("token balances lookup failed", "error", err) // P-3: address omitted (PII in privacy mode)
 		http.Error(w, "failed to get token balances", http.StatusInternalServerError)
 		return
 	}

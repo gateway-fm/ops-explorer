@@ -37,7 +37,9 @@ func (s *Server) handleGetViewableAddresses(w http.ResponseWriter, r *http.Reque
 
 	result, err := s.privacyClient.GetViewableAddressesWithIdentity(r.Context(), viewer)
 	if err != nil {
-		log.Warn("privacy: get viewable addresses failed", "error", err, "viewer_did", viewer.DID)
+		// P-3: do NOT log viewer_did — it would let log/SIEM access correlate
+		// an authenticated DID with the addresses/grants it viewed.
+		log.Warn("privacy: get viewable addresses failed", "error", err)
 		http.Error(w, "failed to get viewable addresses", http.StatusInternalServerError)
 		return
 	}
@@ -86,7 +88,8 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 			http.Error(w, "grant or address not found", http.StatusNotFound)
 			return
 		}
-		log.Warn("privacy: resolve grant address failed", "grant_id", grantID, "address_id", addressID, "error", err)
+		// P-3: grant_id / address_id are privacy-sensitive identifiers — omit them.
+		log.Warn("privacy: resolve grant address failed", "error", err)
 		http.Error(w, "failed to resolve address", http.StatusInternalServerError)
 		return
 	}
@@ -177,7 +180,8 @@ func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *h
 
 	body, statusCode, err := s.privacyClient.GetGrantTransactions(r.Context(), grantID, addressID, limit, beforeBlock)
 	if err != nil {
-		log.Warn("privacy: get grant transactions failed", "grant_id", grantID, "address_id", addressID, "error", err)
+		// P-3: grant_id / address_id are privacy-sensitive identifiers — omit them.
+		log.Warn("privacy: get grant transactions failed", "error", err)
 		http.Error(w, "failed to get transactions", http.StatusInternalServerError)
 		return
 	}
@@ -212,7 +216,8 @@ func (s *Server) handleGetGrantActivityLogs(w http.ResponseWriter, r *http.Reque
 
 	body, statusCode, err := s.privacyClient.GetGrantActivityLogs(r.Context(), grantID, viewer.JWTToken, limit, offset)
 	if err != nil {
-		log.Warn("privacy: get grant activity logs failed", "grant_id", grantID, "error", err)
+		// P-3: grant_id is a privacy-sensitive identifier — omit it.
+		log.Warn("privacy: get grant activity logs failed", "error", err)
 		http.Error(w, "failed to get activity logs", http.StatusInternalServerError)
 		return
 	}

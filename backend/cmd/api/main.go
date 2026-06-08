@@ -24,6 +24,11 @@ func main() {
 		log.Fatal("failed to load config", "error", err)
 	}
 
+	// P-3: in privacy mode, mask on-chain identifiers in HTTP access-log paths
+	// so logs/SIEM cannot correlate an authenticated DID with the addresses /
+	// grants it viewed. Standalone serves public data, so paths stay intact.
+	log.RedactHTTPPaths = cfg.PrivacyProxyURL != ""
+
 	database, err := db.New(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatal("failed to connect to database", "error", err)

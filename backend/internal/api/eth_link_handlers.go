@@ -64,7 +64,9 @@ func (s *Server) handleVerifyLink(w http.ResponseWriter, r *http.Request) {
 
 	result, err := s.privacyClient.VerifyLink(r.Context(), token, req)
 	if err != nil {
-		log.Warn("eth-link: verify signature via privacy-proxy failed", "error", err, "address", req.Address)
+		// P-3: do NOT log the wallet address being linked — pairs a DID with a
+		// real on-chain address in the explorer's own stderr.
+		log.Warn("eth-link: verify signature via privacy-proxy failed", "error", err)
 		writeError(w, http.StatusBadGateway, "failed to verify link")
 		return
 	}
@@ -86,7 +88,8 @@ func (s *Server) handleUnlinkAddress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.privacyClient.UnlinkAddress(r.Context(), token, address); err != nil {
-		log.Warn("eth-link: unlink address via privacy-proxy failed", "error", err, "address", address)
+		// P-3: do NOT log the wallet address being unlinked (see handleVerifyLink).
+		log.Warn("eth-link: unlink address via privacy-proxy failed", "error", err)
 		writeError(w, http.StatusBadGateway, "failed to unlink address")
 		return
 	}
