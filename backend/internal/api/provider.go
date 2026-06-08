@@ -340,6 +340,27 @@ func NewProxyDataProvider(baseURL string) *ProxyDataProvider {
 	}
 }
 
+// CallerScopedProvider is a structural marker (P-1): a DataProvider that
+// returns per-caller data — i.e. the same method arguments can yield different
+// results depending on the authenticated caller (privacy-mode RBAC redaction).
+// Such a provider MUST NOT be wrapped in the argument-keyed CachingProvider, or
+// one caller's redacted view would be served to another for the cache TTL.
+// cache.NewProvider rejects any value implementing this interface.
+//
+// Propagation rule: any provider that wraps a CallerScopedProvider must itself
+// remain caller-scoped — embed the inner provider so CallerScoped() is promoted
+// (the marker is only structural if it propagates through decorators).
+type CallerScopedProvider interface {
+	CallerScoped()
+}
+
+// CallerScoped marks ProxyDataProvider as caller-scoped. It sets a per-caller
+// Authorization bearer from request context (see doRequest), so its responses
+// are RBAC-redacted per caller and must never be shared via a cache.
+func (p *ProxyDataProvider) CallerScoped() {}
+
+var _ CallerScopedProvider = (*ProxyDataProvider)(nil)
+
 func (p *ProxyDataProvider) doRequest(ctx context.Context, method, path string, body io.Reader, result any) error {
 	// If the caller is in "View as user" mode (RD-928), rewrite the outbound
 	// path under the admin-impersonation prefix so privacy-proxy applies the
