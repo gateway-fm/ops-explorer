@@ -34,23 +34,24 @@ import (
 type fakeIndexer struct {
 	indexerv1.UnimplementedIndexerServiceServer
 
-	getBlock       func(*indexerv1.GetBlockRequest) (*indexerv1.Block, error)
-	getLatest      func() (*indexerv1.LatestBlockNumber, error)
-	getTransaction func(*indexerv1.GetTransactionRequest) (*indexerv1.Transaction, error)
-	getAddress     func(*indexerv1.GetAddressRequest) (*indexerv1.Address, error)
-	getChainStats  func() (*indexerv1.ChainStats, error)
-	getSyncStatus  func() (*indexerv1.SyncStatus, error)
-	listBlocks     func(*indexerv1.ListBlocksRequest) (*indexerv1.ListBlocksResponse, error)
-	listTxs        func(*indexerv1.ListTransactionsRequest) (*indexerv1.ListTransactionsResponse, error)
-	listLogs       func(*indexerv1.ListLogsRequest) (*indexerv1.ListLogsResponse, error)
-	listAddresses  func(*indexerv1.ListAddressesRequest) (*indexerv1.ListAddressesResponse, error)
-	listTokens     func(*indexerv1.ListTokensRequest) (*indexerv1.ListTokensResponse, error)
-	listTransfers  func(*indexerv1.ListTokenTransfersRequest) (*indexerv1.ListTokenTransfersResponse, error)
-	listInternal   func(*indexerv1.ListInternalTransactionsRequest) (*indexerv1.ListInternalTransactionsResponse, error)
-	getToken       func(*indexerv1.GetTokenRequest) (*indexerv1.Token, error)
-	getContract    func(*indexerv1.GetContractRequest) (*indexerv1.Contract, error)
-	search         func(*indexerv1.SearchRequest) (*indexerv1.SearchResponse, error)
-	getOPDeposit   func(*indexerv1.GetOPDepositRequest) (*indexerv1.OPDeposit, error)
+	getBlock         func(*indexerv1.GetBlockRequest) (*indexerv1.Block, error)
+	getLatest        func() (*indexerv1.LatestBlockNumber, error)
+	getTransaction   func(*indexerv1.GetTransactionRequest) (*indexerv1.Transaction, error)
+	getAddress       func(*indexerv1.GetAddressRequest) (*indexerv1.Address, error)
+	getChainStats    func() (*indexerv1.ChainStats, error)
+	getSyncStatus    func() (*indexerv1.SyncStatus, error)
+	listBlocks       func(*indexerv1.ListBlocksRequest) (*indexerv1.ListBlocksResponse, error)
+	listTxs          func(*indexerv1.ListTransactionsRequest) (*indexerv1.ListTransactionsResponse, error)
+	listLogs         func(*indexerv1.ListLogsRequest) (*indexerv1.ListLogsResponse, error)
+	listAddresses    func(*indexerv1.ListAddressesRequest) (*indexerv1.ListAddressesResponse, error)
+	listTokens       func(*indexerv1.ListTokensRequest) (*indexerv1.ListTokensResponse, error)
+	listTransfers    func(*indexerv1.ListTokenTransfersRequest) (*indexerv1.ListTokenTransfersResponse, error)
+	listAllTransfers func(*indexerv1.ListAllTokenTransfersRequest) (*indexerv1.ListAllTokenTransfersResponse, error)
+	listInternal     func(*indexerv1.ListInternalTransactionsRequest) (*indexerv1.ListInternalTransactionsResponse, error)
+	getToken         func(*indexerv1.GetTokenRequest) (*indexerv1.Token, error)
+	getContract      func(*indexerv1.GetContractRequest) (*indexerv1.Contract, error)
+	search           func(*indexerv1.SearchRequest) (*indexerv1.SearchResponse, error)
+	getOPDeposit     func(*indexerv1.GetOPDepositRequest) (*indexerv1.OPDeposit, error)
 }
 
 func (f *fakeIndexer) GetBlock(ctx context.Context, req *indexerv1.GetBlockRequest) (*indexerv1.Block, error) {
@@ -91,6 +92,9 @@ func (f *fakeIndexer) ListTokens(ctx context.Context, req *indexerv1.ListTokensR
 }
 func (f *fakeIndexer) ListTokenTransfers(ctx context.Context, req *indexerv1.ListTokenTransfersRequest) (*indexerv1.ListTokenTransfersResponse, error) {
 	return f.listTransfers(req)
+}
+func (f *fakeIndexer) ListAllTokenTransfers(ctx context.Context, req *indexerv1.ListAllTokenTransfersRequest) (*indexerv1.ListAllTokenTransfersResponse, error) {
+	return f.listAllTransfers(req)
 }
 func (f *fakeIndexer) ListInternalTransactions(ctx context.Context, req *indexerv1.ListInternalTransactionsRequest) (*indexerv1.ListInternalTransactionsResponse, error) {
 	return f.listInternal(req)

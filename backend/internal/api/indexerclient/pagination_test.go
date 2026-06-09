@@ -4,13 +4,11 @@ package indexerclient
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"testing"
 
 	indexerv1 "explorer/gen/go/chain_indexer/v1"
-	"explorer/internal/api"
 )
 
 // BUG-9: GetTransactionsPaginated set fetchLimit := int32(page * pageSize). The
@@ -253,15 +251,38 @@ func TestDegraded_TransfersByToken_TotalIsPageLocal(t *testing.T) {
 	}
 }
 
-func TestDegraded_AllTransfers_StandaloneUnsupported(t *testing.T) {
-	// /token-transfers (global unfiltered feed) is not a supported indexer use
-	// case, so the indexerclient Provider does NOT override it and it falls
-	// through to DirectDBProvider -> ErrChainDataNotAvailable. Handlers map that
-	// to 500. Lock the error identity.
-	p := setupProvider(t, &fakeIndexer{})
-	_, _, err := p.GetAllTransfers(context.Background(), 25, 0)
-	if !errors.Is(err, api.ErrChainDataNotAvailable) {
-		t.Fatalf("GetAllTransfers err = %v, want ErrChainDataNotAvailable", err)
+func TestProvider_GetAllTransfers_GlobalFeed(t *testing.T) {
+	// The global token-transfers feed IS a supported indexer call as of the
+	// "global token-transfers feed" feature (chain-indexer ListAllTokenTransfers).
+	// The Provider forwards offset/limit as an OffsetPageRequest, maps the
+	// response transfers, and surfaces total_items; an empty tokenType means
+	// "all types" (no TokenType filter). Lock that contract.
+	var gotReq *indexerv1.ListAllTokenTransfersRequest
+	p := setupProvider(t, &fakeIndexer{
+		listAllTransfers: func(req *indexerv1.ListAllTokenTransfersRequest) (*indexerv1.ListAllTokenTransfersResponse, error) {
+			gotReq = req
+			return &indexerv1.ListAllTokenTransfersResponse{
+				Transfers: []*indexerv1.TokenTransfer{{LogIndex: 0}, {LogIndex: 1}},
+				Page:      &indexerv1.OffsetPageResponse{Page: 1, PageSize: 10, TotalItems: 2},
+			}, nil
+		},
+	})
+
+	rows, total, err := p.GetAllTransfers(context.Background(), "", 10, 0)
+	if err != nil {
+		t.Fatalf("GetAllTransfers err = %v, want nil", err)
+	}
+	if total != 2 {
+		t.Errorf("total = %d, want 2", total)
+	}
+	if len(rows) != 2 {
+		t.Errorf("len(rows) = %d, want 2", len(rows))
+	}
+	if gotReq.GetPage().GetPageSize() != 10 {
+		t.Errorf("forwarded page_size = %d, want 10", gotReq.GetPage().GetPageSize())
+	}
+	if gotReq.GetTokenType() != indexerv1.TokenType_TOKEN_TYPE_UNSPECIFIED {
+		t.Errorf("tokenType = %v, want UNSPECIFIED for empty filter", gotReq.GetTokenType())
 	}
 }
 
