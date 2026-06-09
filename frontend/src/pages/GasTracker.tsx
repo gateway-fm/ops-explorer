@@ -3,8 +3,16 @@ import { Fuel, Zap, Clock, Gauge, RefreshCw } from 'lucide-react';
 import { api } from '../lib/api';
 import type { GasPrice } from '../lib/api';
 import { PageHeader } from '../components/PageHeader';
+import { features } from '../lib/features';
+import { FeatureUnavailable } from '../components/FeatureUnavailable';
 
 export function GasTracker() {
+  // RD-1063: feature gate must be the FIRST statement — above the useQuery
+  // below — so the disabled branch never subscribes the gas query and fires
+  // no /gas request in privacy mode. features() is not a hook, so this early
+  // return before any hook is safe.
+  if (!features().gasTracker) return <FeatureUnavailable feature="Gas Tracker" />;
+
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['gasPrices'],
     queryFn: api.getGasPrices,

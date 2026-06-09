@@ -4,6 +4,8 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import { Boxes, ArrowLeftRight, Users, Clock } from 'lucide-react';
 import { api } from '../lib/api';
 import { PageHeader } from '../components/PageHeader';
+import { features } from '../lib/features';
+import { FeatureUnavailable } from '../components/FeatureUnavailable';
 
 // ---------------------------------------------------------------------------
 // Chart definitions — hardcoded, mapping to backend chart line IDs
@@ -294,6 +296,12 @@ function CounterCard({
 // ---------------------------------------------------------------------------
 
 export default function Stats() {
+  // RD-1063: feature gate must be the very first statement — before any hook —
+  // so the disabled branch never subscribes the stats/chart-line queries and
+  // fires no /charts requests in privacy mode. features() is not a hook, so an
+  // early return here is safe (no conditional-hook violation).
+  if (!features().charts) return <FeatureUnavailable feature="Charts" />;
+
   const [section, setSection] = useState<Section>('all');
   const [rangeIdx, setRangeIdx] = useState(1); // default 1M
 
