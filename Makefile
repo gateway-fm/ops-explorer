@@ -141,7 +141,7 @@ dev-multi:
 	@echo "    Anvil RPC:  http://localhost:8556"
 	@echo ""
 	@echo "Open either frontend — the navbar 'Networks' dropdown switches between them."
-	@echo "Edit frontend/public/featured-networks.json to rename / add networks."
+	@echo "Edit deploy/featured-networks.multi.json to rename / add networks (see docs/network-modes.md)."
 	@echo ""
 
 dev-multi-stop:

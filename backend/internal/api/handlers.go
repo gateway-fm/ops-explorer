@@ -1085,6 +1085,21 @@ func (s *Server) handleGetTokenTransfers(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// NormalizeTokenType canonicalises a user-supplied token-standard filter to
+// "ERC20"/"ERC721"/"ERC1155", or "" for anything unrecognised (= all).
+func NormalizeTokenType(s string) string {
+	switch strings.ToUpper(strings.TrimSpace(s)) {
+	case "ERC20":
+		return "ERC20"
+	case "ERC721":
+		return "ERC721"
+	case "ERC1155":
+		return "ERC1155"
+	default:
+		return ""
+	}
+}
+
 func (s *Server) handleGetAllTransfers(w http.ResponseWriter, r *http.Request) {
 	pageStr := r.URL.Query().Get("page")
 	pageSizeStr := r.URL.Query().Get("pageSize")
@@ -1103,8 +1118,11 @@ func (s *Server) handleGetAllTransfers(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Optional token-standard filter (ERC20/ERC721/ERC1155); empty = all.
+	tokenType := NormalizeTokenType(r.URL.Query().Get("type"))
+
 	offset := (page - 1) * pageSize
-	transfers, total, err := s.provider.GetAllTransfers(r.Context(), pageSize, offset)
+	transfers, total, err := s.provider.GetAllTransfers(r.Context(), tokenType, pageSize, offset)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

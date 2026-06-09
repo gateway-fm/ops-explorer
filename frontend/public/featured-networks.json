@@ -1,12 +1,1 @@
-[
-  {
-    "title": "Local Mainnet",
-    "url": "http://localhost:3001",
-    "group": "Local"
-  },
-  {
-    "title": "Local Testnet",
-    "url": "http://localhost:3002",
-    "group": "Local"
-  }
-]
+[]
