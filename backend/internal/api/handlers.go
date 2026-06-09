@@ -1365,8 +1365,8 @@ func (s *Server) handleFetchSourcify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	url := fmt.Sprintf("%s/files/%s/%s", sourcifyAPIBase, chainIDStr, address)
-	resp, err := http.Get(url)
+	url := fmt.Sprintf("%s/files/%s/%s", s.sourcifyBase(), chainIDStr, address)
+	resp, err := s.sourcifyClient().Get(url)
 	if err != nil {
 		http.Error(w, "failed to fetch from Sourcify: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -1518,7 +1518,7 @@ func (s *Server) handleVerifySourcify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	body, _ := json.Marshal(sourcifyReq)
-	resp, err := http.Post(sourcifyAPIBase+"/verify", "application/json", bytes.NewReader(body))
+	resp, err := s.sourcifyClient().Post(s.sourcifyBase()+"/verify", "application/json", bytes.NewReader(body))
 	if err != nil {
 		http.Error(w, "failed to submit to Sourcify: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -1554,8 +1554,8 @@ func (s *Server) handleVerifySourcify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fetchURL := fmt.Sprintf("%s/files/%s/%s", sourcifyAPIBase, req.ChainID, common.HexToAddress(req.Address).Hex())
-	fetchResp, err := http.Get(fetchURL)
+	fetchURL := fmt.Sprintf("%s/files/%s/%s", s.sourcifyBase(), req.ChainID, common.HexToAddress(req.Address).Hex())
+	fetchResp, err := s.sourcifyClient().Get(fetchURL)
 	if err == nil && fetchResp.StatusCode == 200 {
 		defer fetchResp.Body.Close()
 		var sourcifyFiles []struct {
@@ -1698,8 +1698,8 @@ func (s *Server) handleCheckSourcify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	url := fmt.Sprintf("%s/check-by-addresses?addresses=%s&chainIds=%s", sourcifyAPIBase, address, chainIDStr)
-	resp, err := http.Get(url)
+	url := fmt.Sprintf("%s/check-by-addresses?addresses=%s&chainIds=%s", s.sourcifyBase(), address, chainIDStr)
+	resp, err := s.sourcifyClient().Get(url)
 	if err != nil {
 		http.Error(w, "failed to check Sourcify: "+err.Error(), http.StatusInternalServerError)
 		return
