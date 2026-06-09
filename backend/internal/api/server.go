@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -39,6 +41,12 @@ type Server struct {
 	ssoClient            *auth.SSOClient
 	postLoginRedirectURL string
 	gasPricesEnabled     bool
+	cfg                  *ServerConfig // retained for CORS allowlist / privacy-mode flags (W-1, A-3)
+	// jwtVerifier verifies the auth-cookie JWT signature against privacy-proxy's
+	// JWKS (A-2). nil unless SSO_JWKS_URL is configured; when nil, GetAuthDID
+	// falls back to display-only ExtractClaims. The impersonation caller-DID
+	// binding requires this to be non-nil (the JWKS-required path).
+	jwtVerifier          *auth.Verifier
 	port                 int
 	router               *chi.Mux
 	etherscanResults     sync.Map // guid -> *etherscanVerifyResult
@@ -68,6 +76,34 @@ type ServerConfig struct {
 	MetricsEnabled       bool
 	PostLoginRedirectURL string
 	EnableGasPrices      bool
+
+	// CORSAllowedOrigins is the allowlist of browser Origins permitted to make
+	// credentialed cross-origin requests (W-1). When non-empty, only these
+	// Origins are reflected into Access-Control-Allow-Origin. When empty in
+	// standalone mode the server reflects any Origin (legacy permissive
+	// behavior + a startup warning); privacy mode requires a non-empty
+	// allowlist (enforced fail-closed in config.Validate).
+	CORSAllowedOrigins []string
+	// PrivacyMode mirrors cfg.PrivacyProxyURL != "" so the server can apply
+	// fail-closed defaults (W-1 CORS, A-3 cookie Secure) without re-reading the
+	// process env.
+	PrivacyMode bool
+
+	// CookieSecure controls the Secure flag on auth cookies (A-3): "true"
+	// always, "false" never, "auto" only when the request is actually HTTPS
+	// (r.TLS set or X-Forwarded-Proto: https from a trusted proxy). Privacy mode
+	// defaults to "true" (forced); standalone defaults to "auto".
+	CookieSecure string
+
+	// JWT signature verification (A-2). When SSOJWKSURL is set, the auth-cookie
+	// JWT is signature-verified (alg-confusion-safe) against this JWKS before
+	// GetAuthDID trusts the subject; SSOIssuer/SSOAudience are checked only when
+	// non-empty. When unset, GetAuthDID is display-only (ExtractClaims) and the
+	// impersonation feature is disabled (its caller-DID binding requires a
+	// verified DID).
+	SSOJWKSURL  string
+	SSOIssuer   string
+	SSOAudience string
 }
 
 // New constructs the api Server. The idx parameter is retained for
@@ -88,16 +124,39 @@ func New(database APIDatabase, rpcClient *rpc.Client, idx any, priceService *pri
 		router:        chi.NewRouter(),
 	}
 
+	if cfg != nil {
+		s.cfg = cfg
+		s.postLoginRedirectURL = cfg.PostLoginRedirectURL
+		s.gasPricesEnabled = cfg.EnableGasPrices
+
+		// A-2: build the JWKS signature verifier when configured. GetAuthDID
+		// uses it to verify the auth-cookie JWT before trusting the subject.
+		if cfg.SSOJWKSURL != "" {
+			s.jwtVerifier = auth.NewVerifier(auth.VerifierConfig{
+				JWKSURL:  cfg.SSOJWKSURL,
+				Issuer:   cfg.SSOIssuer,
+				Audience: cfg.SSOAudience,
+			})
+		}
+	}
+
 	if privacyClient != nil && privacyClient.IsEnabled() {
 		s.privacyProxyURL = privacyClient.BaseURL()
 		// "View as user" (RD-928): only meaningful when privacy-proxy is
 		// reachable — without it there is nothing to impersonate against.
-		s.impersonations = NewMemoryImpersonationStore(0)
-	}
-
-	if cfg != nil {
-		s.postLoginRedirectURL = cfg.PostLoginRedirectURL
-		s.gasPricesEnabled = cfg.EnableGasPrices
+		//
+		// A-2 (JWKS-required path): the impersonation caller-DID binding makes a
+		// local authz decision keyed off GetAuthDID, so it must be a VERIFIED
+		// DID. Enable the feature only when a JWT verifier is configured
+		// (SSO_JWKS_URL set); otherwise leave s.impersonations nil so start/stop
+		// return 503 and the middleware is a no-op — fail-closed rather than bind
+		// against an unverified, spoofable DID.
+		if s.jwtVerifier != nil {
+			s.impersonations = NewMemoryImpersonationStore(0)
+		} else {
+			log.Warn("privacy mode: 'View as user' impersonation is DISABLED because SSO_JWKS_URL is not set — " +
+				"the caller-DID binding requires a signature-verified DID (A-2). Set SSO_JWKS_URL to enable it.")
+		}
 	}
 
 	if cfg != nil && cfg.MetricsEnabled {
@@ -109,7 +168,17 @@ func New(database APIDatabase, rpcClient *rpc.Client, idx any, priceService *pri
 		s.wsHub = ws.NewHub(eventBus, s.wsConfig.MaxConnections)
 	}
 
-	if cfg != nil && cfg.SolcPath != "" {
+	// P-2: in privacy mode the default (!privacy) binary must NOT build the
+	// verifier or mount any local-DB write surface — those persist
+	// attacker-controlled source/ABI into block-explorer's own Postgres,
+	// bypassing privacy-proxy redaction. Skip verifier construction entirely
+	// (even when SolcPath is the default /opt/solc) and recommend the
+	// -tags privacy image. Route gating happens in setupRoutes via
+	// inPrivacyMode(). This is fail-safe: no write surface, no fatal.
+	if s.inPrivacyMode() {
+		log.Warn("privacy mode: contract-verification + Sourcify write surfaces are disabled; " +
+			"build/deploy the `-tags privacy` image to compile them out entirely")
+	} else if cfg != nil && cfg.SolcPath != "" {
 		s.verifier = verifier.NewVerifier(database, rpcClient, &verifier.Config{
 			SolcPath:            cfg.SolcPath,
 			UseSourcifyFallback: cfg.UseSourcifyFallback,
@@ -123,6 +192,123 @@ func New(database APIDatabase, rpcClient *rpc.Client, idx any, priceService *pri
 	return s
 }
 
+// csrfProtect is a method-gated Origin/Referer-allowlist CSRF middleware (A-1).
+// On state-changing methods (POST/PUT/PATCH/DELETE) it requires the request's
+// Origin (preferred) or Referer to match the configured CORS allowlist, and
+// fails closed when BOTH are absent. Safe methods (GET/HEAD/OPTIONS) always
+// pass. When the allowlist is empty (standalone default) it is a no-op — which
+// privacy mode never hits because W-1 makes the allowlist mandatory there.
+//
+// This complements SameSite=Lax (which a top-level cross-site navigation can
+// still defeat) with an explicit Origin/Referer check on every cookie-authed
+// write.
+func (s *Server) csrfProtect(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isSafeMethod(r.Method) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		var allowed []string
+		if s.cfg != nil {
+			allowed = s.cfg.CORSAllowedOrigins
+		}
+		if len(allowed) == 0 {
+			// No allowlist configured (standalone) — CSRF check is a no-op.
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if !originOrRefererAllowed(r, allowed) {
+			writeError(w, http.StatusForbidden, "cross-origin request rejected")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func isSafeMethod(method string) bool {
+	switch strings.ToUpper(method) {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
+		return true
+	default:
+		return false
+	}
+}
+
+// originOrRefererAllowed returns true iff the request's Origin (preferred) or,
+// failing that, its Referer origin matches one of the allowed origins. Returns
+// false when neither header is present (fail-closed).
+func originOrRefererAllowed(r *http.Request, allowed []string) bool {
+	if origin := r.Header.Get("Origin"); origin != "" {
+		return originInList(origin, allowed)
+	}
+	if ref := r.Header.Get("Referer"); ref != "" {
+		u, err := url.Parse(ref)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			return false
+		}
+		return originInList(u.Scheme+"://"+u.Host, allowed)
+	}
+	// Neither Origin nor Referer present on a state-changing request: fail closed.
+	return false
+}
+
+func originInList(origin string, allowed []string) bool {
+	for _, a := range allowed {
+		if a == origin {
+			return true
+		}
+	}
+	return false
+}
+
+// inPrivacyMode reports whether this server instance is serving privacy mode
+// (reads routed through privacy-proxy). Used to gate local-DB write surfaces
+// that would bypass privacy-proxy's redaction (P-2). True only when a privacy
+// client is wired and enabled — i.e. PRIVACY_PROXY_URL was set.
+func (s *Server) inPrivacyMode() bool {
+	return s.privacyClient != nil && s.privacyClient.IsEnabled()
+}
+
+// corsAllowOriginFunc builds the CORS origin matcher (W-1). With a non-empty
+// allowlist, only listed Origins are permitted (exact match) — paired with
+// AllowCredentials this avoids the dangerous reflect-any-Origin + credentials
+// combination. With an empty allowlist the behavior depends on mode:
+//   - privacy mode: this is unreachable in production (config.Validate rejects
+//     an empty allowlist), but if it ever happens we fail closed (deny all).
+//   - standalone: legacy permissive behavior — reflect any Origin — with a
+//     one-time startup warning.
+func (s *Server) corsAllowOriginFunc() func(string) bool {
+	var allowed []string
+	privacyMode := false
+	if s.cfg != nil {
+		allowed = s.cfg.CORSAllowedOrigins
+		privacyMode = s.cfg.PrivacyMode
+	}
+
+	if len(allowed) > 0 {
+		set := make(map[string]struct{}, len(allowed))
+		for _, o := range allowed {
+			set[o] = struct{}{}
+		}
+		return func(origin string) bool {
+			_, ok := set[origin]
+			return ok
+		}
+	}
+
+	// Empty allowlist.
+	if privacyMode {
+		// Defense-in-depth: config.Validate already fails closed here, so this
+		// path should never run in privacy mode. Deny all rather than reflect.
+		log.Warn("CORS: empty allowlist in privacy mode — denying all cross-origin requests (this should have been rejected at startup)")
+		return func(string) bool { return false }
+	}
+	log.Warn("CORS: no CORS_ALLOWED_ORIGINS configured — reflecting any Origin with credentials (standalone permissive default). Set CORS_ALLOWED_ORIGINS to restrict.")
+	return func(string) bool { return true }
+}
+
 func (s *Server) setupRoutes() {
 	s.router.Use(log.HTTPMiddleware)
 	s.router.Use(middleware.Recoverer)
@@ -133,7 +319,7 @@ func (s *Server) setupRoutes() {
 	}
 
 	corsOpts := cors.Options{
-		AllowOriginFunc:  func(origin string) bool { return true },
+		AllowOriginFunc:  s.corsAllowOriginFunc(),
 		AllowedMethods:   []string{"GET", "POST", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Content-Type", "Cookie"},
 		AllowCredentials: true,
@@ -182,6 +368,10 @@ func (s *Server) setupRoutes() {
 	// authenticated as the real admin user, never under another view-as token.
 	if s.impersonations != nil {
 		s.router.Route("/api/impersonation", func(r chi.Router) {
+			// A-1: CSRF-protect the state-changing impersonation routes
+			// (POST /start, DELETE /{token}). Method-gated, so the GET /{token}
+			// restore endpoint is never blocked.
+			r.Use(s.csrfProtect)
 			r.Post("/start", s.handleStartImpersonation)
 			r.Delete("/{token}", s.handleStopImpersonation)
 			// Cold-mount restore: lets the frontend translate ?as=<token>
@@ -193,6 +383,9 @@ func (s *Server) setupRoutes() {
 
 	if s.ssoClient != nil && s.ssoClient.IsEnabled() {
 		s.router.Route("/api/auth", func(r chi.Router) {
+			// A-1: CSRF-protect POST /logout (method-gated, so the GET login/
+			// callback/status routes pass through).
+			r.Use(s.csrfProtect)
 			r.Get("/login", s.handleAuthLogin)
 			r.Get("/callback", s.handleAuthCallback)
 			r.Get("/status", s.handleAuthStatus)
@@ -212,6 +405,9 @@ func (s *Server) setupRoutes() {
 		})
 
 		s.router.Route("/api/eth", func(r chi.Router) {
+			// A-1: CSRF-protect the eth-link writes (POST challenge/verify,
+			// DELETE address). Method-gated, so GET /addresses passes through.
+			r.Use(s.csrfProtect)
 			r.Get("/addresses", s.handleGetLinkedAddresses)
 			r.Post("/link/challenge", s.handleCreateLinkChallenge)
 			r.Post("/link/verify", s.handleVerifyLink)
@@ -225,7 +421,14 @@ func (s *Server) setupAPIRoutes(r chi.Router) {
 	// is registered via the build-tagged verification helper so privacy
 	// builds can compile it out entirely. See verification_routes_*.go.
 	// (In standalone mode this also adds /verify/* below.)
-	s.registerVerificationAPI(r)
+	//
+	// P-2: the privacy build no-ops registerVerificationAPI, but the DEFAULT
+	// (!privacy) binary can also serve privacy mode — there the helper is the
+	// real one, so gate it at runtime too. These routes persist source/ABI into
+	// block-explorer's own Postgres, bypassing privacy-proxy redaction.
+	if !s.inPrivacyMode() {
+		s.registerVerificationAPI(r)
+	}
 
 	r.Get("/stats", s.handleGetStats)
 	r.Get("/chain-info", s.handleGetChainInfo)
@@ -258,12 +461,21 @@ func (s *Server) setupAPIRoutes(r chi.Router) {
 		r.Get("/transfers", s.handleGetAddressTransfers)
 		r.Get("/contract", s.handleGetContract)
 		r.Get("/contract/uml", s.handleGetContractUML)
-		r.Post("/abi", s.handleUpdateContractABI)
+		// A-1: CSRF-protect the ABI write. In privacy mode this forwards to
+		// privacy-proxy (not the local DB — see P-2 audit correction), but it is
+		// still a cookie-authed state-changing call, so it needs the
+		// Origin/Referer check. csrfProtect is method-gated and a no-op when no
+		// allowlist is configured (standalone).
+		r.With(s.csrfProtect).Post("/abi", s.handleUpdateContractABI)
 		r.Get("/internal", s.handleGetAddressInternalTxs)
 		r.Get("/logs", s.handleGetAddressLogs)
 		r.Get("/balances", s.handleGetAddressTokenBalances)
-		// Sourcify lookups are also build-tagged (privacy build = no-op).
-		s.registerSourcifyAddressRoutes(r)
+		// Sourcify lookups are also build-tagged (privacy build = no-op) and,
+		// like /verify, runtime-gated off in privacy mode for the default
+		// binary (P-2) — Sourcify writes verified source to the local DB too.
+		if !s.inPrivacyMode() {
+			s.registerSourcifyAddressRoutes(r)
+		}
 	})
 
 	// /verify/* moved into the build-tagged registerVerificationAPI helper

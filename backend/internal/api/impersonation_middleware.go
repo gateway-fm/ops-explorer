@@ -83,8 +83,10 @@ func (s *Server) impersonationMiddleware(next http.Handler) http.Handler {
 		// could use it from a different (lower-privileged) account.
 		callerDID := s.GetAuthDID(r)
 		if callerDID == "" || !strings.EqualFold(callerDID, session.AdminDID) {
-			log.Warn("impersonation: caller DID does not match token's admin DID",
-				"caller", callerDID, "admin", session.AdminDID)
+			// P-3: do NOT log the caller/admin DID pair — it links two real
+			// identities in the explorer's own stderr. The mismatch itself is
+			// the useful security signal; the DIDs are not needed to act on it.
+			log.Warn("impersonation: caller DID does not match token's admin DID (rejected)")
 			writeError(w, http.StatusUnauthorized, "Impersonation token is not bound to this caller")
 			return
 		}
