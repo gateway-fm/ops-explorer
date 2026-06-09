@@ -381,13 +381,28 @@ func mapDailyStatsList(in []*indexerv1.DailyStats) []types.DailyStats {
 		if d == nil {
 			continue
 		}
+		txns := d.GetTransactions()
+		// AvgGasPrice carries the average fee per transaction in wei
+		// (the chart layer divides by 1e9 to render Gwei). The gRPC payload
+		// only gives us aggregate TotalFees + Transactions for the day, so
+		// derive the per-tx average here. Guard against divide-by-zero on
+		// days with no transactions.
+		var avgFeeWei int64
+		if txns > 0 {
+			avgFeeWei = int64(bigToUint64(d.GetTotalFees()) / txns)
+		}
 		out = append(out, types.DailyStats{
 			Date:              d.GetDate(),
 			TotalBlocks:       int(d.GetBlocks()),
-			TotalTransactions: int(d.GetTransactions()),
+			TotalTransactions: int(txns),
 			TotalGasUsed:      int64(d.GetGasUsed()),
+			AvgGasPrice:       avgFeeWei,
 			ActiveAddresses:   int(d.GetActiveAddresses()),
 			NewAddresses:      int(d.GetNewAddresses()),
+			// NOTE(chain-indexer): SuccessfulTxs, FailedTxs, NewContracts,
+			// TokenTransferCount, AvgBlockTime, AvgBlockSize, and the three
+			// Cumulative* fields have no source in the gRPC DailyStats message
+			// and stay zero. See TestMapDailyStatsList_UpstreamGaps + report.
 		})
 	}
 	return out
