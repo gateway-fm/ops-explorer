@@ -867,7 +867,7 @@ func (s *Server) handleReadinessCheck(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetTokens(w http.ResponseWriter, r *http.Request) {
 	pageStr := r.URL.Query().Get("page")
 	pageSizeStr := r.URL.Query().Get("pageSize")
-	tokenType := r.URL.Query().Get("type")
+	tokenType := NormalizeTokenType(r.URL.Query().Get("type"))
 	search := strings.TrimSpace(r.URL.Query().Get("search"))
 
 	page := 1

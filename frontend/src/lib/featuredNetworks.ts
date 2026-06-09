@@ -43,7 +43,8 @@ export function loadFeaturedNetworks(): Promise<FeaturedNetwork[]> {
           typeof n === 'object' &&
           n !== null &&
           typeof (n as FeaturedNetwork).title === 'string' &&
-          typeof (n as FeaturedNetwork).url === 'string',
+          typeof (n as FeaturedNetwork).url === 'string' &&
+          isHttpUrl((n as FeaturedNetwork).url),
       );
     } catch {
       return [];
@@ -55,6 +56,18 @@ export function loadFeaturedNetworks(): Promise<FeaturedNetwork[]> {
 export function isActiveNetwork(url: string): boolean {
   try {
     return new URL(url).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
+// Switcher links navigate the top-level document, so only accept http(s) URLs —
+// rejects javascript:, data:, and other unexpected schemes from the
+// operator-controlled network list (cheap defense-in-depth).
+export function isHttpUrl(url: string): boolean {
+  try {
+    const { protocol } = new URL(url);
+    return protocol === 'http:' || protocol === 'https:';
   } catch {
     return false;
   }
