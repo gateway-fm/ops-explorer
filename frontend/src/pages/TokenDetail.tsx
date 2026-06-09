@@ -31,6 +31,9 @@ export default function TokenDetail() {
     queryKey: ['token', address],
     queryFn: () => api.getToken(address!),
     enabled: !!address,
+    // Surface the restricted/not-found interstitial immediately on a 403/404
+    // instead of retrying 3x with backoff (matches Address/TransactionDetail).
+    retry: false,
   });
 
   const { data: holders, isLoading: holdersLoading } = useQuery({
