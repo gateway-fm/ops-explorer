@@ -480,13 +480,16 @@ func (p *Provider) GetOPDeposit(ctx context.Context, txHash string) (*types.OPDe
 		Selector: &indexerv1.GetOPDepositRequest_L1TransactionHash{L1TransactionHash: txHash},
 	})
 	if err != nil {
-		if isNotFound(err) {
-			return nil, nil
-		}
+		// Unavailable still means "not OP-Stack mode" -> fall through to SQL.
 		if isUnavailable(err) {
 			return p.DirectDBProvider.GetOPDeposit(ctx, txHash)
 		}
-		return nil, err
+		// BUG-4: an OP deposit is optional enrichment on a tx. The L2 lookup
+		// already came back NotFound; if the L1 retry fails for ANY other
+		// reason (NotFound, Internal, ...), that means "no deposit for this
+		// tx" — surfacing the raw gRPC error would turn an absent deposit into
+		// a hard failure for any consumer that propagates it. Return no deposit.
+		return nil, nil
 	}
 	return mapOPDeposit(resp), nil
 }

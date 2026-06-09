@@ -48,6 +48,7 @@ type fakeIndexer struct {
 	getToken       func(*indexerv1.GetTokenRequest) (*indexerv1.Token, error)
 	getContract    func(*indexerv1.GetContractRequest) (*indexerv1.Contract, error)
 	search         func(*indexerv1.SearchRequest) (*indexerv1.SearchResponse, error)
+	getOPDeposit   func(*indexerv1.GetOPDepositRequest) (*indexerv1.OPDeposit, error)
 }
 
 func (f *fakeIndexer) GetBlock(ctx context.Context, req *indexerv1.GetBlockRequest) (*indexerv1.Block, error) {
@@ -94,6 +95,9 @@ func (f *fakeIndexer) GetContract(ctx context.Context, req *indexerv1.GetContrac
 }
 func (f *fakeIndexer) Search(ctx context.Context, req *indexerv1.SearchRequest) (*indexerv1.SearchResponse, error) {
 	return f.search(req)
+}
+func (f *fakeIndexer) GetOPDeposit(ctx context.Context, req *indexerv1.GetOPDepositRequest) (*indexerv1.OPDeposit, error) {
+	return f.getOPDeposit(req)
 }
 
 // setupProvider stands up the fake server on a bufconn listener and
