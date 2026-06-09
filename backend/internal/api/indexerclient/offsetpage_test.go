@@ -1,3 +1,5 @@
+//go:build !privacy
+
 package indexerclient
 
 import "testing"
