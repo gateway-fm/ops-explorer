@@ -801,10 +801,18 @@ func (s *Server) handleGetSyncStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// blocksRemaining can never be negative. When the indexer is ahead of this
+	// chain-height read (a normal transient race), floor at 0 rather than emit a
+	// negative count that breaks progress UIs.
+	var blocksRemaining int64
+	if latestOnChain > status.LastIndexedBlock {
+		blocksRemaining = int64(latestOnChain - status.LastIndexedBlock)
+	}
+
 	writeJSON(w, map[string]any{
 		"syncStatus":       status,
 		"latestChainBlock": latestOnChain,
-		"blocksRemaining":  int64(latestOnChain) - int64(status.LastIndexedBlock),
+		"blocksRemaining":  blocksRemaining,
 		"isSynced":         status.LastIndexedBlock >= latestOnChain,
 	})
 }
