@@ -13,10 +13,30 @@ package api
 
 import (
 	"math"
+	"strconv"
 	"testing"
 
 	"explorer/internal/types"
 )
+
+// BUG-7 (api side): paginate's cursor must be the last returned row's block
+// number (for the ?before= round-trip), not the page length.
+func TestPaginate_CursorIsLastBlockNumber(t *testing.T) {
+	rows := []types.Transaction{
+		{Hash: "0xa", BlockNumber: 200},
+		{Hash: "0xb", BlockNumber: 150},
+		{Hash: "0xc", BlockNumber: 120}, // limit+1 sentinel, trimmed
+	}
+	resp := paginate(rows, 2, func(tx types.Transaction) string {
+		return strconv.FormatUint(tx.BlockNumber, 10)
+	})
+	if !resp.HasMore || len(resp.Data) != 2 {
+		t.Fatalf("HasMore=%v len=%d, want true/2", resp.HasMore, len(resp.Data))
+	}
+	if resp.NextCursor == nil || *resp.NextCursor != "150" {
+		t.Errorf("NextCursor = %v, want \"150\" (last returned row's block number)", resp.NextCursor)
+	}
+}
 
 func ceilDiv(total int64, pageSize int) int {
 	// Reference implementation in int64; only the final quotient is narrowed.

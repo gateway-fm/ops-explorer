@@ -164,7 +164,9 @@ func (s *Server) handleGetBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := paginate(blocks, limit)
+	resp := paginate(blocks, limit, func(b types.Block) string {
+		return strconv.FormatUint(b.Number, 10)
+	})
 	resp.AddressInfo = s.enrichBlockAddresses(r.Context(), resp.Data)
 	writeJSON(w, resp)
 }
@@ -270,7 +272,9 @@ func (s *Server) handleGetTransactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := paginate(txs, limit)
+	resp := paginate(txs, limit, func(tx types.Transaction) string {
+		return strconv.FormatUint(tx.BlockNumber, 10)
+	})
 	resp.AddressInfo = s.enrichTxAddresses(r.Context(), resp.Data)
 	writeJSON(w, resp)
 }
@@ -478,7 +482,9 @@ func (s *Server) handleGetAddressTransactions(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	writeJSON(w, paginate(txs, limit))
+	writeJSON(w, paginate(txs, limit, func(tx types.Transaction) string {
+		return strconv.FormatUint(tx.BlockNumber, 10)
+	}))
 }
 
 func (s *Server) handleGetContract(w http.ResponseWriter, r *http.Request) {
@@ -554,7 +560,9 @@ func (s *Server) handleGetAddressTransfers(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	writeJSON(w, paginate(transfers, limit))
+	writeJSON(w, paginate(transfers, limit, func(tt types.TokenTransfer) string {
+		return strconv.FormatUint(tt.BlockNumber, 10)
+	}))
 }
 
 func (s *Server) handleGetTransactionTransfers(w http.ResponseWriter, r *http.Request) {
@@ -794,7 +802,12 @@ func parseBeforeBlock(r *http.Request) *uint64 {
 	return nil
 }
 
-func paginate[T any](items []T, limit int) types.PaginatedResponse[T] {
+// paginate trims an over-fetched (limit+1) slice and emits the next-page
+// cursor. BUG-7: the cursor was strconv.Itoa(len(items)) — the page length,
+// useless as a ?before= value (paging is by block number). cursorFn extracts
+// the real cursor (the last returned row's block number) so ?before= pages
+// forward with no dupes/gaps.
+func paginate[T any](items []T, limit int, cursorFn func(T) string) types.PaginatedResponse[T] {
 	hasMore := len(items) > limit
 	if hasMore {
 		items = items[:limit]
@@ -802,9 +815,7 @@ func paginate[T any](items []T, limit int) types.PaginatedResponse[T] {
 
 	var nextCursor *string
 	if hasMore && len(items) > 0 {
-		// For simplicity, use the last item's index as cursor hint
-		// In production, you'd want a proper cursor
-		cursor := strconv.Itoa(len(items))
+		cursor := cursorFn(items[len(items)-1])
 		nextCursor = &cursor
 	}
 
