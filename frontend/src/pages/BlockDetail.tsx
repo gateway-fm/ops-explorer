@@ -8,6 +8,7 @@ import { formatHash, formatTimestamp, formatGas, formatWei, getNetworkCurrency }
 import { PageHeader } from '../components/PageHeader';
 import { AddressLink } from '../components/AddressLink';
 import { CopyButton } from '../components/CopyButton';
+import { StateMessage } from '../components/StateMessage';
 
 
 type TabId = 'details' | 'transactions' | 'internal';
@@ -30,8 +31,8 @@ export function BlockDetail() {
 
   // Batch-check removed since visibility metadata is locally injected in transactions and logs
 
-  if (isLoading) return <div className="text-neutral-400">Loading...</div>;
-  if (error || !data) return <div className="text-error-600">Block not found</div>;
+  if (isLoading) return <StateMessage variant="loading" />;
+  if (error || !data) return <StateMessage variant="error" title="Block not found" />;
 
   const { block, transactions: txs } = data;
   const transactions = txs || [];
@@ -42,21 +43,30 @@ export function BlockDetail() {
       <PageHeader title={`Block #${block.number}`} />
 
       {/* Tabs */}
-      <div className="tabs">
+      <div className="tabs" role="tablist">
         <button
           onClick={() => setActiveTab('details')}
+          role="tab"
+          data-testid="tab-details"
+          aria-selected={activeTab === 'details'}
           className={activeTab === 'details' ? 'tab-active' : 'tab'}
         >
           Details
         </button>
         <button
           onClick={() => setActiveTab('transactions')}
+          role="tab"
+          data-testid="tab-transactions"
+          aria-selected={activeTab === 'transactions'}
           className={activeTab === 'transactions' ? 'tab-active' : 'tab'}
         >
           Transactions ({transactions.length})
         </button>
         <button
           onClick={() => setActiveTab('internal')}
+          role="tab"
+          data-testid="tab-internal"
+          aria-selected={activeTab === 'internal'}
           className={activeTab === 'internal' ? 'tab-active' : 'tab'}
         >
           Internal Txns ({internalTransactions.length})
@@ -195,6 +205,7 @@ function BlockDetailsTab({ block }: { block: Block }) {
       {/* Show More Section */}
       <button
         onClick={() => setShowMore(!showMore)}
+        data-testid="show-more-toggle"
         className="w-full px-4 py-3 flex items-center justify-center gap-2 text-sm text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50 transition-colors border-t border-neutral-100"
       >
         {showMore ? (
@@ -259,7 +270,7 @@ function BlockDetailsTab({ block }: { block: Block }) {
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="info-row">
+    <div className="info-row" data-testid="info-row" data-label={label}>
       <div className="info-label">{label}</div>
       <div className="info-value">{value}</div>
     </div>
@@ -271,7 +282,7 @@ function TxRow({ tx }: { tx: Transaction }) {
   const toReason = tx.to ? tx.addressMetadata?.[tx.to.toLowerCase()] : undefined;
 
   return (
-    <div className="px-4 py-3 flex items-center justify-between hover:bg-primary-50/50 transition-colors">
+    <div data-testid="tx-row" className="px-4 py-3 flex items-center justify-between hover:bg-primary-50/50 transition-colors">
       <div>
         <Link to={`/tx/${tx.hash}`} className="font-mono text-primary hover:text-primary-600 text-sm transition-colors">
           {formatHash(tx.hash, 12)}
@@ -305,7 +316,7 @@ function InternalTxRow({ itx }: { itx: InternalTransaction }) {
   const toReason = itx.to ? itx.addressMetadata?.[itx.to.toLowerCase()] : undefined;
 
   return (
-    <div className="px-4 py-3 flex items-center justify-between hover:bg-primary-50/50 transition-colors">
+    <div data-testid="internal-row" className="px-4 py-3 flex items-center justify-between hover:bg-primary-50/50 transition-colors">
       <div>
         <div className="flex items-center gap-2">
           <Link to={`/tx/${itx.txHash}`} className="font-mono text-primary hover:text-primary-600 text-sm transition-colors">

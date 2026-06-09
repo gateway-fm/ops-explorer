@@ -20,7 +20,11 @@ export function AddressLabel({ reason, visibility, className = '' }: AddressLabe
   if (!c) return null;
 
   return (
-    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium whitespace-nowrap ${c.classes} ${className}`}>
+    <span
+      data-testid="address-label"
+      data-reason={r}
+      className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium whitespace-nowrap ${c.classes} ${className}`}
+    >
       {c.text}
     </span>
   );

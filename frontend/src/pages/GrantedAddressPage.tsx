@@ -197,7 +197,7 @@ export function GrantedAddressPage() {
             Contract
           </span>
         )}
-        <span className={`badge capitalize ${
+        <span data-testid="disclosure-level-badge" className={`badge capitalize ${
           isPseudonymous
             ? 'bg-amber-100 text-amber-700 border-amber-200'
             : isRedacted
@@ -209,7 +209,7 @@ export function GrantedAddressPage() {
       </PageHeader>
 
       {/* Disclosure Banner */}
-      <div className={`card p-4 ${
+      <div data-testid="disclosure-banner" className={`card p-4 ${
         isPseudonymous
           ? 'border-amber-200 bg-amber-50'
           : isRedacted
@@ -312,6 +312,9 @@ export function GrantedAddressPage() {
             {showTransactionsTab && (
               <button
                 onClick={() => setActiveTab('transactions')}
+                role="tab"
+                data-testid="tab-transactions"
+                aria-selected={currentTab === 'transactions'}
                 className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                   currentTab === 'transactions'
                     ? 'border-primary text-primary'
@@ -325,6 +328,9 @@ export function GrantedAddressPage() {
             {showActivityLogsTab && (
               <button
                 onClick={() => setActiveTab('activity_logs')}
+                role="tab"
+                data-testid="tab-activity_logs"
+                aria-selected={currentTab === 'activity_logs'}
                 className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                   currentTab === 'activity_logs'
                     ? 'border-primary text-primary'

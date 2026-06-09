@@ -55,6 +55,7 @@ function TraceRow({ node }: { node: TraceNode }) {
   return (
     <div>
       <div
+        data-testid="trace-row"
         className={`flex items-start gap-2 py-2 pr-3 text-sm border-l-2 ${
           trace.error ? 'border-error-400 bg-error-50/40' : 'border-transparent hover:bg-primary-50/40'
         } transition-colors`}
