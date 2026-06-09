@@ -60,6 +60,22 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    # Postgres so the coverage gate can include internal/db (-tags dbtest). The
+    # standalone -race leg below does not need it; the dbtest coverage leg does.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: explorer_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       # Pinned solc for the verifier compile tests. The 14 t.Skip("solc not
       # available") in internal/verifier must NOT silently no-op in CI, so we
@@ -70,6 +86,9 @@ jobs:
       # https://binaries.soliditylang.org/linux-amd64/list.json (org S-1:
       # solc must be checksum-verified before exec, not fetched blindly).
       SOLC_SHA256: d5f23436f443edb85d8e76906d12f0a86ce0490e7663a9e608efeb7a93f149ef
+      # Required by the -tags dbtest coverage leg; the dbtest suite FAILS (not
+      # skips) if unset, so the meaningful number always includes internal/db.
+      EXPLORER_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/explorer_test?sslmode=disable
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -103,28 +122,46 @@ jobs:
           fi
           "${SOLC_DIR}/solc-${SOLC_VERSION}" --version
 
-      - name: Run tests (standalone, -race, coverage profile)
-        run: go test -race -count=1 -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Run tests (standalone, -race)
+        run: go test -race -count=1 ./...
 
       # The privacy build ships near-zero data-path coverage unless its tests
       # actually run; this leg closes that structural gap (audit §4.1).
       - name: Run tests (privacy build, -race)
         run: go test -tags privacy -race -count=1 ./...
 
-      - name: Coverage report (soft per-package floor)
+      # The MEANINGFUL coverage number (plan §6): generated code (gen/) excluded
+      # from the denominator via -coverpkg, internal/db INCLUDED via -tags dbtest
+      # against the Postgres service. This is what the gate enforces.
+      - name: Coverage profile (gen-excluded, db-included)
         run: |
           set -euo pipefail
-          echo "## Backend coverage" >> "$GITHUB_STEP_SUMMARY"
+          pkgs="$(go list ./... | grep -v '/gen/' | tr '\n' ',')"
+          go test -tags dbtest -count=1 -coverpkg="$pkgs" \
+            -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Coverage gate (hard total floor, gen-excluded)
+        env:
+          # Ratchet up as coverage improves; never lower without justification.
+          COVERAGE_FLOOR: "38.0"
+        run: |
+          set -euo pipefail
+          total="$(go tool cover -func=coverage.out | awk '/^total:/ { sub(/%/,"",$3); print $3 }')"
+          echo "## Backend coverage (gen-excluded, db-included)" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          go tool cover -func=coverage.out | tail -n 1 >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          # Soft per-package floor: report packages below a target but DO NOT
-          # fail the build (ratchet to hard once gaps close). cmd/api / cache /
-          # privacy carry a higher expectation per the audit.
-          go test -cover ./... 2>/dev/null \
+          echo "total: ${total}%  (floor ${COVERAGE_FLOOR}%)" >> "$GITHUB_STEP_SUMMARY"
+          go test -tags dbtest -cover ./... 2>/dev/null \
             | awk '/coverage:/ { pct=$0; sub(/.*coverage: /,"",pct); sub(/%.*/,"",pct);
-                                 if (pct+0 < 15.0) print "  below 15% floor: " $0 }' \
+                                 if (pct+0 < 20.0) print "  below 20% per-pkg target: " $0 }' \
             >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          awk -v t="$total" -v f="$COVERAGE_FLOOR" 'BEGIN {
+            if (t+0 < f+0) {
+              printf("::error::backend coverage %.1f%% is below the %.1f%% floor (gen-excluded, db-included)\n", t, f);
+              exit 1;
+            }
+            printf("backend coverage %.1f%% >= floor %.1f%%\n", t, f);
+          }'
 
       - name: Upload coverage profile
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

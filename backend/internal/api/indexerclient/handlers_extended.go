@@ -23,6 +23,7 @@ package indexerclient
 
 import (
 	"context"
+	"math"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -89,7 +90,17 @@ func (p *Provider) GetTransactionsPaginated(ctx context.Context, page, pageSize 
 	if page < 1 {
 		page = 1
 	}
-	fetchLimit := int32(page * pageSize)
+	if pageSize < 1 {
+		pageSize = 1
+	}
+	// BUG-9: fetchLimit := int32(page * pageSize) overflowed int32 to a negative
+	// page_size for a large page. Compute in int64 and clamp to MaxInt32 (the
+	// indexer is server-capped anyway), so the wire value is always >= 0.
+	want := int64(page) * int64(pageSize)
+	if want > math.MaxInt32 {
+		want = math.MaxInt32
+	}
+	fetchLimit := int32(want)
 	resp, err := p.client.ListTransactions(ctx, &indexerv1.ListTransactionsRequest{
 		Page: &indexerv1.PageRequest{PageSize: fetchLimit},
 	})
@@ -469,13 +480,16 @@ func (p *Provider) GetOPDeposit(ctx context.Context, txHash string) (*types.OPDe
 		Selector: &indexerv1.GetOPDepositRequest_L1TransactionHash{L1TransactionHash: txHash},
 	})
 	if err != nil {
-		if isNotFound(err) {
-			return nil, nil
-		}
+		// Unavailable still means "not OP-Stack mode" -> fall through to SQL.
 		if isUnavailable(err) {
 			return p.DirectDBProvider.GetOPDeposit(ctx, txHash)
 		}
-		return nil, err
+		// BUG-4: an OP deposit is optional enrichment on a tx. The L2 lookup
+		// already came back NotFound; if the L1 retry fails for ANY other
+		// reason (NotFound, Internal, ...), that means "no deposit for this
+		// tx" — surfacing the raw gRPC error would turn an absent deposit into
+		// a hard failure for any consumer that propagates it. Return no deposit.
+		return nil, nil
 	}
 	return mapOPDeposit(resp), nil
 }

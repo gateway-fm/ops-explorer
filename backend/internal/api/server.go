@@ -68,6 +68,31 @@ type Server struct {
 	// against privacy-proxy. Tests inject a stub here; production code leaves
 	// it nil and uses the default client.
 	impersonationHTTP *http.Client
+
+	// sourcifyHTTP / sourcifyBaseURL are an optional injectable seam for the
+	// Sourcify handlers (handleFetchSourcify/Check/Verify). Production leaves
+	// them nil/"" and the handlers use http.DefaultClient + sourcifyAPIBase;
+	// tests point them at an httptest server. Mirrors impersonationHTTP.
+	sourcifyHTTP    *http.Client
+	sourcifyBaseURL string
+}
+
+// sourcifyClient returns the HTTP client the Sourcify handlers should use
+// (injected stub in tests, default client in production).
+func (s *Server) sourcifyClient() *http.Client {
+	if s.sourcifyHTTP != nil {
+		return s.sourcifyHTTP
+	}
+	return http.DefaultClient
+}
+
+// sourcifyBase returns the Sourcify API base URL (injected in tests, the public
+// server const in production).
+func (s *Server) sourcifyBase() string {
+	if s.sourcifyBaseURL != "" {
+		return s.sourcifyBaseURL
+	}
+	return sourcifyAPIBase
 }
 
 type ServerConfig struct {

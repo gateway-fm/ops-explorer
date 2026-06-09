@@ -311,8 +311,8 @@ func (c *Client) FetchTokenMetadataBatch(ctx context.Context, addresses []common
 				return nil
 			}
 			decimalsData, err := c.CallContract(ctx, addr, common.FromHex("0x313ce567"))
-			if err == nil && len(decimalsData) >= 32 {
-				result.Decimals = int(new(big.Int).SetBytes(decimalsData).Int64())
+			if err == nil {
+				result.Decimals = parseDecimals(decimalsData)
 			} else {
 				result.Decimals = 18 // Default
 			}
@@ -328,6 +328,25 @@ func (c *Client) FetchTokenMetadataBatch(ctx context.Context, addresses []common
 	return results, nil
 }
 
+// parseDecimals decodes an ERC-20 decimals() return word. BUG-6: the value is
+// UNTRUSTED — int(big.Int.Int64()) on a >MaxInt64 word wraps to a negative or
+// absurd int, corrupting every downstream value formatting. ERC-20 decimals is
+// a uint8, so clamp to 0..255; anything outside that falls back to 18.
+func parseDecimals(data []byte) int {
+	if len(data) < 32 {
+		return 18
+	}
+	n := new(big.Int).SetBytes(data)
+	if !n.IsInt64() {
+		return 18
+	}
+	d := n.Int64()
+	if d < 0 || d > 255 {
+		return 18
+	}
+	return int(d)
+}
+
 func parseStringResult(data []byte) string {
 	if len(data) < 64 {
 		result := string(data)
@@ -339,21 +358,23 @@ func parseStringResult(data []byte) string {
 		return result
 	}
 
+	n := uint64(len(data))
 	offset := new(big.Int).SetBytes(data[:32]).Uint64()
-	if offset >= uint64(len(data)) {
-		return ""
-	}
-
-	if offset+32 > uint64(len(data)) {
+	// BUG-5: offset+32 and offset+32+length were computed in uint64 and could
+	// WRAP past these guards for crafted return data, then slice -> panic.
+	// Compare by subtraction (n is the only large-but-bounded value) so no
+	// addition can overflow.
+	if offset > n || n-offset < 32 {
 		return ""
 	}
 
 	length := new(big.Int).SetBytes(data[offset : offset+32]).Uint64()
-	if offset+32+length > uint64(len(data)) {
+	dataStart := offset + 32 // safe: offset <= n-32, so offset+32 <= n
+	if length > n-dataStart {
 		return ""
 	}
 
-	result := string(data[offset+32 : offset+32+length])
+	result := string(data[dataStart : dataStart+length])
 	for i := 0; i < len(result); i++ {
 		if result[i] == 0 {
 			return result[:i]

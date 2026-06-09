@@ -65,7 +65,13 @@ func parsePageSize(r *http.Request) int {
 	return 25
 }
 
-func paginate[T any](items []T, limit int) types.PaginatedResponse[T] {
+// paginate trims an over-fetched (limit+1) slice and, when there is a next
+// page, emits the cursor for it. BUG-7: the previous form set the cursor to
+// strconv.Itoa(len(items)) — the page length, which is meaningless as a
+// ?before= value (the API pages by block number). cursorFn extracts the real
+// cursor (the last returned row's block number) so the ?before= round-trip
+// pages forward with no dupes/gaps.
+func paginate[T any](items []T, limit int, cursorFn func(T) string) types.PaginatedResponse[T] {
 	hasMore := len(items) > limit
 	if hasMore {
 		items = items[:limit]
@@ -73,7 +79,7 @@ func paginate[T any](items []T, limit int) types.PaginatedResponse[T] {
 
 	var nextCursor *string
 	if hasMore && len(items) > 0 {
-		cursor := strconv.Itoa(len(items))
+		cursor := cursorFn(items[len(items)-1])
 		nextCursor = &cursor
 	}
 
@@ -84,20 +90,31 @@ func paginate[T any](items []T, limit int) types.PaginatedResponse[T] {
 	}
 }
 
+// computeTotalPages returns ceil(total/pageSize) in int64 (BUG-1: int(total)
+// truncated the total to platform int before dividing, breaking on 32-bit for
+// a total above math.MaxInt32). pageSize<=0 / total<=0 -> 0.
+func computeTotalPages(total int64, pageSize int) int {
+	if pageSize <= 0 || total <= 0 {
+		return 0
+	}
+	ps := int64(pageSize)
+	pages := total / ps
+	if total%ps != 0 {
+		pages++
+	}
+	return int(pages)
+}
+
 func offsetPaginated[T any](data []T, total int64, page, pageSize int) types.OffsetPaginatedResponse[T] {
 	if data == nil {
 		data = []T{}
-	}
-	totalPages := int(total) / pageSize
-	if int(total)%pageSize > 0 {
-		totalPages++
 	}
 	return types.OffsetPaginatedResponse[T]{
 		Data:       data,
 		Total:      total,
 		Page:       page,
 		PageSize:   pageSize,
-		TotalPages: totalPages,
+		TotalPages: computeTotalPages(total, pageSize),
 	}
 }
 
@@ -125,7 +142,9 @@ func (s *Server) handleGetBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, paginate(blocks, limit))
+	writeJSON(w, paginate(blocks, limit, func(b types.Block) string {
+		return strconv.FormatUint(b.Number, 10)
+	}))
 }
 
 func (s *Server) handleGetLatestBlock(w http.ResponseWriter, r *http.Request) {
@@ -192,7 +211,9 @@ func (s *Server) handleGetTransactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, paginate(txs, limit))
+	writeJSON(w, paginate(txs, limit, func(tx types.Transaction) string {
+		return strconv.FormatUint(tx.BlockNumber, 10)
+	}))
 }
 
 func (s *Server) handleGetTransactionsPaginated(w http.ResponseWriter, r *http.Request) {
@@ -352,7 +373,9 @@ func (s *Server) handleGetAddressTransactions(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	writeJSON(w, paginate(txs, limit))
+	writeJSON(w, paginate(txs, limit, func(tx types.Transaction) string {
+		return strconv.FormatUint(tx.BlockNumber, 10)
+	}))
 }
 
 func (s *Server) handleGetAddressTransfers(w http.ResponseWriter, r *http.Request) {
@@ -367,19 +390,28 @@ func (s *Server) handleGetAddressTransfers(w http.ResponseWriter, r *http.Reques
 	pageSize := parsePageSize(r)
 	offset := (page - 1) * pageSize
 
-	// Use GetAllTransfers with address filtering via GetTransfersByAddress
-	// The provider supports cursor-based pagination for address transfers,
-	// but we also support page/pageSize by using offset calculation.
-	transfers, err := s.provider.GetTransfersByAddress(r.Context(), address, pageSize+1, nil)
+	// BUG-pub: the offset was previously computed and then discarded (`_ =
+	// offset`), so ?page=2 returned the same rows as ?page=1. GetTransfersByAddress
+	// only exposes cursor pagination, so to honor ?page= we over-fetch
+	// offset+pageSize+1 rows and skip the first `offset`. (The +1 sentinel still
+	// drives HasMore.) For deep offsets the ?before= cursor remains preferable;
+	// this keeps page/pageSize correct for the documented public-API contract.
+	fetch := offset + pageSize + 1
+	transfers, err := s.provider.GetTransfersByAddress(r.Context(), address, fetch, nil)
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// For offset pagination compatibility, skip entries based on offset.
-	// This is a simplified approach; for large offsets the cursor method is preferred.
-	_ = offset
-	writeJSON(w, paginate(transfers, pageSize))
+	if offset < len(transfers) {
+		transfers = transfers[offset:]
+	} else {
+		transfers = transfers[:0]
+	}
+
+	writeJSON(w, paginate(transfers, pageSize, func(tt types.TokenTransfer) string {
+		return strconv.FormatUint(tt.BlockNumber, 10)
+	}))
 }
 
 func (s *Server) handleGetAddressTokenBalances(w http.ResponseWriter, r *http.Request) {
@@ -769,10 +801,18 @@ func (s *Server) handleGetSyncStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// blocksRemaining can never be negative. When the indexer is ahead of this
+	// chain-height read (a normal transient race), floor at 0 rather than emit a
+	// negative count that breaks progress UIs.
+	var blocksRemaining int64
+	if latestOnChain > status.LastIndexedBlock {
+		blocksRemaining = int64(latestOnChain - status.LastIndexedBlock)
+	}
+
 	writeJSON(w, map[string]any{
 		"syncStatus":       status,
 		"latestChainBlock": latestOnChain,
-		"blocksRemaining":  int64(latestOnChain) - int64(status.LastIndexedBlock),
+		"blocksRemaining":  blocksRemaining,
 		"isSynced":         status.LastIndexedBlock >= latestOnChain,
 	})
 }

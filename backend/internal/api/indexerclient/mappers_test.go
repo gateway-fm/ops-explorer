@@ -186,6 +186,59 @@ func TestMapAddressStats(t *testing.T) {
 	}
 }
 
+// §4.4 in-payload count gaps + sums. These pin the per-mode counter contract at
+// the mapper level so a future regression (or a silently-widened gap) trips a
+// test rather than shipping wrong counters.
+
+func TestMapAddressStats_TxCountIsInPlusOut(t *testing.T) {
+	in := &indexerv1.Address{TxCountIn: 30, TxCountOut: 70}
+	out := mapAddressStats(in)
+	if out.TxCount != 100 {
+		t.Errorf("TxCount = %d, want In+Out = 100", out.TxCount)
+	}
+	// GAP pin: the proto carries no internal-tx count for an address, so
+	// InternalTxCount is always 0 in standalone. Assert-zero so the gap can't
+	// silently change (e.g. become a wrong non-zero) without a test update.
+	if out.InternalTxCount != 0 {
+		t.Errorf("InternalTxCount = %d, want 0 (chain-indexer Address has no internal-tx count; documented gap)", out.InternalTxCount)
+	}
+}
+
+func TestMapAddressStats_TxCountLargeSum(t *testing.T) {
+	// Near-MaxInt32 each side: the sum must equal In+Out and stay non-negative
+	// (guards the uint64->int narrowing in mapAddressStats from a surprising
+	// negative on a 64-bit host; on 32-bit this is the overflow site to watch).
+	const each = uint64(1_000_000_000) // 1e9; sum 2e9 < MaxInt32? no: >MaxInt32
+	out := mapAddressStats(&indexerv1.Address{TxCountIn: each, TxCountOut: each})
+	if out.TxCount < 0 {
+		t.Fatalf("TxCount = %d, must never be negative", out.TxCount)
+	}
+	if uint64(out.TxCount) != 2*each {
+		t.Errorf("TxCount = %d, want %d (In+Out)", out.TxCount, 2*each)
+	}
+}
+
+func TestMapTokenHolders_PercentageAndIsContractGap(t *testing.T) {
+	in := []*indexerv1.TokenBalance{
+		{Address: "0xholder", Balance: &indexerv1.BigInt{Value: "1000"}},
+	}
+	out := mapTokenHolders(in)
+	if len(out) != 1 {
+		t.Fatalf("want 1 holder, got %d", len(out))
+	}
+	if string(out[0].Balance) != "1000" {
+		t.Errorf("Balance = %q, want 1000", out[0].Balance)
+	}
+	// GAP pin: the proto TokenBalance carries no percentage or is-contract flag,
+	// so both are always zero/false in standalone. Assert it.
+	if out[0].Percentage != 0 {
+		t.Errorf("Percentage = %v, want 0 (documented standalone gap)", out[0].Percentage)
+	}
+	if out[0].IsContract {
+		t.Errorf("IsContract = true, want false (documented standalone gap)")
+	}
+}
+
 func TestMapChainStats(t *testing.T) {
 	in := &indexerv1.ChainStats{
 		TotalBlocks:         500,
@@ -239,6 +292,118 @@ func TestMapInternalTx_OptionalPointers(t *testing.T) {
 	}
 	if out.Input == nil || *out.Input != input {
 		t.Errorf("Input: %v", out.Input)
+	}
+}
+
+// TestMapDailyStatsList_CarriesPresentFields is the BUG-2 red->green test.
+//
+// The chain-indexer gRPC DailyStats message carries: Date, Transactions,
+// NewAddresses, ActiveAddresses, Blocks, GasUsed, TotalFees. mapDailyStatsList
+// previously dropped TotalFees entirely, so the per-day average transaction
+// fee surfaced as 0 on /charts/avg_txn_fee and /charts/avg_gas_price for an
+// otherwise-synced chain. TotalFees IS in the payload, so the correct fix is
+// to map it into AvgGasPrice = TotalFees / Transactions (wei per tx). The
+// consumer (extractChartDataPoints) divides AvgGasPrice by 1e9 to render Gwei.
+func TestMapDailyStatsList_CarriesPresentFields(t *testing.T) {
+	in := []*indexerv1.DailyStats{
+		{
+			Date:            "2026-06-01",
+			Transactions:    10,
+			NewAddresses:    4,
+			ActiveAddresses: 7,
+			Blocks:          5,
+			GasUsed:         105000,
+			// 10 txns, 10 Gwei average fee => total 100 Gwei == 100e9 wei.
+			TotalFees: &indexerv1.BigInt{Value: "100000000000"},
+		},
+	}
+	out := mapDailyStatsList(in)
+	if len(out) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(out))
+	}
+	d := out[0]
+	// Fields the gRPC payload provides and the mapper already carried.
+	if d.Date != "2026-06-01" {
+		t.Errorf("Date: %q", d.Date)
+	}
+	if d.TotalTransactions != 10 {
+		t.Errorf("TotalTransactions: %d, want 10", d.TotalTransactions)
+	}
+	if d.TotalBlocks != 5 {
+		t.Errorf("TotalBlocks: %d, want 5", d.TotalBlocks)
+	}
+	if d.TotalGasUsed != 105000 {
+		t.Errorf("TotalGasUsed: %d, want 105000", d.TotalGasUsed)
+	}
+	if d.ActiveAddresses != 7 || d.NewAddresses != 4 {
+		t.Errorf("addresses: active=%d new=%d", d.ActiveAddresses, d.NewAddresses)
+	}
+	// BUG-2: TotalFees is present in the payload but was dropped. Average fee
+	// per tx = 100e9 wei / 10 txns = 10e9 wei (= 10 Gwei after the /1e9 in the
+	// chart layer). This MUST be surfaced, not 0.
+	wantAvg := int64(100000000000 / 10) // 10_000_000_000 wei
+	if d.AvgGasPrice != wantAvg {
+		t.Errorf("AvgGasPrice: %d, want %d (TotalFees/Transactions)", d.AvgGasPrice, wantAvg)
+	}
+}
+
+// TestMapDailyStatsList_ZeroTxnsNoPanic guards the divide-by-zero edge: a day
+// with fees recorded but zero transactions must not panic and must surface a
+// zero average rather than NaN/Inf.
+func TestMapDailyStatsList_ZeroTxnsNoPanic(t *testing.T) {
+	in := []*indexerv1.DailyStats{
+		{Date: "2026-06-02", Transactions: 0, TotalFees: &indexerv1.BigInt{Value: "5000"}},
+	}
+	out := mapDailyStatsList(in)
+	if len(out) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(out))
+	}
+	if out[0].AvgGasPrice != 0 {
+		t.Errorf("AvgGasPrice with 0 txns: %d, want 0", out[0].AvgGasPrice)
+	}
+}
+
+// TestMapDailyStatsList_UpstreamGaps documents the BUG-2 cross-repo gap: these
+// types.DailyStats fields have NO corresponding field in the gRPC DailyStats
+// message, so the explorer cannot populate them without a chain-indexer change.
+// The chart lines that read them (accounts_growth, txns_growth,
+// txns_success_rate, avg_block_size, avg_block_time, new_contracts,
+// contracts_growth, new_token_transfers) and the /charts/counters cumulative
+// totals therefore render 0 on a synced chain. Skipped (not failed) so CI stays
+// green; tracked as a chain-indexer issue (see final report).
+func TestMapDailyStatsList_UpstreamGaps(t *testing.T) {
+	t.Skip("TODO(chain-indexer): DailyStats lacks cumulative/success/contract/" +
+		"token-transfer/block-time/block-size fields — see report. Cannot map " +
+		"without an upstream gRPC change.")
+
+	in := []*indexerv1.DailyStats{{Date: "2026-06-01", Transactions: 10}}
+	out := mapDailyStatsList(in)
+	d := out[0]
+	// These assertions encode the CORRECT behavior once the upstream payload
+	// carries the data; they intentionally fail against the current proto.
+	if d.SuccessfulTxs == 0 {
+		t.Error("SuccessfulTxs not surfaced (needs upstream success_count)")
+	}
+	if d.CumulativeTransactions == 0 {
+		t.Error("CumulativeTransactions not surfaced (needs upstream cumulative_transactions)")
+	}
+	if d.CumulativeAddresses == 0 {
+		t.Error("CumulativeAddresses not surfaced (needs upstream cumulative_addresses)")
+	}
+	if d.CumulativeContracts == 0 {
+		t.Error("CumulativeContracts not surfaced (needs upstream cumulative_contracts)")
+	}
+	if d.NewContracts == 0 {
+		t.Error("NewContracts not surfaced (needs upstream new_contracts)")
+	}
+	if d.TokenTransferCount == 0 {
+		t.Error("TokenTransferCount not surfaced (needs upstream token_transfer_count)")
+	}
+	if d.AvgBlockTime == 0 {
+		t.Error("AvgBlockTime not surfaced (needs upstream avg_block_time)")
+	}
+	if d.AvgBlockSize == 0 {
+		t.Error("AvgBlockSize not surfaced (needs upstream avg_block_size)")
 	}
 }
 

@@ -164,7 +164,9 @@ func (s *Server) handleGetBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := paginate(blocks, limit)
+	resp := paginate(blocks, limit, func(b types.Block) string {
+		return strconv.FormatUint(b.Number, 10)
+	})
 	resp.AddressInfo = s.enrichBlockAddresses(r.Context(), resp.Data)
 	writeJSON(w, resp)
 }
@@ -270,7 +272,9 @@ func (s *Server) handleGetTransactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := paginate(txs, limit)
+	resp := paginate(txs, limit, func(tx types.Transaction) string {
+		return strconv.FormatUint(tx.BlockNumber, 10)
+	})
 	resp.AddressInfo = s.enrichTxAddresses(r.Context(), resp.Data)
 	writeJSON(w, resp)
 }
@@ -363,10 +367,7 @@ func (s *Server) handleGetTransactionsPaginated(w http.ResponseWriter, r *http.R
 		txs = []types.Transaction{}
 	}
 
-	totalPages := int(total) / pageSize
-	if int(total)%pageSize > 0 {
-		totalPages++
-	}
+	totalPages := computeTotalPages(total, pageSize)
 
 	writeJSON(w, types.OffsetPaginatedResponse[types.Transaction]{
 		Data:       txs,
@@ -481,7 +482,9 @@ func (s *Server) handleGetAddressTransactions(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	writeJSON(w, paginate(txs, limit))
+	writeJSON(w, paginate(txs, limit, func(tx types.Transaction) string {
+		return strconv.FormatUint(tx.BlockNumber, 10)
+	}))
 }
 
 func (s *Server) handleGetContract(w http.ResponseWriter, r *http.Request) {
@@ -557,7 +560,9 @@ func (s *Server) handleGetAddressTransfers(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	writeJSON(w, paginate(transfers, limit))
+	writeJSON(w, paginate(transfers, limit, func(tt types.TokenTransfer) string {
+		return strconv.FormatUint(tt.BlockNumber, 10)
+	}))
 }
 
 func (s *Server) handleGetTransactionTransfers(w http.ResponseWriter, r *http.Request) {
@@ -636,10 +641,7 @@ func (s *Server) handleGetAccounts(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	totalPages := int(total) / pageSize
-	if int(total)%pageSize > 0 {
-		totalPages++
-	}
+	totalPages := computeTotalPages(total, pageSize)
 
 	writeJSON(w, types.OffsetPaginatedResponse[types.AccountListItem]{
 		Data:       accountList,
@@ -800,7 +802,12 @@ func parseBeforeBlock(r *http.Request) *uint64 {
 	return nil
 }
 
-func paginate[T any](items []T, limit int) types.PaginatedResponse[T] {
+// paginate trims an over-fetched (limit+1) slice and emits the next-page
+// cursor. BUG-7: the cursor was strconv.Itoa(len(items)) — the page length,
+// useless as a ?before= value (paging is by block number). cursorFn extracts
+// the real cursor (the last returned row's block number) so ?before= pages
+// forward with no dupes/gaps.
+func paginate[T any](items []T, limit int, cursorFn func(T) string) types.PaginatedResponse[T] {
 	hasMore := len(items) > limit
 	if hasMore {
 		items = items[:limit]
@@ -808,9 +815,7 @@ func paginate[T any](items []T, limit int) types.PaginatedResponse[T] {
 
 	var nextCursor *string
 	if hasMore && len(items) > 0 {
-		// For simplicity, use the last item's index as cursor hint
-		// In production, you'd want a proper cursor
-		cursor := strconv.Itoa(len(items))
+		cursor := cursorFn(items[len(items)-1])
 		nextCursor = &cursor
 	}
 
@@ -895,10 +900,7 @@ func (s *Server) handleGetTokens(w http.ResponseWriter, r *http.Request) {
 		tokens = []types.Token{}
 	}
 
-	totalPages := int(total) / pageSize
-	if int(total)%pageSize > 0 {
-		totalPages++
-	}
+	totalPages := computeTotalPages(total, pageSize)
 
 	writeJSON(w, types.OffsetPaginatedResponse[types.Token]{
 		Data:       tokens,
@@ -967,10 +969,7 @@ func (s *Server) handleGetTokenHolders(w http.ResponseWriter, r *http.Request) {
 		holders = []types.TokenHolder{}
 	}
 
-	totalPages := int(total) / pageSize
-	if int(total)%pageSize > 0 {
-		totalPages++
-	}
+	totalPages := computeTotalPages(total, pageSize)
 
 	writeJSON(w, types.OffsetPaginatedResponse[types.TokenHolder]{
 		Data:       holders,
@@ -1021,10 +1020,7 @@ func (s *Server) handleGetTokenInventory(w http.ResponseWriter, r *http.Request)
 		items = []types.TokenInventoryItem{}
 	}
 
-	totalPages := int(total) / pageSize
-	if int(total)%pageSize > 0 {
-		totalPages++
-	}
+	totalPages := computeTotalPages(total, pageSize)
 
 	writeJSON(w, types.OffsetPaginatedResponse[types.TokenInventoryItem]{
 		Data:       items,
@@ -1071,10 +1067,7 @@ func (s *Server) handleGetTokenTransfers(w http.ResponseWriter, r *http.Request)
 		transfers = []types.TokenTransfer{}
 	}
 
-	totalPages := int(total) / pageSize
-	if int(total)%pageSize > 0 {
-		totalPages++
-	}
+	totalPages := computeTotalPages(total, pageSize)
 
 	writeJSON(w, types.OffsetPaginatedResponse[types.TokenTransfer]{
 		Data:       transfers,
@@ -1132,10 +1125,7 @@ func (s *Server) handleGetAllTransfers(w http.ResponseWriter, r *http.Request) {
 		transfers = []types.TokenTransfer{}
 	}
 
-	totalPages := int(total) / pageSize
-	if int(total)%pageSize > 0 {
-		totalPages++
-	}
+	totalPages := computeTotalPages(total, pageSize)
 
 	writeJSON(w, types.OffsetPaginatedResponse[types.TokenTransfer]{
 		Data:       transfers,
@@ -1201,10 +1191,7 @@ func (s *Server) handleGetAddressInternalTxs(w http.ResponseWriter, r *http.Requ
 		internalTxs = []types.InternalTransaction{}
 	}
 
-	totalPages := int(total) / pageSize
-	if int(total)%pageSize > 0 {
-		totalPages++
-	}
+	totalPages := computeTotalPages(total, pageSize)
 
 	writeJSON(w, types.OffsetPaginatedResponse[types.InternalTransaction]{
 		Data:       internalTxs,
@@ -1320,10 +1307,7 @@ func (s *Server) handleGetAddressLogs(w http.ResponseWriter, r *http.Request) {
 		logs = []types.Log{}
 	}
 
-	totalPages := int(total) / pageSize
-	if int(total)%pageSize > 0 {
-		totalPages++
-	}
+	totalPages := computeTotalPages(total, pageSize)
 
 	writeJSON(w, types.OffsetPaginatedResponse[types.Log]{
 		Data:       logs,
@@ -1381,8 +1365,8 @@ func (s *Server) handleFetchSourcify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	url := fmt.Sprintf("%s/files/%s/%s", sourcifyAPIBase, chainIDStr, address)
-	resp, err := http.Get(url)
+	url := fmt.Sprintf("%s/files/%s/%s", s.sourcifyBase(), chainIDStr, address)
+	resp, err := s.sourcifyClient().Get(url)
 	if err != nil {
 		http.Error(w, "failed to fetch from Sourcify: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -1534,7 +1518,7 @@ func (s *Server) handleVerifySourcify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	body, _ := json.Marshal(sourcifyReq)
-	resp, err := http.Post(sourcifyAPIBase+"/verify", "application/json", bytes.NewReader(body))
+	resp, err := s.sourcifyClient().Post(s.sourcifyBase()+"/verify", "application/json", bytes.NewReader(body))
 	if err != nil {
 		http.Error(w, "failed to submit to Sourcify: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -1570,8 +1554,8 @@ func (s *Server) handleVerifySourcify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fetchURL := fmt.Sprintf("%s/files/%s/%s", sourcifyAPIBase, req.ChainID, common.HexToAddress(req.Address).Hex())
-	fetchResp, err := http.Get(fetchURL)
+	fetchURL := fmt.Sprintf("%s/files/%s/%s", s.sourcifyBase(), req.ChainID, common.HexToAddress(req.Address).Hex())
+	fetchResp, err := s.sourcifyClient().Get(fetchURL)
 	if err == nil && fetchResp.StatusCode == 200 {
 		defer fetchResp.Body.Close()
 		var sourcifyFiles []struct {
@@ -1714,8 +1698,8 @@ func (s *Server) handleCheckSourcify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	url := fmt.Sprintf("%s/check-by-addresses?addresses=%s&chainIds=%s", sourcifyAPIBase, address, chainIDStr)
-	resp, err := http.Get(url)
+	url := fmt.Sprintf("%s/check-by-addresses?addresses=%s&chainIds=%s", s.sourcifyBase(), address, chainIDStr)
+	resp, err := s.sourcifyClient().Get(url)
 	if err != nil {
 		http.Error(w, "failed to check Sourcify: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -1764,6 +1748,25 @@ func GetChartLineInfoMap() map[string]types.ChartLineInfo {
 // ExtractChartDataPoints maps daily stats to chart data points for the given chart ID.
 func ExtractChartDataPoints(id string, stats []types.DailyStats) []types.ChartDataPoint {
 	return extractChartDataPoints(id, stats)
+}
+
+// computeTotalPages returns ceil(total/pageSize). BUG-1: the previous inline
+// form `int(total)/pageSize` narrowed an int64 total to platform int BEFORE
+// dividing, truncating (and possibly going negative) on 32-bit builds for a
+// total above math.MaxInt32 — leaving TotalPages inconsistent with the int64
+// Total in the same envelope. Doing the division in int64 and narrowing only
+// the small quotient is platform-independent. pageSize<=0 yields 0 (handlers
+// clamp it; this is a defensive guard against divide-by-zero).
+func computeTotalPages(total int64, pageSize int) int {
+	if pageSize <= 0 || total <= 0 {
+		return 0
+	}
+	ps := int64(pageSize)
+	pages := total / ps
+	if total%ps != 0 {
+		pages++
+	}
+	return int(pages)
 }
 
 var chartLineDefinitions = []types.ChartLineInfo{
