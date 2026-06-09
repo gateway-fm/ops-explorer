@@ -10,9 +10,48 @@ package rpc
 // downstream value-formatting computation. Decimals must clamp to a sane range.
 
 import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"explorer/pkg/eth/common"
 )
+
+// dcClient routes JSON-RPC by method to a canned raw result, or a JSON-RPC error
+// when errFor[method] is set. Used for the multi-call decoder contracts.
+func dcClient(t *testing.T, resultFor, errFor map[string]string) *Client {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var env struct {
+			ID     uint64 `json:"id"`
+			Method string `json:"method"`
+		}
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &env)
+		w.Header().Set("Content-Type", "application/json")
+		id := itoa(env.ID)
+		if msg, ok := errFor[env.Method]; ok {
+			emsg, _ := json.Marshal(msg)
+			_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":`+id+`,"error":{"code":-32000,"message":`+string(emsg)+`}}`)
+			return
+		}
+		res, ok := resultFor[env.Method]
+		if !ok {
+			res = "null"
+		}
+		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":`+id+`,"result":`+res+`}`)
+	}))
+	t.Cleanup(srv.Close)
+	c, err := New(srv.URL)
+	if err != nil {
+		t.Fatalf("rpc.New: %v", err)
+	}
+	return c
+}
 
 // abiString encodes s as a single dynamic ABI string return (head offset 0x20,
 // then length, then right-padded bytes) — the well-formed shape.
@@ -158,5 +197,96 @@ func firstBytes(b []byte) []byte {
 func TestAbiStringHelperRoundTrips(t *testing.T) {
 	if !strings.HasPrefix(string(abiString("x")[64:]), "x") {
 		t.Fatal("abiString helper is broken; malicious-input tests would be vacuous")
+	}
+}
+
+// --- GetTransactionByHash: receipt-nil optimistic fallback (plan §3) --------
+
+func TestGetTransactionByHash_ReceiptNil_OptimisticStatus(t *testing.T) {
+	// When the receipt fetch fails, GetTransactionByHash falls back optimistically
+	// to status=1 and gasUsed=tx.Gas (it must NOT error or report status 0).
+	hash := common.HexToHash("0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b")
+	txObj := `{
+		"hash":"0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b",
+		"blockNumber":"0x10","from":"0xa7d9ddbe1f17865597fbd27ec712455208b6b76d",
+		"to":"0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb","value":"0x0",
+		"gas":"0xc350","gasPrice":"0x4a817c800","input":"0x","nonce":"0x1","type":"0x0"
+	}`
+	c := dcClient(t,
+		map[string]string{"eth_getTransactionByHash": txObj},
+		// receipt call errors -> receipt nil path.
+		map[string]string{"eth_getTransactionReceipt": "boom"},
+	)
+	tx, err := c.GetTransactionByHash(context.Background(), hash)
+	if err != nil {
+		t.Fatalf("GetTransactionByHash: %v (receipt failure must not error the lookup)", err)
+	}
+	if tx == nil {
+		t.Fatal("nil tx")
+	}
+	if tx.Status != 1 {
+		t.Errorf("Status = %d, want 1 (optimistic fallback when receipt is nil)", tx.Status)
+	}
+	if tx.GasUsed != 0xc350 {
+		t.Errorf("GasUsed = %d, want tx.Gas 50000 (receipt-nil fallback)", tx.GasUsed)
+	}
+}
+
+func TestGetTransactionByHash_WithReceipt(t *testing.T) {
+	hash := common.HexToHash("0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b")
+	txObj := `{"hash":"0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b",
+		"blockNumber":"0x10","from":"0xa7d9ddbe1f17865597fbd27ec712455208b6b76d",
+		"to":"0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb","value":"0x0","gas":"0xc350",
+		"gasPrice":"0x1","input":"0x","nonce":"0x1","type":"0x0"}`
+	rcpt := `{"transactionHash":"0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b",
+		"blockNumber":"0x10","transactionIndex":"0x2","gasUsed":"0x5208","status":"0x0","logs":[]}`
+	c := dcClient(t, map[string]string{
+		"eth_getTransactionByHash": txObj,
+		"eth_getTransactionReceipt": rcpt,
+	}, nil)
+	tx, err := c.GetTransactionByHash(context.Background(), hash)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	// Receipt present: status mirrors the receipt (0x0 -> 0), gasUsed from receipt.
+	if tx.Status != 0 {
+		t.Errorf("Status = %d, want 0 (from receipt status 0x0)", tx.Status)
+	}
+	if tx.GasUsed != 0x5208 {
+		t.Errorf("GasUsed = %d, want 21000 (from receipt)", tx.GasUsed)
+	}
+}
+
+// --- CheckTracingSupport: error classification (plan §3, lock the surprise) --
+
+func TestCheckTracingSupport_Classification(t *testing.T) {
+	cases := []struct {
+		name   string
+		errMsg string // "" => success
+		want   bool
+	}{
+		{"supported", "", true},
+		{"method-not-found", "the method debug_traceBlockByNumber does not exist/is not available", false},
+		{"not-supported", "tracing is not supported by this node", false},
+		{"does-not-exist", "method does not exist", false},
+		// SURPRISING (locked): an UNKNOWN error returns true (assume supported).
+		{"unknown-error-assumes-supported", "some transient upstream hiccup", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var errFor map[string]string
+			results := map[string]string{"debug_traceBlockByNumber": "[]"}
+			if tc.errMsg != "" {
+				errFor = map[string]string{"debug_traceBlockByNumber": tc.errMsg}
+			}
+			c := dcClient(t, results, errFor)
+			got, err := c.CheckTracingSupport(context.Background())
+			if err != nil {
+				t.Fatalf("CheckTracingSupport returned err: %v (it classifies, never errors)", err)
+			}
+			if got != tc.want {
+				t.Errorf("CheckTracingSupport(%q) = %v, want %v", tc.errMsg, got, tc.want)
+			}
+		})
 	}
 }
