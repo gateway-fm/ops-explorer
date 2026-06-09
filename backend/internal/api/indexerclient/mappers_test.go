@@ -186,6 +186,59 @@ func TestMapAddressStats(t *testing.T) {
 	}
 }
 
+// §4.4 in-payload count gaps + sums. These pin the per-mode counter contract at
+// the mapper level so a future regression (or a silently-widened gap) trips a
+// test rather than shipping wrong counters.
+
+func TestMapAddressStats_TxCountIsInPlusOut(t *testing.T) {
+	in := &indexerv1.Address{TxCountIn: 30, TxCountOut: 70}
+	out := mapAddressStats(in)
+	if out.TxCount != 100 {
+		t.Errorf("TxCount = %d, want In+Out = 100", out.TxCount)
+	}
+	// GAP pin: the proto carries no internal-tx count for an address, so
+	// InternalTxCount is always 0 in standalone. Assert-zero so the gap can't
+	// silently change (e.g. become a wrong non-zero) without a test update.
+	if out.InternalTxCount != 0 {
+		t.Errorf("InternalTxCount = %d, want 0 (chain-indexer Address has no internal-tx count; documented gap)", out.InternalTxCount)
+	}
+}
+
+func TestMapAddressStats_TxCountLargeSum(t *testing.T) {
+	// Near-MaxInt32 each side: the sum must equal In+Out and stay non-negative
+	// (guards the uint64->int narrowing in mapAddressStats from a surprising
+	// negative on a 64-bit host; on 32-bit this is the overflow site to watch).
+	const each = uint64(1_000_000_000) // 1e9; sum 2e9 < MaxInt32? no: >MaxInt32
+	out := mapAddressStats(&indexerv1.Address{TxCountIn: each, TxCountOut: each})
+	if out.TxCount < 0 {
+		t.Fatalf("TxCount = %d, must never be negative", out.TxCount)
+	}
+	if uint64(out.TxCount) != 2*each {
+		t.Errorf("TxCount = %d, want %d (In+Out)", out.TxCount, 2*each)
+	}
+}
+
+func TestMapTokenHolders_PercentageAndIsContractGap(t *testing.T) {
+	in := []*indexerv1.TokenBalance{
+		{Address: "0xholder", Balance: &indexerv1.BigInt{Value: "1000"}},
+	}
+	out := mapTokenHolders(in)
+	if len(out) != 1 {
+		t.Fatalf("want 1 holder, got %d", len(out))
+	}
+	if string(out[0].Balance) != "1000" {
+		t.Errorf("Balance = %q, want 1000", out[0].Balance)
+	}
+	// GAP pin: the proto TokenBalance carries no percentage or is-contract flag,
+	// so both are always zero/false in standalone. Assert it.
+	if out[0].Percentage != 0 {
+		t.Errorf("Percentage = %v, want 0 (documented standalone gap)", out[0].Percentage)
+	}
+	if out[0].IsContract {
+		t.Errorf("IsContract = true, want false (documented standalone gap)")
+	}
+}
+
 func TestMapChainStats(t *testing.T) {
 	in := &indexerv1.ChainStats{
 		TotalBlocks:         500,

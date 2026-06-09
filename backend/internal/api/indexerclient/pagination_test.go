@@ -4,11 +4,13 @@ package indexerclient
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"testing"
 
 	indexerv1 "explorer/gen/go/chain_indexer/v1"
+	"explorer/internal/api"
 )
 
 // BUG-9: GetTransactionsPaginated set fetchLimit := int32(page * pageSize). The
@@ -199,6 +201,67 @@ func TestReconcile_AccountsMultiPage(t *testing.T) {
 	}
 	if nonEmptyPages != wantPages {
 		t.Errorf("non-empty pages = %d, want ceil(%d/%d) = %d", nonEmptyPages, N, pageSize, wantPages)
+	}
+}
+
+// =============================================================================
+// §4.3 — degraded endpoints: total == len(rows) (page-local), locked + marked
+// as a KNOWN degradation so it can't silently worsen; and /token-transfers
+// standalone -> ErrChainDataNotAvailable (admin global feed unsupported).
+// =============================================================================
+
+func TestDegraded_LogsByAddress_TotalIsPageLocal(t *testing.T) {
+	const limit = 5
+	p := setupProvider(t, &fakeIndexer{
+		listLogs: func(req *indexerv1.ListLogsRequest) (*indexerv1.ListLogsResponse, error) {
+			logs := make([]*indexerv1.Log, limit) // server returns exactly `limit`
+			for i := range logs {
+				logs[i] = &indexerv1.Log{LogIndex: uint32(i), Address: "0xc"}
+			}
+			return &indexerv1.ListLogsResponse{Logs: logs}, nil
+		},
+	})
+	rows, total, err := p.GetLogsByAddress(context.Background(), "0xc", limit, 0)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	// KNOWN DEGRADATION (handlers_extended.go file comment): the indexer ListLogs
+	// has no count, so total degrades to len(rows). Lock it so it can't silently
+	// change to a wrong non-page-local value.
+	if total != int64(len(rows)) {
+		t.Errorf("total = %d, want len(rows) = %d (known page-local degradation)", total, len(rows))
+	}
+}
+
+func TestDegraded_TransfersByToken_TotalIsPageLocal(t *testing.T) {
+	const limit = 4
+	p := setupProvider(t, &fakeIndexer{
+		listTransfers: func(req *indexerv1.ListTokenTransfersRequest) (*indexerv1.ListTokenTransfersResponse, error) {
+			tr := make([]*indexerv1.TokenTransfer, limit)
+			for i := range tr {
+				tr[i] = &indexerv1.TokenTransfer{LogIndex: uint32(i)}
+			}
+			return &indexerv1.ListTokenTransfersResponse{Transfers: tr}, nil
+		},
+	})
+	rows, total, err := p.GetTransfersByToken(context.Background(), "0xtok", limit, 0)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if total != int64(len(rows)) {
+		t.Errorf("total = %d, want len(rows) = %d (known page-local degradation)", total, len(rows))
+	}
+}
+
+func TestDegraded_AllTransfers_StandaloneUnsupported(t *testing.T) {
+	// /token-transfers (global unfiltered feed) is not a supported indexer use
+	// case, so the indexerclient Provider does NOT override it and it falls
+	// through to DirectDBProvider -> ErrChainDataNotAvailable. Handlers map that
+	// to 500. Lock the error identity.
+	p := setupProvider(t, &fakeIndexer{})
+	_, _, err := p.GetAllTransfers(context.Background(), 25, 0)
+	if !errors.Is(err, api.ErrChainDataNotAvailable) {
+		t.Fatalf("GetAllTransfers err = %v, want ErrChainDataNotAvailable", err)
 	}
 }
 

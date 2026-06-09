@@ -19,8 +19,17 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"explorer/internal/privacy"
 	"explorer/internal/rpc"
+	"explorer/internal/types"
 )
+
+// hpFakePrivacyClient returns a non-nil privacy.Client (handleGetStats only
+// checks privacyClient != nil to set PrivacyEnabled and enable the RPC overlay).
+func hpFakePrivacyClient(t *testing.T) *privacy.Client {
+	t.Helper()
+	return privacy.NewClient("http://privacy-proxy.invalid")
+}
 
 // hpRPCServer stands up a JSON-RPC 2.0 server. blockNumber is the eth_blockNumber
 // hex result; tsByBlock maps a hex block number ("0x...") to its timestamp hex
@@ -161,6 +170,43 @@ func TestPublicChainFacts_MaxUint64Overflow(t *testing.T) {
 	// returns deterministically without panicking on the overflowed total.
 	if ok {
 		t.Error("ok = true, want false (no sample data) — and must not panic on overflow")
+	}
+}
+
+// TestHandleGetStats_PrivacyRPCOverrideReplacesBlocksOnly (§4.4): in privacy
+// mode handleGetStats overlays public chain facts from RPC onto the proxy's
+// ChainStats, but only TotalBlocks (and AvgBlockTime). TotalTransactions /
+// TotalAddresses — which are RBAC-scoped per caller by the proxy — must be left
+// exactly as the proxy returned them.
+func TestHandleGetStats_PrivacyRPCOverrideReplacesBlocksOnly(t *testing.T) {
+	rpcClient := hpRPCClient(t, "0x65", map[string]string{
+		"0x65": "0x" + toHexU(2200),
+		"0x1":  "0x" + toHexU(1000),
+	}, false)
+	s := &Server{
+		provider:      &hpStub{chainStats: &types.ChainStats{TotalBlocks: 5, TotalTransactions: 100, TotalAddresses: 20}},
+		privacyClient: hpFakePrivacyClient(t),
+		rpc:           rpcClient,
+	}
+	w := httptest.NewRecorder()
+	s.handleGetStats(w, httptest.NewRequest(http.MethodGet, "/api/stats", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d", w.Code)
+	}
+	var stats types.ChainStats
+	_ = json.Unmarshal(w.Body.Bytes(), &stats)
+	if !stats.PrivacyEnabled {
+		t.Error("PrivacyEnabled = false, want true (privacyClient set)")
+	}
+	if stats.TotalBlocks != 102 {
+		t.Errorf("TotalBlocks = %d, want 102 (RPC override latest+1)", stats.TotalBlocks)
+	}
+	// The RBAC-scoped counters must NOT be touched by the RPC override.
+	if stats.TotalTransactions != 100 {
+		t.Errorf("TotalTransactions = %d, want 100 unchanged (proxy-scoped)", stats.TotalTransactions)
+	}
+	if stats.TotalAddresses != 20 {
+		t.Errorf("TotalAddresses = %d, want 20 unchanged (proxy-scoped)", stats.TotalAddresses)
 	}
 }
 

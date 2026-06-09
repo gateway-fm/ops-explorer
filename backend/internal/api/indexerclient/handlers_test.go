@@ -45,6 +45,8 @@ type fakeIndexer struct {
 	listLogs       func(*indexerv1.ListLogsRequest) (*indexerv1.ListLogsResponse, error)
 	listAddresses  func(*indexerv1.ListAddressesRequest) (*indexerv1.ListAddressesResponse, error)
 	listTokens     func(*indexerv1.ListTokensRequest) (*indexerv1.ListTokensResponse, error)
+	listTransfers  func(*indexerv1.ListTokenTransfersRequest) (*indexerv1.ListTokenTransfersResponse, error)
+	listInternal   func(*indexerv1.ListInternalTransactionsRequest) (*indexerv1.ListInternalTransactionsResponse, error)
 	getToken       func(*indexerv1.GetTokenRequest) (*indexerv1.Token, error)
 	getContract    func(*indexerv1.GetContractRequest) (*indexerv1.Contract, error)
 	search         func(*indexerv1.SearchRequest) (*indexerv1.SearchResponse, error)
@@ -86,6 +88,12 @@ func (f *fakeIndexer) ListAddresses(ctx context.Context, req *indexerv1.ListAddr
 }
 func (f *fakeIndexer) ListTokens(ctx context.Context, req *indexerv1.ListTokensRequest) (*indexerv1.ListTokensResponse, error) {
 	return f.listTokens(req)
+}
+func (f *fakeIndexer) ListTokenTransfers(ctx context.Context, req *indexerv1.ListTokenTransfersRequest) (*indexerv1.ListTokenTransfersResponse, error) {
+	return f.listTransfers(req)
+}
+func (f *fakeIndexer) ListInternalTransactions(ctx context.Context, req *indexerv1.ListInternalTransactionsRequest) (*indexerv1.ListInternalTransactionsResponse, error) {
+	return f.listInternal(req)
 }
 func (f *fakeIndexer) GetToken(ctx context.Context, req *indexerv1.GetTokenRequest) (*indexerv1.Token, error) {
 	return f.getToken(req)
