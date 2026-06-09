@@ -573,8 +573,9 @@ func (s *Server) handleGetAllTransfers(w http.ResponseWriter, r *http.Request) {
 	page := parsePage(r)
 	pageSize := parsePageSize(r)
 	offset := (page - 1) * pageSize
+	tokenType := api.NormalizeTokenType(r.URL.Query().Get("type"))
 
-	transfers, total, err := s.provider.GetAllTransfers(r.Context(), pageSize, offset)
+	transfers, total, err := s.provider.GetAllTransfers(r.Context(), tokenType, pageSize, offset)
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return

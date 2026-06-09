@@ -129,6 +129,8 @@ services:
     volumes:
       - ./frontend:/app
       - frontend_a_node_modules:/app/node_modules
+      # Multi-network mode: supply the network list (overrides the empty default).
+      - ./deploy/featured-networks.multi.json:/app/public/featured-networks.json:ro
     ports:
       - "3001:3001"
     environment:
@@ -137,6 +139,8 @@ services:
       VITE_CHAIN_ID: "31337"
       VITE_NETWORK_NAME: "Local Mainnet"
       VITE_RPC_URL: http://localhost:8546
+      # Opt in to the network switcher (off by default — single-network deploys).
+      VITE_MULTI_NETWORK_ENABLED: "true"
       API_PROXY_TARGET: http://api-a:8080
     command: sh -c "npm install --legacy-peer-deps && npm run dev -- --host 0.0.0.0 --port 3001"
     depends_on:
@@ -258,6 +262,8 @@ services:
     volumes:
       - ./frontend:/app
       - frontend_b_node_modules:/app/node_modules
+      # Multi-network mode: supply the network list (overrides the empty default).
+      - ./deploy/featured-networks.multi.json:/app/public/featured-networks.json:ro
     ports:
       - "3002:3001"
     environment:
@@ -266,6 +272,8 @@ services:
       VITE_CHAIN_ID: "31338"
       VITE_NETWORK_NAME: "Local Testnet"
       VITE_RPC_URL: http://localhost:8556
+      # Opt in to the network switcher (off by default — single-network deploys).
+      VITE_MULTI_NETWORK_ENABLED: "true"
       API_PROXY_TARGET: http://api-b:8080
     command: sh -c "npm install --legacy-peer-deps && npm run dev -- --host 0.0.0.0 --port 3001"
     depends_on:
