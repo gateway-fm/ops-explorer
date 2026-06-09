@@ -39,6 +39,26 @@ func isUnavailable(err error) bool {
 	return status.Code(err) == codes.Unavailable
 }
 
+// offsetPage converts an (offset, limit) pair into the 1-based page number the
+// indexer's offset-paginated RPCs expect. It guards a zero/negative limit (which
+// would panic on the offset/limit division) and clamps the page so the
+// subsequent int32(page) cast can't overflow on a pathologically large offset.
+// Returns the page and the normalised limit (also used for PageSize).
+func offsetPage(offset, limit int) (page, normLimit int) {
+	if limit <= 0 {
+		limit = 25
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	page = offset/limit + 1
+	const maxPage = 1 << 30 // keep int32(page) safely in range
+	if page > maxPage {
+		page = maxPage
+	}
+	return page, limit
+}
+
 // ----- Transactions: by-address cursor feed -----
 
 func (p *Provider) GetTransactionsByAddress(ctx context.Context, address string, limit int, beforeBlock *uint64) ([]types.Transaction, error) {
@@ -185,10 +205,29 @@ func (p *Provider) GetTransfersByToken(ctx context.Context, tokenAddress string,
 	return transfers, int64(len(transfers)), nil
 }
 
-// GetAllTransfers intentionally NOT overridden — falls through to
-// *DirectDBProvider. The indexer's ListTokenTransfers requires at least
-// one filter; unfiltered global transfer feed is not an indexer-supported
-// use case. Admin-style path; OK to keep on SQL.
+// GetAllTransfers serves the global "Token Transfers" page via the indexer's
+// ListAllTokenTransfers RPC (offset pagination + accurate total + optional
+// token-standard filter). tokenType is "ERC20"/"ERC721"/"ERC1155" or "" for all.
+func (p *Provider) GetAllTransfers(ctx context.Context, tokenType string, limit int, offset int) ([]types.TokenTransfer, int64, error) {
+	page, limit := offsetPage(offset, limit)
+	var tt indexerv1.TokenType
+	switch tokenType {
+	case "ERC20":
+		tt = indexerv1.TokenType_TOKEN_TYPE_ERC20
+	case "ERC721":
+		tt = indexerv1.TokenType_TOKEN_TYPE_ERC721
+	case "ERC1155":
+		tt = indexerv1.TokenType_TOKEN_TYPE_ERC1155
+	}
+	resp, err := p.client.ListAllTokenTransfers(ctx, &indexerv1.ListAllTokenTransfersRequest{
+		Page:      &indexerv1.OffsetPageRequest{Page: int32(page), PageSize: int32(limit)},
+		TokenType: tt,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	return mapTokenTransfers(resp.GetTransfers()), resp.GetPage().GetTotalItems(), nil
+}
 
 // ----- Internal transactions -----
 
@@ -241,7 +280,7 @@ func (p *Provider) GetToken(ctx context.Context, address string) (*types.Token, 
 }
 
 func (p *Provider) GetTokens(ctx context.Context, limit int, offset int, tokenType, search string) ([]types.Token, int64, error) {
-	page := offset/limit + 1
+	page, limit := offsetPage(offset, limit)
 	var tt indexerv1.TokenType
 	switch tokenType {
 	case "ERC20":
@@ -263,7 +302,7 @@ func (p *Provider) GetTokens(ctx context.Context, limit int, offset int, tokenTy
 }
 
 func (p *Provider) GetTokenHolders(ctx context.Context, tokenAddress string, limit int, offset int) ([]types.TokenHolder, int64, error) {
-	page := offset/limit + 1
+	page, limit := offsetPage(offset, limit)
 	resp, err := p.client.ListTokenHolders(ctx, &indexerv1.ListTokenHoldersRequest{
 		TokenAddress: tokenAddress,
 		Page:         &indexerv1.OffsetPageRequest{Page: int32(page), PageSize: int32(limit)},
@@ -275,7 +314,7 @@ func (p *Provider) GetTokenHolders(ctx context.Context, tokenAddress string, lim
 }
 
 func (p *Provider) GetTokenInventory(ctx context.Context, tokenAddress string, tokenID string, limit int, offset int) ([]types.TokenInventoryItem, int64, error) {
-	page := offset/limit + 1
+	page, limit := offsetPage(offset, limit)
 	resp, err := p.client.ListTokenInventory(ctx, &indexerv1.ListTokenInventoryRequest{
 		TokenAddress: tokenAddress,
 		TokenId:      tokenID,

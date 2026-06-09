@@ -167,6 +167,10 @@ services:
       - "${FRONTEND_PORT:-3001}:80"
     environment:
       VITE_API_URL: /api
+      # Network switcher is off by default (single-network deployment). To run
+      # the multi-network switcher, set this to "true" AND serve a
+      # featured-networks.json listing >= 2 networks. See docs/network-modes.md.
+      VITE_MULTI_NETWORK_ENABLED: "false"
 
 volumes:
   indexer_postgres_data:
