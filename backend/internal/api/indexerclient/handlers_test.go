@@ -43,6 +43,8 @@ type fakeIndexer struct {
 	listBlocks     func(*indexerv1.ListBlocksRequest) (*indexerv1.ListBlocksResponse, error)
 	listTxs        func(*indexerv1.ListTransactionsRequest) (*indexerv1.ListTransactionsResponse, error)
 	listLogs       func(*indexerv1.ListLogsRequest) (*indexerv1.ListLogsResponse, error)
+	listAddresses  func(*indexerv1.ListAddressesRequest) (*indexerv1.ListAddressesResponse, error)
+	listTokens     func(*indexerv1.ListTokensRequest) (*indexerv1.ListTokensResponse, error)
 	getToken       func(*indexerv1.GetTokenRequest) (*indexerv1.Token, error)
 	getContract    func(*indexerv1.GetContractRequest) (*indexerv1.Contract, error)
 	search         func(*indexerv1.SearchRequest) (*indexerv1.SearchResponse, error)
@@ -77,6 +79,12 @@ func (f *fakeIndexer) ListTransactions(ctx context.Context, req *indexerv1.ListT
 }
 func (f *fakeIndexer) ListLogs(ctx context.Context, req *indexerv1.ListLogsRequest) (*indexerv1.ListLogsResponse, error) {
 	return f.listLogs(req)
+}
+func (f *fakeIndexer) ListAddresses(ctx context.Context, req *indexerv1.ListAddressesRequest) (*indexerv1.ListAddressesResponse, error) {
+	return f.listAddresses(req)
+}
+func (f *fakeIndexer) ListTokens(ctx context.Context, req *indexerv1.ListTokensRequest) (*indexerv1.ListTokensResponse, error) {
+	return f.listTokens(req)
 }
 func (f *fakeIndexer) GetToken(ctx context.Context, req *indexerv1.GetTokenRequest) (*indexerv1.Token, error) {
 	return f.getToken(req)

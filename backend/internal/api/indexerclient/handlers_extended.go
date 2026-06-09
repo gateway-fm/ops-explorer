@@ -23,6 +23,7 @@ package indexerclient
 
 import (
 	"context"
+	"math"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -89,7 +90,17 @@ func (p *Provider) GetTransactionsPaginated(ctx context.Context, page, pageSize 
 	if page < 1 {
 		page = 1
 	}
-	fetchLimit := int32(page * pageSize)
+	if pageSize < 1 {
+		pageSize = 1
+	}
+	// BUG-9: fetchLimit := int32(page * pageSize) overflowed int32 to a negative
+	// page_size for a large page. Compute in int64 and clamp to MaxInt32 (the
+	// indexer is server-capped anyway), so the wire value is always >= 0.
+	want := int64(page) * int64(pageSize)
+	if want > math.MaxInt32 {
+		want = math.MaxInt32
+	}
+	fetchLimit := int32(want)
 	resp, err := p.client.ListTransactions(ctx, &indexerv1.ListTransactionsRequest{
 		Page: &indexerv1.PageRequest{PageSize: fetchLimit},
 	})
