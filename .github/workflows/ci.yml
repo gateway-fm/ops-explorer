@@ -185,7 +185,9 @@ jobs:
           fi
 
   frontend-build:
-    name: Frontend Build & Test
+    # Display name must match the required status check pinned in main's
+    # ruleset (13033710): "Frontend Build". Job still runs build + tests.
+    name: Frontend Build
     runs-on: ubuntu-latest
     defaults:
       run:
