@@ -57,7 +57,6 @@ export function Home() {
         }
       });
       if (newOnes.size > 0) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- animation tracking for new blocks
         setNewBlocks(newOnes);
         // Clear animation class after animation completes
         setTimeout(() => setNewBlocks(new Set()), 2000);
@@ -80,7 +79,6 @@ export function Home() {
         }
       });
       if (newOnes.size > 0) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- animation tracking for new transactions
         setNewTxs(newOnes);
         setTimeout(() => setNewTxs(new Set()), 2000);
       }

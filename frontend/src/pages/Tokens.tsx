@@ -27,6 +27,7 @@ export default function Tokens() {
   // backend query (and shareable URL) only update once the user pauses.
   const [searchInput, setSearchInput] = useState(search);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync URL search param into local input when it changes externally (nav)
     setSearchInput(search);
   }, [search]);
   useEffect(() => {
