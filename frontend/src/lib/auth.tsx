@@ -44,7 +44,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial auth-status fetch on mount
     checkStatus();
   }, [checkStatus]);
 

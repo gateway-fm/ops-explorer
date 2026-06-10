@@ -49,7 +49,6 @@ export function ViewAsEntry() {
       return;
     }
 
-    /* eslint-disable react-hooks/set-state-in-effect -- invalid-URL guards surface an error state synchronously on mount */
     if (!targetDID) {
       setStage('error');
       setMessage('Missing target DID. The URL must include a ?did=<target> parameter.');
@@ -61,7 +60,6 @@ export function ViewAsEntry() {
       setMessage('Missing organization. The URL must include an ?org=<org_id> parameter. Open View-as from the admin dashboard with an org selected.');
       return;
     }
-    /* eslint-enable react-hooks/set-state-in-effect */
 
     let cancelled = false;
 
