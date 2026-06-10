@@ -29,12 +29,38 @@ jobs:
           # Fetch full history + tags so the docs version badge can resolve the
           # latest tag via `git describe` (default checkout is shallow, no tags).
           fetch-depth: 0
-      - name: Build with Astro
-        uses: withastro/action@56781b97402ce0487b7e61ce2cb960c0e2cc5289 # v3
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          path: ./docs
           node-version: 22
-          package-manager: npm
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+      - name: Install dependencies
+        working-directory: docs
+        run: npm ci
+      - name: Build
+        working-directory: docs
+        run: npm run build
+      # Inlined from actions/upload-pages-artifact (its composite internally uses
+      # actions/upload-artifact@v4 tag-pinned, which the org SHA-pin policy
+      # rejects). Tar the build and upload it as the "github-pages" artifact that
+      # actions/deploy-pages consumes.
+      - name: Archive Pages artifact
+        run: |
+          tar \
+            --dereference --hard-dereference \
+            --directory docs/dist \
+            -cvf "$RUNNER_TEMP/artifact.tar" \
+            --exclude=.git \
+            --exclude=.github \
+            .
+      - name: Upload Pages artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: github-pages
+          path: ${{ runner.temp }}/artifact.tar
+          retention-days: 1
+          if-no-files-found: error
 
   deploy:
     needs: build
