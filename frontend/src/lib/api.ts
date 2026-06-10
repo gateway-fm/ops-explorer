@@ -588,8 +588,9 @@ export const api = {
     return res.data?.[0] ?? null;
   },
 
-  getAllTokenTransfers: (page = 1, pageSize = 25) => {
+  getAllTokenTransfers: (page = 1, pageSize = 25, type?: string) => {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (type) params.set('type', type);
     return fetchAPI<OffsetPaginatedResponse<TokenTransfer>>(`/token-transfers?${params}`);
   },
 

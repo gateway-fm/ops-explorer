@@ -13,8 +13,25 @@ export function getFeaturedNetworksUrl(): string {
   return getConfig('VITE_FEATURED_NETWORKS_URL', '/featured-networks.json');
 }
 
+/**
+ * Whether multi-network mode is enabled. The network switcher is OFF by default;
+ * an operator must explicitly opt in by setting VITE_MULTI_NETWORK_ENABLED=true
+ * AND providing the network list (featured-networks.json). This keeps
+ * single-network deployments from ever showing the switcher — e.g. stale
+ * localhost defaults baked into the image must not surface in production.
+ */
+export function isMultiNetworkEnabled(): boolean {
+  return getConfig('VITE_MULTI_NETWORK_ENABLED', 'false').toLowerCase() === 'true';
+}
+
 export function loadFeaturedNetworks(): Promise<FeaturedNetwork[]> {
   if (cache) return cache;
+  // Single-network mode (the default): never fetch the list, so the switcher
+  // stays hidden regardless of what featured-networks.json happens to contain.
+  if (!isMultiNetworkEnabled()) {
+    cache = Promise.resolve([]);
+    return cache;
+  }
   cache = (async () => {
     try {
       const res = await fetch(getFeaturedNetworksUrl(), { cache: 'no-store' });
@@ -26,7 +43,8 @@ export function loadFeaturedNetworks(): Promise<FeaturedNetwork[]> {
           typeof n === 'object' &&
           n !== null &&
           typeof (n as FeaturedNetwork).title === 'string' &&
-          typeof (n as FeaturedNetwork).url === 'string',
+          typeof (n as FeaturedNetwork).url === 'string' &&
+          isHttpUrl((n as FeaturedNetwork).url),
       );
     } catch {
       return [];
@@ -38,6 +56,18 @@ export function loadFeaturedNetworks(): Promise<FeaturedNetwork[]> {
 export function isActiveNetwork(url: string): boolean {
   try {
     return new URL(url).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
+// Switcher links navigate the top-level document, so only accept http(s) URLs —
+// rejects javascript:, data:, and other unexpected schemes from the
+// operator-controlled network list (cheap defense-in-depth).
+export function isHttpUrl(url: string): boolean {
+  try {
+    const { protocol } = new URL(url);
+    return protocol === 'http:' || protocol === 'https:';
   } catch {
     return false;
   }

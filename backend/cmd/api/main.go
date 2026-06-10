@@ -24,6 +24,11 @@ func main() {
 		log.Fatal("failed to load config", "error", err)
 	}
 
+	// P-3: in privacy mode, mask on-chain identifiers in HTTP access-log paths
+	// so logs/SIEM cannot correlate an authenticated DID with the addresses /
+	// grants it viewed. Standalone serves public data, so paths stay intact.
+	log.RedactHTTPPaths = cfg.PrivacyProxyURL != ""
+
 	database, err := db.New(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatal("failed to connect to database", "error", err)
@@ -68,8 +73,19 @@ func main() {
 	eventBus := events.NewBus()
 	defer eventBus.Close()
 
-	priceService := price.NewService("ethereum", "usd", 60*time.Second)
-	priceService.SetEventBus(eventBus)
+	// P-4: build the price service from config (coin id / currency are
+	// configurable per chain) but only wire the event bus + background
+	// refresher when ENABLE_PRICE is on. In privacy mode this defaults off
+	// (config.Load), so a confidential/air-gapped deployment makes no
+	// CoinGecko egress unless the operator opts in. The /price endpoint still
+	// exists; it just serves no data (empty cache) when disabled.
+	priceService := price.NewService(cfg.PriceCoinID, cfg.PriceCurrency, 60*time.Second)
+	if cfg.EnablePrice {
+		priceService.SetEventBus(eventBus)
+	} else {
+		log.Info("price refresher disabled (ENABLE_PRICE=false) — no CoinGecko egress",
+			"privacy_mode", cfg.PrivacyProxyURL != "")
+	}
 
 	serverCfg := &api.ServerConfig{
 		SolcPath:             cfg.SolcPath,
@@ -77,6 +93,12 @@ func main() {
 		MetricsEnabled:       cfg.MetricsEnabled,
 		PostLoginRedirectURL: cfg.PostLoginRedirectURL,
 		EnableGasPrices:      cfg.EnableGasPrices,
+		CORSAllowedOrigins:   cfg.CORSAllowedOrigins,
+		PrivacyMode:          cfg.PrivacyProxyURL != "",
+		CookieSecure:         cfg.CookieSecure,
+		SSOJWKSURL:           cfg.SSOJWKSURL,
+		SSOIssuer:            cfg.SSOIssuer,
+		SSOAudience:          cfg.SSOAudience,
 	}
 
 	// chooseProvider decides which chain-data source the api will serve
@@ -98,7 +120,10 @@ func main() {
 	server := api.New(database, rpcClient, nil, priceService, eventBus, cfg.APIPort, serverCfg, privacyClient, ssoClient, dataProvider)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	priceService.StartBackgroundRefresh(ctx)
+	if cfg.EnablePrice {
+		// P-4: only the configured-on path makes outbound CoinGecko requests.
+		priceService.StartBackgroundRefresh(ctx)
+	}
 	defer cancel()
 
 	go func() {

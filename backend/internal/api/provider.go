@@ -74,7 +74,9 @@ type DataProvider interface {
 	GetTokenHolders(ctx context.Context, address string, limit int, offset int) ([]types.TokenHolder, int64, error)
 	GetTokenInventory(ctx context.Context, address string, tokenID string, limit int, offset int) ([]types.TokenInventoryItem, int64, error)
 	GetTransfersByToken(ctx context.Context, tokenAddress string, limit int, offset int) ([]types.TokenTransfer, int64, error)
-	GetAllTransfers(ctx context.Context, limit int, offset int) ([]types.TokenTransfer, int64, error)
+	// GetAllTransfers is the global transfer feed. tokenType is "ERC20"/"ERC721"/
+	// "ERC1155" to filter by standard, or "" for all.
+	GetAllTransfers(ctx context.Context, tokenType string, limit int, offset int) ([]types.TokenTransfer, int64, error)
 
 	GetAccountsPaginated(ctx context.Context, page, pageSize int) ([]types.AddressStats, int64, error)
 	SearchSuggestions(ctx context.Context, query string, limit int) ([]types.SearchSuggestion, error)
@@ -213,7 +215,7 @@ func (p *DirectDBProvider) GetTokenInventory(ctx context.Context, address string
 func (p *DirectDBProvider) GetTransfersByToken(ctx context.Context, tokenAddress string, limit int, offset int) ([]types.TokenTransfer, int64, error) {
 	return nil, 0, ErrChainDataNotAvailable
 }
-func (p *DirectDBProvider) GetAllTransfers(ctx context.Context, limit int, offset int) ([]types.TokenTransfer, int64, error) {
+func (p *DirectDBProvider) GetAllTransfers(ctx context.Context, tokenType string, limit int, offset int) ([]types.TokenTransfer, int64, error) {
 	return nil, 0, ErrChainDataNotAvailable
 }
 func (p *DirectDBProvider) GetAccountsPaginated(ctx context.Context, page, pageSize int) ([]types.AddressStats, int64, error) {
@@ -339,6 +341,27 @@ func NewProxyDataProvider(baseURL string) *ProxyDataProvider {
 		client:  &http.Client{Timeout: 30 * time.Second},
 	}
 }
+
+// CallerScopedProvider is a structural marker (P-1): a DataProvider that
+// returns per-caller data — i.e. the same method arguments can yield different
+// results depending on the authenticated caller (privacy-mode RBAC redaction).
+// Such a provider MUST NOT be wrapped in the argument-keyed CachingProvider, or
+// one caller's redacted view would be served to another for the cache TTL.
+// cache.NewProvider rejects any value implementing this interface.
+//
+// Propagation rule: any provider that wraps a CallerScopedProvider must itself
+// remain caller-scoped — embed the inner provider so CallerScoped() is promoted
+// (the marker is only structural if it propagates through decorators).
+type CallerScopedProvider interface {
+	CallerScoped()
+}
+
+// CallerScoped marks ProxyDataProvider as caller-scoped. It sets a per-caller
+// Authorization bearer from request context (see doRequest), so its responses
+// are RBAC-redacted per caller and must never be shared via a cache.
+func (p *ProxyDataProvider) CallerScoped() {}
+
+var _ CallerScopedProvider = (*ProxyDataProvider)(nil)
 
 func (p *ProxyDataProvider) doRequest(ctx context.Context, method, path string, body io.Reader, result any) error {
 	// If the caller is in "View as user" mode (RD-928), rewrite the outbound
@@ -675,12 +698,16 @@ func (p *ProxyDataProvider) GetTransfersByToken(ctx context.Context, tokenAddres
 	return res.Data, res.Total, err
 }
 
-func (p *ProxyDataProvider) GetAllTransfers(ctx context.Context, limit int, offset int) ([]types.TokenTransfer, int64, error) {
+func (p *ProxyDataProvider) GetAllTransfers(ctx context.Context, tokenType string, limit int, offset int) ([]types.TokenTransfer, int64, error) {
 	var res struct {
 		Data  []types.TokenTransfer `json:"data"`
 		Total int64                 `json:"total"`
 	}
-	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/transfers?limit=%d&offset=%d", limit, offset), nil, &res)
+	path := fmt.Sprintf("/api/v1/explorer/transfers?limit=%d&offset=%d", limit, offset)
+	if tokenType != "" {
+		path += "&type=" + url.QueryEscape(tokenType)
+	}
+	err := p.doRequest(ctx, "GET", path, nil, &res)
 	return res.Data, res.Total, err
 }
 

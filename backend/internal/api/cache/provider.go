@@ -17,6 +17,10 @@ import (
 // DirectDBProvider. Does NOT hold for ProxyDataProvider (privacy mode
 // applies per-caller RBAC redaction). cmd/api/provider_standalone.go
 // enforces the wiring; do not wrap a caller-scoped provider here.
+//
+// This invariant is now ALSO enforced structurally (P-1): NewProvider rejects
+// any provider implementing api.CallerScopedProvider (see below), so a future
+// refactor cannot silently reintroduce the cross-tenant leak.
 type CachingProvider struct {
 	api.DataProvider
 
@@ -33,6 +37,19 @@ type gasResult struct {
 }
 
 func NewProvider(inner api.DataProvider) *CachingProvider {
+	// P-1: structurally refuse to cache a caller-scoped provider. The
+	// CachingProvider keys entries purely on method arguments, so wrapping a
+	// per-caller (RBAC-redacted) provider here would serve one caller's view to
+	// another for the TTL. This is a startup-only wiring mistake; we crash
+	// fail-closed (panic, recoverable so it is unit-testable) rather than ship a
+	// cross-tenant leak. Any decorator wrapping a caller-scoped provider must
+	// promote CallerScoped() (embed the inner provider) so it is caught here too.
+	if _, ok := inner.(api.CallerScopedProvider); ok {
+		panic("cache.NewProvider: refusing to wrap a caller-scoped DataProvider — " +
+			"its responses are per-caller (privacy-mode RBAC redaction) and an " +
+			"argument-keyed cache would leak one user's view to another. Do not " +
+			"enable the provider cache in privacy mode (ENABLE_PROVIDER_CACHE must be off).")
+	}
 	return &CachingProvider{
 		DataProvider: inner,
 		chainStats:   New[*types.ChainStats](16, 2*time.Second),

@@ -11,6 +11,7 @@ import { TransactionHistoryChart } from '../components/TransactionHistoryChart';
 import { SearchBar } from '../components/SearchBar';
 import { Skeleton } from '../components/ui/skeleton';
 import { branding } from '../lib/branding';
+import { features } from '../lib/features';
 
 export function Home() {
   const { data: stats } = useQuery({
@@ -148,7 +149,9 @@ export function Home() {
             </>
           )}
         </div>
-        <TransactionHistoryChart />
+        {/* RD-1063: hidden in privacy mode (charts disabled) for consistency —
+            tx-history itself is redaction-safe via the proxy. */}
+        {features().charts && <TransactionHistoryChart />}
       </div>
 
       <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
@@ -208,7 +211,7 @@ const colorStyles = {
 
 function StatCard({ label, value, icon, color }: { label: string; value: string; icon: React.ReactNode; color: keyof typeof colorStyles }) {
   return (
-    <div className="card p-3 sm:p-4">
+    <div className="card p-3 sm:p-4" data-testid="stat-card">
       <div className="flex items-center justify-between mb-2 sm:mb-3">
         <span className="text-xs sm:text-sm text-neutral-500">{label}</span>
         <div className={`p-1.5 sm:p-2 rounded-lg ${colorStyles[color]}`}>
@@ -263,7 +266,7 @@ function BlockRow({ block, isNew }: { block: Block; isNew: boolean }) {
   const gasPercent = block.gasLimit > 0 ? (block.gasUsed / block.gasLimit) * 100 : 0;
 
   return (
-    <div className={`px-3 sm:px-4 h-[52px] sm:h-[60px] flex items-center gap-3 hover:bg-primary-50/50 dark:hover:bg-primary-900/10 transition-colors ${isNew ? 'feed-item-new' : ''}`}>
+    <div data-testid="block-row" className={`px-3 sm:px-4 h-[52px] sm:h-[60px] flex items-center gap-3 hover:bg-primary-50/50 dark:hover:bg-primary-900/10 transition-colors ${isNew ? 'feed-item-new' : ''}`}>
       <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 shrink-0">
         <Box className="w-5 h-5" />
       </div>
@@ -377,7 +380,7 @@ function TxRow({ tx, isNew, addressInfo }: { tx: Transaction; isNew: boolean; ad
   const toInfo = tx.to ? addressInfo?.[tx.to.toLowerCase()] : undefined;
 
   return (
-    <div className={`px-3 sm:px-4 h-[52px] sm:h-[60px] flex items-center gap-3 hover:bg-primary-50/50 dark:hover:bg-primary-900/10 transition-colors ${isNew ? 'feed-item-new' : ''}`}>
+    <div data-testid="tx-row" className={`px-3 sm:px-4 h-[52px] sm:h-[60px] flex items-center gap-3 hover:bg-primary-50/50 dark:hover:bg-primary-900/10 transition-colors ${isNew ? 'feed-item-new' : ''}`}>
       <div className={`p-2 rounded-lg ${bgColor} ${textColor} shrink-0`}>
         {icon}
       </div>

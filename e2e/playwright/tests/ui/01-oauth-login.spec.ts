@@ -1,9 +1,10 @@
 import { test, expect } from '@playwright/test';
 import { isAuthenticated, logout } from '../../helpers/explorer-auth';
+import { securityGate } from '../../helpers/security-skip';
 
 const PROXY_FRONTEND = process.env.PROXY_FRONTEND_URL || 'http://localhost:5173';
 
-test.describe('OAuth Login Flow', () => {
+test.describe('OAuth Login Flow @security', () => {
   test.beforeEach(async ({ context }) => {
     await logout(context);
   });
@@ -16,10 +17,10 @@ test.describe('OAuth Login Flow', () => {
     const signInBtn = page.locator('button:has-text("Sign in")');
     const isPrivacyEnabled = await signInBtn.isVisible({ timeout: 5000 }).catch(() => false);
 
-    if (!isPrivacyEnabled) {
-      test.skip(true, 'Privacy/SSO not enabled on this block-explorer instance');
-      return;
-    }
+    // Environment precondition: under CI_REQUIRE_E2E=1 this becomes a hard
+    // failure so the security suite can't self-green on a misconfigured stack.
+    securityGate(!isPrivacyEnabled, 'Privacy/SSO not enabled on this block-explorer instance');
+    if (!isPrivacyEnabled) return;
 
     // 3. Click Sign in — this navigates to /api/auth/login which redirects to privacy-proxy
     await signInBtn.click();
@@ -35,10 +36,8 @@ test.describe('OAuth Login Flow', () => {
     const mockLoginBtn = page.locator('[data-testid="mock-login-btn"]');
     const isMockAvailable = await mockLoginBtn.isVisible({ timeout: 5000 }).catch(() => false);
 
-    if (!isMockAvailable) {
-      test.skip(true, 'Mock login not available on privacy-proxy (ALLOW_MOCK_LOGIN not set)');
-      return;
-    }
+    securityGate(!isMockAvailable, 'Mock login not available on privacy-proxy (ALLOW_MOCK_LOGIN not set)');
+    if (!isMockAvailable) return;
 
     await mockLoginBtn.click();
 

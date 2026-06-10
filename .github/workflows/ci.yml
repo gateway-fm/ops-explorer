@@ -5,6 +5,17 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_e2e:
+        description: 'Run the Playwright privacy e2e job (requires PRIVACY_PROXY_IMAGE repo var)'
+        type: boolean
+        default: false
+
+# Least privilege (org policy I-1): default the GITHUB_TOKEN to read-only.
+# No job in this workflow writes to the repo; release/publish live elsewhere.
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -18,7 +29,7 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
@@ -28,13 +39,20 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Build binaries
+      - name: Build binaries (standalone)
         run: |
           CGO_ENABLED=0 go build -o /dev/null ./cmd/api
           CGO_ENABLED=0 go build -o /dev/null ./cmd/public-api
 
-      - name: Vet
+      - name: Vet (standalone)
         run: go vet ./...
+
+      # The strongest data-path tests are //go:build !privacy; the privacy
+      # binary must at least build + vet cleanly so its data path can't rot.
+      - name: Build & vet (privacy build)
+        run: |
+          CGO_ENABLED=0 go build -tags privacy -o /dev/null ./cmd/api
+          go vet -tags privacy ./...
 
   backend-test:
     name: Backend Tests
@@ -42,8 +60,37 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    # Postgres so the coverage gate can include internal/db (-tags dbtest). The
+    # standalone -race leg below does not need it; the dbtest coverage leg does.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: explorer_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Pinned solc for the verifier compile tests. The 14 t.Skip("solc not
+      # available") in internal/verifier must NOT silently no-op in CI, so we
+      # install this exact version and guard its presence below.
+      SOLC_VERSION: 0.8.26
+      SOLC_DIR: /opt/solc
+      # Authoritative sha256 for solc-linux-amd64-v0.8.26+commit.8a97fa7a from
+      # https://binaries.soliditylang.org/linux-amd64/list.json (org S-1:
+      # solc must be checksum-verified before exec, not fetched blindly).
+      SOLC_SHA256: d5f23436f443edb85d8e76906d12f0a86ce0490e7663a9e608efeb7a93f149ef
+      # Required by the -tags dbtest coverage leg; the dbtest suite FAILS (not
+      # skips) if unset, so the meaningful number always includes internal/db.
+      EXPLORER_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/explorer_test?sslmode=disable
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
@@ -53,17 +100,137 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Run tests
-        run: go test -v -race -count=1 ./...
+      - name: Install pinned solc (checksum-verified)
+        run: |
+          set -euo pipefail
+          sudo mkdir -p "${SOLC_DIR}"
+          url="https://binaries.soliditylang.org/linux-amd64/solc-linux-amd64-v${SOLC_VERSION}+commit.8a97fa7a"
+          tmp="$(mktemp)"
+          curl -fsSL "$url" -o "$tmp"
+          echo "${SOLC_SHA256}  ${tmp}" | sha256sum -c -
+          sudo install -m 0755 "$tmp" "${SOLC_DIR}/solc-${SOLC_VERSION}"
+          rm -f "$tmp"
+
+      # Hard guard: if solc is missing the verifier tests would t.Skip and the
+      # job would go green having tested nothing. Fail instead.
+      - name: Guard — solc must be present
+        run: |
+          set -euo pipefail
+          if [ ! -x "${SOLC_DIR}/solc-${SOLC_VERSION}" ]; then
+            echo "::error::solc ${SOLC_VERSION} not installed at ${SOLC_DIR}/solc-${SOLC_VERSION}; verifier tests would silently skip."
+            exit 1
+          fi
+          "${SOLC_DIR}/solc-${SOLC_VERSION}" --version
+
+      - name: Run tests (standalone, -race)
+        run: go test -race -count=1 ./...
+
+      # The privacy build ships near-zero data-path coverage unless its tests
+      # actually run; this leg closes that structural gap (audit §4.1).
+      - name: Run tests (privacy build, -race)
+        run: go test -tags privacy -race -count=1 ./...
+
+      # The MEANINGFUL coverage number (plan §6): generated code (gen/) excluded
+      # from the denominator via -coverpkg, internal/db INCLUDED via -tags dbtest
+      # against the Postgres service. This is what the gate enforces.
+      - name: Coverage profile (gen-excluded, db-included)
+        run: |
+          set -euo pipefail
+          pkgs="$(go list ./... | grep -v '/gen/' | tr '\n' ',')"
+          go test -tags dbtest -count=1 -coverpkg="$pkgs" \
+            -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Coverage gate (hard total floor, gen-excluded)
+        env:
+          # Ratchet up as coverage improves; never lower without justification.
+          COVERAGE_FLOOR: "38.0"
+        run: |
+          set -euo pipefail
+          total="$(go tool cover -func=coverage.out | awk '/^total:/ { sub(/%/,"",$3); print $3 }')"
+          echo "## Backend coverage (gen-excluded, db-included)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "total: ${total}%  (floor ${COVERAGE_FLOOR}%)" >> "$GITHUB_STEP_SUMMARY"
+          go test -tags dbtest -cover ./... 2>/dev/null \
+            | awk '/coverage:/ { pct=$0; sub(/.*coverage: /,"",pct); sub(/%.*/,"",pct);
+                                 if (pct+0 < 20.0) print "  below 20% per-pkg target: " $0 }' \
+            >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          awk -v t="$total" -v f="$COVERAGE_FLOOR" 'BEGIN {
+            if (t+0 < f+0) {
+              printf("::error::backend coverage %.1f%% is below the %.1f%% floor (gen-excluded, db-included)\n", t, f);
+              exit 1;
+            }
+            printf("backend coverage %.1f%% >= floor %.1f%%\n", t, f);
+          }'
+
+      - name: Upload coverage profile
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: backend-coverage
+          path: backend/coverage.out
+          if-no-files-found: error
+
+  backend-db-test:
+    name: Backend DB Integration (dbtest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: explorer_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      EXPLORER_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/explorer_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Download dependencies
+        run: go mod download
+
+      # Run the //go:build dbtest suite and capture verbose output so we can
+      # PROVE tests actually ran (not green-by-skip).
+      - name: Run DB integration tests (-tags dbtest)
+        run: |
+          set -euo pipefail
+          go test -tags dbtest -v -count=1 ./internal/db/... | tee dbtest.out
+
+      - name: Guard — at least one DB test must have RUN (no green-by-skip)
+        run: |
+          set -euo pipefail
+          ran="$(grep -c -E '^(ok|--- PASS|=== RUN)' dbtest.out || true)"
+          skipped="$(grep -c -E '^--- SKIP|^ok.*\[no test files\]' dbtest.out || true)"
+          echo "db test RUN markers=$ran SKIP markers=$skipped"
+          if ! grep -qE '^--- PASS: ' dbtest.out; then
+            echo "::error::no db integration test reported PASS — the dbtest suite did not run (green-by-skip)."
+            exit 1
+          fi
 
   frontend-build:
+    # Display name must match the required status check pinned in main's
+    # ruleset (13033710): "Frontend Build". Job still runs build + tests.
     name: Frontend Build
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
@@ -77,5 +244,98 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Unit tests now gate merges (audit §4.2: previously CI never ran them).
+      - name: Unit tests
+        run: npm run test
+
+      - name: Coverage (enforces the ratcheting floor in vite.config.ts)
+        run: npm run test:coverage
+
       - name: Type check & build
         run: npm run build
+
+  e2e-ui-mock:
+    name: E2E (Playwright, mock UI) — PR
+    # Self-contained mock-based basic-UI suite (PLAN_UI_E2E_TESTS.md §1/§4):
+    # serves the built frontend via `vite preview` and intercepts every /api
+    # call in-browser (e2e/playwright/fixtures/api-mock.ts). No backend /
+    # privacy-proxy required, so it runs on every PR — distinct from the
+    # real-stack `e2e-playwright` job below (workflow_dispatch only).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci --legacy-peer-deps
+
+      - name: Build frontend (served by Playwright's vite preview webServer)
+        working-directory: frontend
+        run: npm run build
+
+      - name: Install Playwright + chromium
+        working-directory: e2e/playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run ui-mock suite
+        working-directory: e2e/playwright
+        env:
+          CI: '1'
+        run: npx playwright test --project=ui-mock
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-report-ui-mock
+          path: e2e/playwright/playwright-report
+          if-no-files-found: ignore
+
+  e2e-playwright:
+    name: E2E (Playwright, privacy) — manual
+    # Per-PR e2e needs a privacy-proxy image, which is NOT in this repo. This
+    # job is dispatch-only and is skipped unless PRIVACY_PROXY_IMAGE is set as
+    # a repo variable AND the dispatch opt-in is selected. See the PR notes:
+    # the proxy image + compose wiring must be provided before this runs green.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_e2e && vars.PRIVACY_PROXY_IMAGE != '' }}
+    runs-on: ubuntu-latest
+    env:
+      # Treat @security skips as failures (helpers/security-skip.ts).
+      CI_REQUIRE_E2E: '1'
+      PRIVACY_PROXY_IMAGE: ${{ vars.PRIVACY_PROXY_IMAGE }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+
+      # NOTE: bringing up docker-compose.privacy.yml (block-explorer + the
+      # PRIVACY_PROXY_IMAGE + anvil + postgres + ALLOW_MOCK_LOGIN) is wired here
+      # once the proxy image is published. Until then this job no-ops via the
+      # `if:` guard above. The scaffolding below is what runs once it's enabled.
+      - name: Install Playwright + browsers
+        working-directory: e2e/playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run @security e2e (skips are failures)
+        working-directory: e2e/playwright
+        run: npx playwright test --grep "@security"
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-report
+          path: e2e/playwright/playwright-report
+          if-no-files-found: ignore

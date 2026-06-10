@@ -37,6 +37,7 @@ import { formatWei, formatHash, formatTimeAgo, getNetworkCurrency } from '../lib
 import { formatTokenValue } from '../lib/formatToken';
 import { useAuth } from '../lib/auth';
 import { features } from '../lib/features';
+import { StateMessage } from '../components/StateMessage';
 
 const TABS = [
   'details',
@@ -248,15 +249,17 @@ export function Address() {
     return (
       <div className="space-y-6">
         <BackButton onClick={goBack} />
-        <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-6 py-16 text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-neutral-100">
-            <ShieldOff className="h-5 w-5 text-neutral-400" />
-          </div>
-          <h2 className="text-lg font-semibold text-neutral-900">Address restricted</h2>
-          <p className="mx-auto mt-1 max-w-md text-sm text-neutral-500">
-            This address is protected by privacy controls. You do not currently have permission to view its details.
-          </p>
-        </div>
+        <StateMessage
+          variant="restricted"
+          title="Address restricted"
+          detail="This address is protected by privacy controls. You do not currently have permission to view its details."
+          className="rounded-2xl border border-neutral-200 bg-neutral-50 py-16"
+          icon={
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-neutral-100">
+              <ShieldOff className="h-5 w-5 text-neutral-400" />
+            </div>
+          }
+        />
       </div>
     );
   }
@@ -265,9 +268,7 @@ export function Address() {
     return (
       <div className="space-y-6">
         <BackButton onClick={goBack} />
-        <div className="rounded-2xl border border-dashed border-neutral-200 bg-neutral-100/30 px-6 py-12 text-center text-sm text-neutral-500">
-          Address not found.
-        </div>
+        <StateMessage variant="error" title="Address not found." className="rounded-2xl border border-dashed border-neutral-200 bg-neutral-100/30" />
       </div>
     );
   }
@@ -415,7 +416,7 @@ function Hero({
             <TypeBadge isContract={isContract} />
             {token && <TokenBadge token={token} />}
             {contract?.isVerified && (
-              <span className="inline-flex items-center gap-1.5 rounded-md bg-success-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider text-success-700 dark:bg-success-500/10 dark:text-success-500">
+              <span data-testid="verified-badge" className="inline-flex items-center gap-1.5 rounded-md bg-success-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider text-success-700 dark:bg-success-500/10 dark:text-success-500">
                 <span className="h-1.5 w-1.5 rounded-full bg-success-500" />
                 Verified
               </span>
@@ -518,13 +519,16 @@ function Tabs({
     { id: 'contract', label: 'Contract', icon: <FileCode2 className="h-3.5 w-3.5" />, visible: isContract },
   ];
   return (
-    <div className="flex flex-wrap items-center gap-x-1 gap-y-0 border-b border-neutral-200">
+    <div className="flex flex-wrap items-center gap-x-1 gap-y-0 border-b border-neutral-200" role="tablist">
       {items.filter((i) => i.visible).map((t) => {
         const isActive = active === t.id;
         return (
           <button
             key={t.id}
             onClick={() => onChange(t.id)}
+            role="tab"
+            data-testid={`tab-${t.id}`}
+            aria-selected={isActive}
             className={[
               'relative -mb-px inline-flex items-center gap-1.5 whitespace-nowrap px-2.5 py-3 text-sm font-medium transition-colors sm:px-4',
               isActive ? 'text-primary' : 'text-neutral-500 hover:text-neutral-800',
@@ -533,7 +537,7 @@ function Tabs({
             {t.icon}
             <span>{t.label}</span>
             {typeof t.count === 'number' && (
-              <span className="rounded-full bg-neutral-200/60 px-1.5 py-0.5 text-[11px] tabular-nums text-neutral-600">
+              <span data-testid={`tab-count-${t.id}`} className="rounded-full bg-neutral-200/60 px-1.5 py-0.5 text-[11px] tabular-nums text-neutral-600">
                 {t.count.toLocaleString()}
               </span>
             )}
@@ -693,6 +697,7 @@ function LoadMore({ onClick }: { onClick: () => void }) {
     <div className="border-t border-neutral-200 px-4 py-3 text-center">
       <button
         onClick={onClick}
+        data-testid="load-more"
         className="text-sm font-medium text-primary transition-colors hover:text-primary-600"
       >
         Load more
@@ -712,13 +717,14 @@ function OffsetPager({
 }) {
   return (
     <div className="mt-5 flex items-center justify-between gap-3">
-      <span className="text-xs text-neutral-500 tabular-nums">
+      <span className="text-xs text-neutral-500 tabular-nums" data-testid="pagination-status">
         Page {page} of {Math.max(totalPages, 1)}
       </span>
       <div className="inline-flex items-center overflow-hidden rounded-full border border-neutral-200 bg-neutral-50">
         <button
           onClick={() => onPage(page - 1)}
           disabled={page <= 1}
+          data-testid="pagination-prev"
           className="px-4 py-1.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-primary-50 hover:text-primary disabled:cursor-not-allowed disabled:text-neutral-300 disabled:hover:bg-transparent"
         >
           Previous
@@ -727,6 +733,7 @@ function OffsetPager({
         <button
           onClick={() => onPage(page + 1)}
           disabled={page >= totalPages}
+          data-testid="pagination-next"
           className="px-4 py-1.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-primary-50 hover:text-primary disabled:cursor-not-allowed disabled:text-neutral-300 disabled:hover:bg-transparent"
         >
           Next
@@ -804,7 +811,7 @@ function TxRow({ tx, currentAddress }: { tx: Transaction; currentAddress: string
   const fromReason = tx.addressMetadata?.[tx.from?.toLowerCase()];
   const toReason = tx.to ? tx.addressMetadata?.[tx.to.toLowerCase()] : undefined;
   return (
-    <tr className="border-b border-neutral-200/60 transition-colors last:border-b-0 hover:bg-primary-50/40 dark:hover:bg-primary-900/10">
+    <tr data-testid="tx-row" className="border-b border-neutral-200/60 transition-colors last:border-b-0 hover:bg-primary-50/40 dark:hover:bg-primary-900/10">
       <td className="px-4 py-4 align-middle">
         <Link to={`/tx/${tx.hash}`} className="font-mono text-sm text-primary transition-colors hover:text-primary-600">
           {formatHash(tx.hash, 8)}
@@ -917,7 +924,7 @@ function TransfersPanel({
             const fromReason = t.addressMetadata?.[t.from?.toLowerCase()];
             const toReason = t.addressMetadata?.[t.to?.toLowerCase()];
             return (
-              <tr key={`${t.txHash}-${t.logIndex}`} className="border-b border-neutral-200/60 transition-colors last:border-b-0 hover:bg-primary-50/40 dark:hover:bg-primary-900/10">
+              <tr key={`${t.txHash}-${t.logIndex}`} data-testid="transfer-row" className="border-b border-neutral-200/60 transition-colors last:border-b-0 hover:bg-primary-50/40 dark:hover:bg-primary-900/10">
                 <td className="px-4 py-4 align-middle">
                   <Link to={`/tx/${t.txHash}`} className="font-mono text-sm text-primary transition-colors hover:text-primary-600">
                     {formatHash(t.txHash, 8)}
@@ -1324,7 +1331,7 @@ function ContractPanel({
 
   return (
     <div className="space-y-5">
-      <div className="inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-neutral-100/60 p-1">
+      <div className="inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-neutral-100/60 p-1" role="tablist">
         {subItems.map((s) => {
           const isActive = subTab === s.id;
           return (
@@ -1332,6 +1339,9 @@ function ContractPanel({
               key={s.id}
               onClick={() => !s.disabled && onSubTab(s.id)}
               disabled={s.disabled}
+              role="tab"
+              data-testid={`tab-${s.id}`}
+              aria-selected={isActive}
               title={s.title}
               className={[
                 'inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors',
@@ -1510,6 +1520,7 @@ function UmlDiagram({ address }: { address: string }) {
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
+            data-testid="uml-toggle"
             className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-50"
           >
             {open ? 'Hide diagram' : 'View UML diagram'}
@@ -1611,6 +1622,7 @@ function WritePanel({
             <button
               onClick={connectWallet}
               disabled={walletConnecting}
+              data-testid="wallet-connect"
               className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-600 disabled:opacity-50"
             >
               {walletConnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
@@ -1620,7 +1632,7 @@ function WritePanel({
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="flex items-center justify-between gap-2 rounded-lg border border-success-200 bg-success-50 px-3 py-2 text-sm dark:border-success-500/30 dark:bg-success-500/10">
+          <div data-testid="wallet-status" className="flex items-center justify-between gap-2 rounded-lg border border-success-200 bg-success-50 px-3 py-2 text-sm dark:border-success-500/30 dark:bg-success-500/10">
             <div className="flex min-w-0 items-center gap-2">
               <Wallet className="h-4 w-4 shrink-0 text-success-600" />
               <span className="text-success-700 dark:text-success-500">Connected:</span>

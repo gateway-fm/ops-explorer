@@ -1,6 +1,7 @@
 package verifier
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +17,16 @@ import (
 
 	"explorer/pkg/log"
 )
+
+// normalizeHash strips an optional 0x/0X prefix and lowercases a hex hash so
+// the published list.json value (0x-prefixed) compares equal to a computed
+// sha256 hex digest.
+func normalizeHash(h string) string {
+	h = strings.TrimSpace(h)
+	h = strings.TrimPrefix(h, "0x")
+	h = strings.TrimPrefix(h, "0X")
+	return strings.ToLower(h)
+}
 
 const (
 	solcListURL          = "https://binaries.soliditylang.org/linux-amd64/list.json"
@@ -43,13 +54,21 @@ type SolcManager struct {
 	remoteBuilds []remoteBuild     // cached remote builds (filtered, no prereleases)
 	mu           sync.RWMutex
 	stopRefresh  chan struct{}
+
+	// httpClient and releaseURLTemplate are test seams (default to the real
+	// client + GitHub release URL). releaseURLTemplate must contain a single
+	// %s for the version.
+	httpClient         *http.Client
+	releaseURLTemplate string
 }
 
 func NewSolcManager(basePath string) *SolcManager {
 	sm := &SolcManager{
-		basePath:    basePath,
-		versions:    make(map[string]string),
-		stopRefresh: make(chan struct{}),
+		basePath:           basePath,
+		versions:           make(map[string]string),
+		stopRefresh:        make(chan struct{}),
+		httpClient:         http.DefaultClient,
+		releaseURLTemplate: solcGitHubReleaseURL,
 	}
 	sm.scanVersions()
 
@@ -176,10 +195,18 @@ func (sm *SolcManager) findRemoteBuild(version string) *remoteBuild {
 
 // downloadCompiler downloads a statically-linked solc binary from GitHub releases.
 func (sm *SolcManager) downloadCompiler(build *remoteBuild) (string, error) {
-	url := fmt.Sprintf(solcGitHubReleaseURL, build.Version)
+	tmpl := sm.releaseURLTemplate
+	if tmpl == "" {
+		tmpl = solcGitHubReleaseURL
+	}
+	client := sm.httpClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+	url := fmt.Sprintf(tmpl, build.Version)
 	log.Info("downloading solc compiler", "version", build.Version, "url", url)
 
-	resp, err := http.Get(url)
+	resp, err := client.Get(url)
 	if err != nil {
 		return "", fmt.Errorf("failed to download compiler: %w", err)
 	}
@@ -192,6 +219,22 @@ func (sm *SolcManager) downloadCompiler(build *remoteBuild) (string, error) {
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to read compiler binary: %w", err)
+	}
+
+	// S-1: verify the downloaded bytes against the published sha256 before
+	// writing/exec'ing. Validated against v0.8.26: list.json's sha256
+	// (0x-prefixed) byte-for-byte matches the GitHub-release solc-static-linux
+	// asset this code fetches, so enforcement does not brick downloads. Fail
+	// closed on an empty expected hash (an unverifiable binary must never be
+	// written/exec'd) and on any mismatch. Normalize both sides: strip an
+	// optional 0x/0X prefix and lowercase.
+	expected := normalizeHash(build.SHA256)
+	if expected == "" {
+		return "", fmt.Errorf("refusing to install solc %s: no published sha256 to verify against", build.Version)
+	}
+	actual := fmt.Sprintf("%x", sha256.Sum256(data))
+	if actual != expected {
+		return "", fmt.Errorf("solc %s checksum mismatch: expected %s, got %s — refusing to install", build.Version, expected, actual)
 	}
 
 	// Ensure base path exists

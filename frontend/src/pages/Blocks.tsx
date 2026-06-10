@@ -7,6 +7,7 @@ import { formatHash, formatGas } from '../lib/utils';
 import { LiveTimeAgo } from '../components/LiveTimeAgo';
 import { PageHeader } from '../components/PageHeader';
 import { NewItemsNotice } from '../components/NewItemsNotice';
+import { StateMessage } from '../components/StateMessage';
 
 export function Blocks() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -86,14 +87,17 @@ export function Blocks() {
           </tbody>
         </table>
 
-        {isLoading && (
-          <div className="px-4 py-8 text-center text-neutral-400">Loading...</div>
+        {isLoading && <StateMessage variant="loading" />}
+
+        {!isLoading && !data?.data?.length && (
+          <StateMessage variant="empty" title="No blocks yet" />
         )}
 
         {data?.hasMore && (
           <div className="px-4 py-3 border-t border-neutral-100">
             <button
               onClick={loadMore}
+              data-testid="load-more"
               className="w-full py-2 text-sm text-neutral-500 hover:text-neutral-700 transition-colors"
             >
               Load more
@@ -109,7 +113,7 @@ function BlockTableRow({ block }: { block: Block }) {
   const gasPercent = ((block.gasUsed / block.gasLimit) * 100).toFixed(1);
 
   return (
-    <tr>
+    <tr data-testid="block-row">
       <td>
         <Link to={`/block/${block.number}`} className="font-mono text-primary hover:text-primary-600 transition-colors">
           {block.number}

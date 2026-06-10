@@ -9,6 +9,7 @@ import { PageHeader } from '../components/PageHeader';
 import { AddressLink } from '../components/AddressLink';
 import { AddressLabel } from '../components/AddressLabel';
 import { NewItemsNotice } from '../components/NewItemsNotice';
+import { StateMessage } from '../components/StateMessage';
 
 export function Transactions() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -68,13 +69,13 @@ export function Transactions() {
     setSearchParams({ page: String(newPage) });
   };
 
-  if (error) return <div className="text-error-600">Error loading transactions</div>;
+  if (error) return <StateMessage variant="error" title="Error loading transactions" />;
 
   return (
     <div className="space-y-6">
       <PageHeader title="Transactions">
         {data && (
-          <span className="text-sm text-neutral-500">
+          <span className="text-sm text-neutral-500" data-testid="tx-total-count">
             {data.total.toLocaleString()} transactions
           </span>
         )}
@@ -111,24 +112,23 @@ export function Transactions() {
           </table>
         </div>
 
-        {isLoading && (
-          <div className="px-4 py-8 text-center text-neutral-400">Loading...</div>
-        )}
+        {isLoading && <StateMessage variant="loading" />}
 
         {!isLoading && !data?.data?.length && (
-          <div className="px-4 py-8 text-center text-neutral-400">No transactions yet</div>
+          <StateMessage variant="empty" title="No transactions yet" />
         )}
 
         {/* Pagination */}
         {data && data.totalPages > 1 && (
           <div className="px-4 py-3 border-t border-neutral-100 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="text-sm text-neutral-500">
+            <div className="text-sm text-neutral-500" data-testid="pagination-status">
               Page {data.page} of {data.totalPages}
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => goToPage(page - 1)}
                 disabled={page <= 1}
+                data-testid="pagination-prev"
                 className="p-2 rounded-lg border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <ChevronLeft className="w-4 h-4 text-neutral-500" />
@@ -152,6 +152,8 @@ export function Transactions() {
                     <button
                       key={pageNum}
                       onClick={() => goToPage(pageNum)}
+                      data-testid="pagination-page"
+                      aria-current={pageNum === page}
                       className={`px-3 py-1 rounded-lg text-sm transition-colors ${
                         pageNum === page
                           ? 'bg-primary text-white'
@@ -167,6 +169,7 @@ export function Transactions() {
               <button
                 onClick={() => goToPage(page + 1)}
                 disabled={page >= data.totalPages}
+                data-testid="pagination-next"
                 className="p-2 rounded-lg border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <ChevronRight className="w-4 h-4 text-neutral-500" />
@@ -223,7 +226,7 @@ function TxTableRow({ tx }: { tx: Transaction }) {
   const toReason = tx.to ? tx.addressMetadata?.[tx.to.toLowerCase()] : undefined;
 
   return (
-    <tr>
+    <tr data-testid="tx-row">
       <td>
         <Link to={`/tx/${tx.hash}`} className="font-mono text-sm text-primary hover:text-primary-600 transition-colors">
           {formatHash(tx.hash, 8)}

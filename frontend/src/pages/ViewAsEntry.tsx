@@ -121,7 +121,7 @@ export function ViewAsEntry() {
 
   // stage === 'error'
   return (
-    <div className="flex flex-col items-center justify-center py-16 space-y-4">
+    <div className="flex flex-col items-center justify-center py-16 space-y-4" data-testid="app-error">
       <div className="w-16 h-16 rounded-full bg-error-50 flex items-center justify-center border border-error-200">
         <AlertTriangle className="w-8 h-8 text-error-600" />
       </div>

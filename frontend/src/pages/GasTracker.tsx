@@ -3,13 +3,24 @@ import { Fuel, Zap, Clock, Gauge, RefreshCw } from 'lucide-react';
 import { api } from '../lib/api';
 import type { GasPrice } from '../lib/api';
 import { PageHeader } from '../components/PageHeader';
+import { features } from '../lib/features';
+import { FeatureUnavailable } from '../components/FeatureUnavailable';
 
 export function GasTracker() {
+  // RD-1063: hooks must run unconditionally (react-hooks/rules-of-hooks), but
+  // the disabled branch must still fire NO /gas request in privacy mode. So the
+  // query is gated via `enabled` and the FeatureUnavailable early-return moves
+  // below the hook. features() is a plain config read, stable per session.
+  const gasEnabled = features().gasTracker;
+
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['gasPrices'],
     queryFn: api.getGasPrices,
     refetchInterval: 15000, // Refresh every 15s
+    enabled: gasEnabled,
   });
+
+  if (!gasEnabled) return <FeatureUnavailable feature="Gas Tracker" />;
 
   if (isLoading) {
     return (
@@ -125,7 +136,7 @@ function GasPriceCard({
   const styles = colorStyles[color];
 
   return (
-    <div className="card p-6">
+    <div className="card p-6" data-testid={`gas-card-${label.toLowerCase()}`}>
       <div className="flex items-center justify-between mb-4">
         <span className="text-sm font-medium text-neutral-500">{label}</span>
         <div className={`p-2 rounded-lg border ${styles.bg} ${styles.text} ${styles.border}`}>

@@ -23,6 +23,7 @@ package indexerclient
 
 import (
 	"context"
+	"math"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -37,6 +38,26 @@ import (
 // RPCs on a non-OP chain) and we should fall back to SQL.
 func isUnavailable(err error) bool {
 	return status.Code(err) == codes.Unavailable
+}
+
+// offsetPage converts an (offset, limit) pair into the 1-based page number the
+// indexer's offset-paginated RPCs expect. It guards a zero/negative limit (which
+// would panic on the offset/limit division) and clamps the page so the
+// subsequent int32(page) cast can't overflow on a pathologically large offset.
+// Returns the page and the normalised limit (also used for PageSize).
+func offsetPage(offset, limit int) (page, normLimit int) {
+	if limit <= 0 {
+		limit = 25
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	page = offset/limit + 1
+	const maxPage = 1 << 30 // keep int32(page) safely in range
+	if page > maxPage {
+		page = maxPage
+	}
+	return page, limit
 }
 
 // ----- Transactions: by-address cursor feed -----
@@ -69,7 +90,17 @@ func (p *Provider) GetTransactionsPaginated(ctx context.Context, page, pageSize 
 	if page < 1 {
 		page = 1
 	}
-	fetchLimit := int32(page * pageSize)
+	if pageSize < 1 {
+		pageSize = 1
+	}
+	// BUG-9: fetchLimit := int32(page * pageSize) overflowed int32 to a negative
+	// page_size for a large page. Compute in int64 and clamp to MaxInt32 (the
+	// indexer is server-capped anyway), so the wire value is always >= 0.
+	want := int64(page) * int64(pageSize)
+	if want > math.MaxInt32 {
+		want = math.MaxInt32
+	}
+	fetchLimit := int32(want)
 	resp, err := p.client.ListTransactions(ctx, &indexerv1.ListTransactionsRequest{
 		Page: &indexerv1.PageRequest{PageSize: fetchLimit},
 	})
@@ -185,10 +216,29 @@ func (p *Provider) GetTransfersByToken(ctx context.Context, tokenAddress string,
 	return transfers, int64(len(transfers)), nil
 }
 
-// GetAllTransfers intentionally NOT overridden — falls through to
-// *DirectDBProvider. The indexer's ListTokenTransfers requires at least
-// one filter; unfiltered global transfer feed is not an indexer-supported
-// use case. Admin-style path; OK to keep on SQL.
+// GetAllTransfers serves the global "Token Transfers" page via the indexer's
+// ListAllTokenTransfers RPC (offset pagination + accurate total + optional
+// token-standard filter). tokenType is "ERC20"/"ERC721"/"ERC1155" or "" for all.
+func (p *Provider) GetAllTransfers(ctx context.Context, tokenType string, limit int, offset int) ([]types.TokenTransfer, int64, error) {
+	page, limit := offsetPage(offset, limit)
+	var tt indexerv1.TokenType
+	switch tokenType {
+	case "ERC20":
+		tt = indexerv1.TokenType_TOKEN_TYPE_ERC20
+	case "ERC721":
+		tt = indexerv1.TokenType_TOKEN_TYPE_ERC721
+	case "ERC1155":
+		tt = indexerv1.TokenType_TOKEN_TYPE_ERC1155
+	}
+	resp, err := p.client.ListAllTokenTransfers(ctx, &indexerv1.ListAllTokenTransfersRequest{
+		Page:      &indexerv1.OffsetPageRequest{Page: int32(page), PageSize: int32(limit)},
+		TokenType: tt,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	return mapTokenTransfers(resp.GetTransfers()), resp.GetPage().GetTotalItems(), nil
+}
 
 // ----- Internal transactions -----
 
@@ -241,7 +291,7 @@ func (p *Provider) GetToken(ctx context.Context, address string) (*types.Token, 
 }
 
 func (p *Provider) GetTokens(ctx context.Context, limit int, offset int, tokenType, search string) ([]types.Token, int64, error) {
-	page := offset/limit + 1
+	page, limit := offsetPage(offset, limit)
 	var tt indexerv1.TokenType
 	switch tokenType {
 	case "ERC20":
@@ -263,7 +313,7 @@ func (p *Provider) GetTokens(ctx context.Context, limit int, offset int, tokenTy
 }
 
 func (p *Provider) GetTokenHolders(ctx context.Context, tokenAddress string, limit int, offset int) ([]types.TokenHolder, int64, error) {
-	page := offset/limit + 1
+	page, limit := offsetPage(offset, limit)
 	resp, err := p.client.ListTokenHolders(ctx, &indexerv1.ListTokenHoldersRequest{
 		TokenAddress: tokenAddress,
 		Page:         &indexerv1.OffsetPageRequest{Page: int32(page), PageSize: int32(limit)},
@@ -275,7 +325,7 @@ func (p *Provider) GetTokenHolders(ctx context.Context, tokenAddress string, lim
 }
 
 func (p *Provider) GetTokenInventory(ctx context.Context, tokenAddress string, tokenID string, limit int, offset int) ([]types.TokenInventoryItem, int64, error) {
-	page := offset/limit + 1
+	page, limit := offsetPage(offset, limit)
 	resp, err := p.client.ListTokenInventory(ctx, &indexerv1.ListTokenInventoryRequest{
 		TokenAddress: tokenAddress,
 		TokenId:      tokenID,
@@ -430,13 +480,16 @@ func (p *Provider) GetOPDeposit(ctx context.Context, txHash string) (*types.OPDe
 		Selector: &indexerv1.GetOPDepositRequest_L1TransactionHash{L1TransactionHash: txHash},
 	})
 	if err != nil {
-		if isNotFound(err) {
-			return nil, nil
-		}
+		// Unavailable still means "not OP-Stack mode" -> fall through to SQL.
 		if isUnavailable(err) {
 			return p.DirectDBProvider.GetOPDeposit(ctx, txHash)
 		}
-		return nil, err
+		// BUG-4: an OP deposit is optional enrichment on a tx. The L2 lookup
+		// already came back NotFound; if the L1 retry fails for ANY other
+		// reason (NotFound, Internal, ...), that means "no deposit for this
+		// tx" — surfacing the raw gRPC error would turn an absent deposit into
+		// a hard failure for any consumer that propagates it. Return no deposit.
+		return nil, nil
 	}
 	return mapOPDeposit(resp), nil
 }

@@ -8,6 +8,7 @@ import { AddressLabel } from '../components/AddressLabel';
 import { CopyButton } from '../components/CopyButton';
 import { TokenAvatar } from '../components/TokenAvatar';
 import { NftCard } from '../components/NftCard';
+import { StateMessage } from '../components/StateMessage';
 import { formatTokenType, formatTokenValue } from '../lib/formatToken';
 import { formatTimeAgo } from '../lib/utils';
 
@@ -30,6 +31,9 @@ export default function TokenDetail() {
     queryKey: ['token', address],
     queryFn: () => api.getToken(address!),
     enabled: !!address,
+    // Surface the restricted/not-found interstitial immediately on a 403/404
+    // instead of retrying 3x with backoff (matches Address/TransactionDetail).
+    retry: false,
   });
 
   const { data: holders, isLoading: holdersLoading } = useQuery({
@@ -105,12 +109,12 @@ export default function TokenDetail() {
     return (
       <div className="space-y-6">
         <BackLink />
-        <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-6 py-16 text-center">
-          <h2 className="text-lg font-semibold text-neutral-900">Token Restricted</h2>
-          <p className="mx-auto mt-2 max-w-md text-sm text-neutral-500">
-            This token belongs to a private organization. Sign in to view it if you have access.
-          </p>
-        </div>
+        <StateMessage
+          variant="restricted"
+          title="Token Restricted"
+          detail="This token belongs to a private organization. Sign in to view it if you have access."
+          className="rounded-2xl border border-neutral-200 bg-neutral-50 py-16"
+        />
       </div>
     );
   }
@@ -119,9 +123,7 @@ export default function TokenDetail() {
     return (
       <div className="space-y-6">
         <BackLink />
-        <div className="rounded-2xl border border-dashed border-neutral-200 bg-neutral-100/30 px-6 py-12 text-center text-sm text-neutral-500">
-          Token not found.
-        </div>
+        <StateMessage variant="error" title="Token not found." className="rounded-2xl border border-dashed border-neutral-200 bg-neutral-100/30" />
       </div>
     );
   }
@@ -298,6 +300,8 @@ function StatBar({ token }: { token: Token }) {
       {items.map((item, i) => (
         <div
           key={item.label}
+          data-testid="stat-tile"
+          data-label={item.label}
           className={[
             'px-5 py-4',
             // Internal dividers only — outer border is on the wrapper.
@@ -347,13 +351,16 @@ function Tabs({
     { id: 'contract', label: 'Contract' },
   ];
   return (
-    <div className="flex items-center gap-1 border-b border-neutral-200">
+    <div className="flex items-center gap-1 border-b border-neutral-200" role="tablist">
       {tabs.map((t) => {
         const isActive = active === t.id;
         return (
           <button
             key={t.id}
             onClick={() => onChange(t.id)}
+            role="tab"
+            data-testid={`tab-${t.id}`}
+            aria-selected={isActive}
             className={[
               'relative -mb-px px-4 py-3 text-sm font-medium transition-colors',
               isActive
@@ -363,7 +370,7 @@ function Tabs({
           >
             <span>{t.label}</span>
             {typeof t.count === 'number' && (
-              <span className="ml-2 rounded-full bg-neutral-200/60 px-1.5 py-0.5 text-[11px] tabular-nums text-neutral-600">
+              <span data-testid={`tab-count-${t.id}`} className="ml-2 rounded-full bg-neutral-200/60 px-1.5 py-0.5 text-[11px] tabular-nums text-neutral-600">
                 {t.count.toLocaleString()}
               </span>
             )}
@@ -409,7 +416,7 @@ function TransferRow({ transfer, token }: { transfer: TokenTransfer; token: Toke
   const toReason = transfer.addressMetadata?.[transfer.to?.toLowerCase()];
 
   return (
-    <tr className="border-b border-neutral-200/60 transition-colors last:border-b-0 hover:bg-primary-50/40 dark:hover:bg-primary-900/10">
+    <tr data-testid="transfer-row" className="border-b border-neutral-200/60 transition-colors last:border-b-0 hover:bg-primary-50/40 dark:hover:bg-primary-900/10">
       <td className="px-4 py-4 align-middle">
         <Link
           to={`/tx/${transfer.txHash}`}
@@ -489,6 +496,7 @@ function HoldersTable({
             return (
               <tr
                 key={holder.address}
+                data-testid="holder-row"
                 className="border-b border-neutral-200/60 transition-colors last:border-b-0 hover:bg-primary-50/40 dark:hover:bg-primary-900/10"
               >
                 <td className="px-4 py-4 align-middle text-sm tabular-nums text-neutral-400">
@@ -740,13 +748,14 @@ function Pagination({
 }) {
   return (
     <div className={`flex items-center justify-between gap-3 ${className}`}>
-      <span className="text-xs text-neutral-500 tabular-nums">
+      <span className="text-xs text-neutral-500 tabular-nums" data-testid="pagination-status">
         Page {page} of {Math.max(totalPages, 1)}
       </span>
       <div className="inline-flex items-center overflow-hidden rounded-full border border-neutral-200 bg-neutral-50">
         <button
           onClick={() => onChange(page - 1)}
           disabled={page <= 1}
+          data-testid="pagination-prev"
           className="px-4 py-1.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-primary-50 hover:text-primary disabled:cursor-not-allowed disabled:text-neutral-300 disabled:hover:bg-transparent"
         >
           Previous
@@ -755,6 +764,7 @@ function Pagination({
         <button
           onClick={() => onChange(page + 1)}
           disabled={page >= totalPages}
+          data-testid="pagination-next"
           className="px-4 py-1.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-primary-50 hover:text-primary disabled:cursor-not-allowed disabled:text-neutral-300 disabled:hover:bg-transparent"
         >
           Next
@@ -766,7 +776,7 @@ function Pagination({
 
 function EmptyState({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-dashed border-neutral-200 bg-neutral-100/30 px-6 py-12 text-center text-sm text-neutral-500">
+    <div data-testid="app-empty" className="rounded-2xl border border-dashed border-neutral-200 bg-neutral-100/30 px-6 py-12 text-center text-sm text-neutral-500">
       {children}
     </div>
   );

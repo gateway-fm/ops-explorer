@@ -58,6 +58,8 @@ export function PrivateAddress({
       <Tooltip>
         <TooltipTrigger asChild>
           <span
+            data-testid="private-address"
+            data-redaction="private"
             className={`text-neutral-400 italic cursor-help ${className}`}
           >
             [PRIVATE]
@@ -119,7 +121,7 @@ export function PrivateAddress({
  * PrivateAddressInline is a minimal inline version for use in text
  */
 export function PrivateAddressInline({ className = '' }: { className?: string }) {
-  return <span className={`text-neutral-400 italic ${className}`}>[PRIVATE]</span>;
+  return <span data-testid="private-address" data-redaction="private" className={`text-neutral-400 italic ${className}`}>[PRIVATE]</span>;
 }
 
 /**

@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { formatWei, getNetworkCurrency } from '../lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { PageHeader } from '../components/PageHeader';
+import { StateMessage } from '../components/StateMessage';
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -67,14 +68,14 @@ export function Accounts() {
     return (Number(percentage) / 100).toFixed(2);
   };
 
-  if (isLoading) return <div className="text-neutral-400">Loading...</div>;
-  if (error) return <div className="text-error-600">Error loading accounts</div>;
+  if (isLoading) return <StateMessage variant="loading" />;
+  if (error) return <StateMessage variant="error" title="Error loading accounts" />;
 
   return (
     <div className="space-y-6">
       <PageHeader title="Top Accounts">
         {data && (
-          <span className="text-sm text-neutral-500">
+          <span className="text-sm text-neutral-500" data-testid="account-total-count">
             {data.total.toLocaleString()} accounts
           </span>
         )}
@@ -94,7 +95,7 @@ export function Accounts() {
             </thead>
             <tbody>
               {data?.data?.map((account, index) => (
-                <tr key={account.address}>
+                <tr key={account.address} data-testid="account-row">
                   <td className="text-neutral-400">
                     {(page - 1) * pageSize + index + 1}
                   </td>
@@ -135,13 +136,14 @@ export function Accounts() {
         {/* Pagination */}
         {data && data.totalPages > 1 && (
           <div className="px-4 py-3 border-t border-neutral-100 flex items-center justify-between">
-            <div className="text-sm text-neutral-500">
+            <div className="text-sm text-neutral-500" data-testid="pagination-status">
               Page {data.page} of {data.totalPages}
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => goToPage(page - 1)}
                 disabled={page <= 1}
+                data-testid="pagination-prev"
                 className="p-2 rounded-lg border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <ChevronLeft className="w-4 h-4 text-neutral-500" />
@@ -165,6 +167,8 @@ export function Accounts() {
                     <button
                       key={pageNum}
                       onClick={() => goToPage(pageNum)}
+                      data-testid="pagination-page"
+                      aria-current={pageNum === page}
                       className={`px-3 py-1 rounded-lg text-sm transition-colors ${
                         pageNum === page
                           ? 'bg-primary text-white'
@@ -180,6 +184,7 @@ export function Accounts() {
               <button
                 onClick={() => goToPage(page + 1)}
                 disabled={page >= data.totalPages}
+                data-testid="pagination-next"
                 className="p-2 rounded-lg border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <ChevronRight className="w-4 h-4 text-neutral-500" />

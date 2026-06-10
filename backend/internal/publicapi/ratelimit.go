@@ -10,6 +10,12 @@ import (
 )
 
 type clientEntry struct {
+	// mu guards count and windowEnd. The entry is shared across request
+	// goroutines via the sync.Map, and the cleanup goroutine also reads
+	// windowEnd, so every read-modify-write of these fields must hold mu.
+	// (Audit W-4, counter-race half: the previous unguarded entry.count++ was a
+	// data race that undercounted under load, weakening the only DoS control.)
+	mu        sync.Mutex
 	count     int
 	windowEnd time.Time
 }
@@ -43,23 +49,30 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		})
 		entry := val.(*clientEntry)
 
+		// Mutate count/windowEnd under the entry lock and snapshot the values
+		// for use after unlocking. Without this the read-modify-write races
+		// across concurrent requests for the same key (W-4).
+		entry.mu.Lock()
 		// Reset window if expired.
 		if now.After(entry.windowEnd) {
 			entry.count = 0
 			entry.windowEnd = now.Add(rl.window)
 		}
-
 		entry.count++
-		remaining := rl.limit - entry.count
+		count := entry.count
+		windowEnd := entry.windowEnd
+		entry.mu.Unlock()
+
+		remaining := rl.limit - count
 		if remaining < 0 {
 			remaining = 0
 		}
 
 		w.Header().Set("X-RateLimit-Limit", strconv.Itoa(rl.limit))
 		w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
-		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(entry.windowEnd.Unix(), 10))
+		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(windowEnd.Unix(), 10))
 
-		if entry.count > rl.limit {
+		if count > rl.limit {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
 			json.NewEncoder(w).Encode(map[string]string{
@@ -98,7 +111,10 @@ func (rl *RateLimiter) cleanup() {
 		now := time.Now()
 		rl.store.Range(func(key, value any) bool {
 			entry := value.(*clientEntry)
-			if now.After(entry.windowEnd) {
+			entry.mu.Lock()
+			expired := now.After(entry.windowEnd)
+			entry.mu.Unlock()
+			if expired {
 				rl.store.Delete(key)
 			}
 			return true

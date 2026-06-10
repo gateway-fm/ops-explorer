@@ -13,7 +13,7 @@ import { loginViaCookie, logout } from '../../helpers/explorer-auth';
 // contract addresses registered via the admin API.
 // ---------------------------------------------------------------------------
 
-test.describe('Cross-Org Isolation', () => {
+test.describe('Cross-Org Isolation @security', () => {
   let fixture: ProxyAdminFixture;
 
   // Org A
