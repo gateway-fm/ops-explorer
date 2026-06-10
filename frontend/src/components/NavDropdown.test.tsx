@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { type ReactNode } from 'react';
 
 // NavDropdown builds `blockchainItems` (Gas Tracker) at MODULE LOAD via
 // features(), so the privacy value must be set before the module is imported.

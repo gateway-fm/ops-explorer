@@ -296,11 +296,11 @@ function CounterCard({
 // ---------------------------------------------------------------------------
 
 export default function Stats() {
-  // RD-1063: feature gate must be the very first statement — before any hook —
-  // so the disabled branch never subscribes the stats/chart-line queries and
-  // fires no /charts requests in privacy mode. features() is not a hook, so an
-  // early return here is safe (no conditional-hook violation).
-  if (!features().charts) return <FeatureUnavailable feature="Charts" />;
+  // RD-1063: hooks must run unconditionally (react-hooks/rules-of-hooks), but
+  // the disabled branch must still fire NO /charts request in privacy mode. So
+  // the stats query is gated via `enabled` and the FeatureUnavailable
+  // early-return moves below the hooks. features() is a stable config read.
+  const chartsEnabled = features().charts;
 
   const [section, setSection] = useState<Section>('all');
   const [rangeIdx, setRangeIdx] = useState(1); // default 1M
@@ -309,6 +309,7 @@ export default function Stats() {
     queryKey: ['stats'],
     queryFn: api.getStats,
     refetchInterval: 30_000,
+    enabled: chartsEnabled,
   });
 
   const range = TIME_RANGES[rangeIdx];
@@ -321,6 +322,8 @@ export default function Stats() {
         : CHART_DEFINITIONS.filter((c) => c.section === section),
     [section],
   );
+
+  if (!chartsEnabled) return <FeatureUnavailable feature="Charts" />;
 
   return (
     <div className="space-y-6">
