@@ -458,8 +458,17 @@ func (s *Server) setupAPIRoutes(r chi.Router) {
 	r.Get("/stats", s.handleGetStats)
 	r.Get("/chain-info", s.handleGetChainInfo)
 	r.Get("/stats/tx-history", s.handleGetTransactionHistory)
-	r.Get("/price", s.handleGetPrice)
-	r.Get("/gas", s.handleGetGasPrices)
+	// RD-1063: /price and /gas are gated off in privacy mode. The privacy
+	// proxy has no viewer-scoped story for them: /gas resolves to
+	// ErrChainDataNotAvailable (500) and /price would trigger an outbound
+	// CoinGecko fetch on cache-miss (a no-egress hole, S1). Gate at runtime
+	// for the default binary too (same pattern as the P-2 verification gate
+	// above). In privacy mode both → 404; the frontend already hides/disables
+	// them and never issues the request.
+	if !s.inPrivacyMode() {
+		r.Get("/price", s.handleGetPrice)
+		r.Get("/gas", s.handleGetGasPrices)
+	}
 	r.Get("/sync", s.handleGetSyncStatus)
 	r.Get("/search", s.handleSearch)
 	r.Get("/search/suggestions", s.handleSearchSuggestions)
@@ -524,11 +533,17 @@ func (s *Server) setupAPIRoutes(r chi.Router) {
 	r.Get("/logs", s.handleGetLogs)
 	r.Get("/accounts", s.handleGetAccounts)
 
-	r.Route("/charts", func(r chi.Router) {
-		r.Get("/counters", s.handleGetChartCounters)
-		r.Get("/lines", s.handleGetChartLines)
-		r.Get("/lines/{id}", s.handleGetChartLine)
-	})
+	// RD-1063: /charts is gated off in privacy mode — it forwards to a
+	// chain-indexer endpoint the privacy proxy doesn't serve (404 upstream),
+	// with no viewer-scoping/redaction. Gate at runtime for the default binary
+	// too (mirrors the P-2 verification gate above). In privacy mode → 404.
+	if !s.inPrivacyMode() {
+		r.Route("/charts", func(r chi.Router) {
+			r.Get("/counters", s.handleGetChartCounters)
+			r.Get("/lines", s.handleGetChartLines)
+			r.Get("/lines/{id}", s.handleGetChartLine)
+		})
+	}
 }
 
 func (s *Server) setupAPIV2Routes(r chi.Router) {

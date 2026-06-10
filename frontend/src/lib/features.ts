@@ -26,6 +26,27 @@ export interface FeatureFlags {
    * Sourcify lookups) is compiled out / hidden.
    */
   contractVerification: boolean;
+
+  /**
+   * Charts / Stats UI + the chart-line API call surface.
+   *
+   * Disabled in privacy mode (VITE_PRIVACY_MODE=true). The /charts endpoints
+   * forward to a chain-indexer surface the privacy proxy doesn't serve and
+   * have no viewer-scoping/redaction story (RD-1063). When off, the Charts
+   * nav entries, the /stats page, and the Home transaction-history chart are
+   * hidden and fire no requests; the backend mounts no /charts routes.
+   */
+  charts: boolean;
+
+  /**
+   * Gas Tracker UI + the /gas API call surface (page + Layout header poller).
+   *
+   * Disabled in privacy mode (VITE_PRIVACY_MODE=true). /gas resolves to
+   * ErrChainDataNotAvailable on the privacy side (RD-1063). When off, the Gas
+   * Tracker nav entry and /gas-tracker page are hidden and fire no requests
+   * (including the 15s Layout header poller); the backend mounts no /gas route.
+   */
+  gasTracker: boolean;
 }
 
 function isPrivacyMode(): boolean {
@@ -36,6 +57,8 @@ export function features(): FeatureFlags {
   const privacyMode = isPrivacyMode();
   return {
     contractVerification: !privacyMode,
+    charts: !privacyMode,
+    gasTracker: !privacyMode,
   };
 }
 

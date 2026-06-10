@@ -20,13 +20,19 @@ const mobileNavItems = [
   { to: '/accounts', label: 'Top Accounts', icon: Users },
   { to: '/tokens', label: 'Tokens', icon: Coins },
   { to: '/token-transfers', label: 'Token Transfers', icon: ArrowLeftRight },
-  { to: '/gas-tracker', label: 'Gas Tracker', icon: Fuel },
+  // "Gas Tracker" hidden in privacy mode (RD-1063, see lib/features.ts).
+  ...(features().gasTracker
+    ? [{ to: '/gas-tracker', label: 'Gas Tracker', icon: Fuel }]
+    : []),
   // "Verify Contract" hidden in privacy mode (see lib/features.ts).
   ...(features().contractVerification
     ? [{ to: '/verify', label: 'Verify Contract', icon: ShieldCheck }]
     : []),
   { to: '/chain-info', label: 'Chain Info', icon: Info },
-  { to: '/stats', label: 'Charts', icon: BarChart3 },
+  // "Charts" hidden in privacy mode (RD-1063, see lib/features.ts).
+  ...(features().charts
+    ? [{ to: '/stats', label: 'Charts', icon: BarChart3 }]
+    : []),
   { to: '/api-docs', label: 'API Docs', icon: BookOpen },
   { to: '/privacy', label: 'Auditor', icon: Eye },
 ];
@@ -42,12 +48,16 @@ export function Layout() {
   const searchRef = useRef<HTMLDivElement>(null);
   const mobileInputRef = useRef<HTMLInputElement>(null);
 
-  // Fetch ETH price (used in commented-out UI sections)
+  // Fetch ETH price (used in commented-out UI sections).
+  // RD-1063 (M1): gate the header pollers behind the gasTracker flag so privacy
+  // mode doesn't storm /price (60s) and /gas (15s) on EVERY page — the backend
+  // routes are 404 there and these run regardless of which page is mounted.
   useQuery({
     queryKey: ['ethPrice'],
     queryFn: api.getPrice,
     refetchInterval: 60000,
     staleTime: 30000,
+    enabled: features().gasTracker,
   });
 
   const { data: gasPrices } = useQuery({
@@ -55,6 +65,7 @@ export function Layout() {
     queryFn: api.getGasPrices,
     refetchInterval: 15000,
     staleTime: 10000,
+    enabled: features().gasTracker,
   });
 
   // Close mobile menu on route change
@@ -453,7 +464,9 @@ export function Layout() {
                 <Link to="/transactions" className="text-sm text-neutral-500 hover:text-primary transition-colors">Transactions</Link>
                 <Link to="/token-transfers" className="text-sm text-neutral-500 hover:text-primary transition-colors">Token Transfers</Link>
                 <Link to="/accounts" className="text-sm text-neutral-500 hover:text-primary transition-colors">Top Accounts</Link>
-                <Link to="/gas-tracker" className="text-sm text-neutral-500 hover:text-primary transition-colors">Gas Tracker</Link>
+                {features().gasTracker && (
+                  <Link to="/gas-tracker" className="text-sm text-neutral-500 hover:text-primary transition-colors">Gas Tracker</Link>
+                )}
                 {features().contractVerification && (
                   <Link to="/verify" className="text-sm text-neutral-500 hover:text-primary transition-colors">Verify Contract</Link>
                 )}

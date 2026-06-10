@@ -11,6 +11,7 @@ import { TransactionHistoryChart } from '../components/TransactionHistoryChart';
 import { SearchBar } from '../components/SearchBar';
 import { Skeleton } from '../components/ui/skeleton';
 import { branding } from '../lib/branding';
+import { features } from '../lib/features';
 
 export function Home() {
   const { data: stats } = useQuery({
@@ -148,7 +149,9 @@ export function Home() {
             </>
           )}
         </div>
-        <TransactionHistoryChart />
+        {/* RD-1063: hidden in privacy mode (charts disabled) for consistency —
+            tx-history itself is redaction-safe via the proxy. */}
+        {features().charts && <TransactionHistoryChart />}
       </div>
 
       <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
