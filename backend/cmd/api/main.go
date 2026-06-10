@@ -88,17 +88,18 @@ func main() {
 	}
 
 	serverCfg := &api.ServerConfig{
-		SolcPath:             cfg.SolcPath,
-		UseSourcifyFallback:  cfg.UseSourcifyFallback,
-		MetricsEnabled:       cfg.MetricsEnabled,
-		PostLoginRedirectURL: cfg.PostLoginRedirectURL,
-		EnableGasPrices:      cfg.EnableGasPrices,
-		CORSAllowedOrigins:   cfg.CORSAllowedOrigins,
-		PrivacyMode:          cfg.PrivacyProxyURL != "",
-		CookieSecure:         cfg.CookieSecure,
-		SSOJWKSURL:           cfg.SSOJWKSURL,
-		SSOIssuer:            cfg.SSOIssuer,
-		SSOAudience:          cfg.SSOAudience,
+		SolcPath:              cfg.SolcPath,
+		UseSourcifyFallback:   cfg.UseSourcifyFallback,
+		MetricsEnabled:        cfg.MetricsEnabled,
+		PostLoginRedirectURL:  cfg.PostLoginRedirectURL,
+		EnableGasPrices:       cfg.EnableGasPrices,
+		PrivacyProxyPublicURL: privacyProxyPublicURL(),
+		CORSAllowedOrigins:    cfg.CORSAllowedOrigins,
+		PrivacyMode:           cfg.PrivacyProxyURL != "",
+		CookieSecure:          cfg.CookieSecure,
+		SSOJWKSURL:            cfg.SSOJWKSURL,
+		SSOIssuer:             cfg.SSOIssuer,
+		SSOAudience:           cfg.SSOAudience,
 	}
 
 	// chooseProvider decides which chain-data source the api will serve
@@ -138,4 +139,22 @@ func main() {
 	if err := server.Start(ctx); err != nil {
 		log.Fatal("server error", "error", err)
 	}
+}
+
+// privacyProxyPublicURL returns the privacy-proxy PUBLIC BASE url (no "/rpc"
+// suffix), surfaced via GET /chain-info as privacyProxyPublicUrl (RD-1031,
+// Option B). It is only a hint for the MetaMask setup dialog's jwt-injector
+// --upstream field — NOT a wallet RPC target, since a browser wallet cannot
+// attach the bearer + org path the proxy requires.
+//
+// We read PRIVACY_PROXY_PUBLIC_URL (the browser-reachable URL), never the
+// internal PrivacyProxyURL hostname. The public proxy URL is already public
+// (it is the OAuth endpoint), so surfacing it is safe; internal hosts are not.
+// When PRIVACY_PROXY_PUBLIC_URL is unset we return "" so the field is omitted.
+func privacyProxyPublicURL() string {
+	publicURL := strings.TrimSpace(os.Getenv("PRIVACY_PROXY_PUBLIC_URL"))
+	if publicURL == "" {
+		return ""
+	}
+	return strings.TrimSuffix(publicURL, "/")
 }

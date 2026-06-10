@@ -89,9 +89,54 @@ chain-indexer (gRPC) ──► privacy-proxy ──► block-explorer api ──
     `ENABLE_PROVIDER_CACHE` off in privacy mode (the per-caller proxy provider
     must never be cache-wrapped — startup now panics fail-closed if it is).
 
+**MetaMask "Add Network" (RD-1031).** How a wallet connects depends on the
+mode:
+
+- **Standalone:** the wallet connects to the node's public JSON-RPC directly.
+  The "Add Network" button adds the network using `VITE_RPC_URL` (the node's
+  browser-facing RPC; see Frontend Service below) and the authoritative
+  `chainId` from `GET /api/v1/chain-info`.
+- **Privacy:** the wallet cannot reach the network directly — every chain
+  request needs an authenticated bearer JWT and an org-scoped path, which a
+  browser wallet cannot attach. The anonymous proxy `/rpc` endpoint only serves
+  claim-free metadata (`eth_chainId`, `eth_blockNumber`, …), so it is **not a
+  wallet target**. Instead, the "Add Network" button opens an in-app setup
+  dialog that walks the user through running a local
+  [jwt-injector](https://github.com/gateway-fm/jwt-injector) helper (which holds
+  their token and forwards requests with the bearer + org path attached) and
+  points MetaMask at the helper's local port.
+
+`PRIVACY_PROXY_PUBLIC_URL` is surfaced by `GET /api/v1/chain-info` as
+`privacyProxyPublicUrl` (public base URL, **no** `/rpc` suffix) purely to
+pre-fill the jwt-injector `--upstream` hint in that dialog. It is omitted when
+unset, and it is never handed to a wallet as an RPC endpoint.
+
 There is no longer a block-explorer indexer service — the separate
 `Indexer Service` section has been removed. Run chain-indexer as a
 sibling deployment; see its repo for its own env vars.
+
+### Frontend Service
+
+The frontend reads `VITE_*` variables at container startup (injected into
+`window.__runtimeConfig`). The authoritative `chainId` comes from
+`GET /api/v1/chain-info`; the `VITE_*` values below are deploy-time fallbacks.
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `VITE_API_URL` | No | Path/URL to the internal API. Default: `/api` (proxied by nginx/ingress). |
+| `VITE_RPC_URL` | Standalone | The node's **browser-facing public JSON-RPC URL** that a wallet (and contract reads) connect to directly in **standalone** mode (e.g. `https://rpc.yourdomain.com`). A standalone/node concern — **not** the privacy-proxy. In **privacy** mode the wallet connects via a locally-run [jwt-injector](https://github.com/gateway-fm/jwt-injector) configured in the in-app setup dialog, so this is not used for the wallet there. Falls back to `http://localhost:8545` (the node default) when unset. |
+| `VITE_CHAIN_ID` | Recommended | Chain ID in **decimal** (e.g. `4242`) for the MetaMask "Add Network" button. Used only when the backend does not supply `chainId`. A wrong value here is what causes MetaMask to add the network with the wrong chain. |
+| `VITE_NETWORK_NAME` | No | Network name shown in MetaMask. |
+| `VITE_NETWORK_CURRENCY` | No | Native currency symbol shown in MetaMask. Default: `ETH`. |
+
+> **Standalone vs privacy.** In standalone the wallet talks to the node
+> directly, so set `VITE_RPC_URL` to the node's public RPC. In privacy mode the
+> wallet connects through a locally-run jwt-injector (configured per-user in the
+> in-app MetaMask setup dialog), so `VITE_RPC_URL` is not the wallet's target —
+> the dialog uses the proxy public base URL (from `/chain-info`) only as a hint
+> for the injector's `--upstream`. The base `docker-compose.yml` defaults
+> `VITE_RPC_URL` to `http://localhost:8545`; `docker-compose.prod.yml` leaves it
+> to the operator.
 
 ---
 

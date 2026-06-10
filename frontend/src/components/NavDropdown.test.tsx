@@ -20,6 +20,9 @@ vi.mock('../hooks/useTheme', () => ({ useTheme: () => ({ theme: 'light', setThem
 vi.mock('./MetaMask', () => ({ MetaMaskFox: () => null }));
 vi.mock('../lib/metamask', () => ({ addNetworkToMetaMask: vi.fn() }));
 vi.mock('./NetworkMenu', () => ({ NetworkMenu: () => null }));
+// AddNetworkButton pulls in react-query (useNetworkButton) + metamask helpers;
+// it's irrelevant to the Charts/Gas-Tracker privacy gate under test, so stub it.
+vi.mock('./AddNetworkButton', () => ({ AddNetworkButton: () => null }));
 
 function setPrivacy(on: boolean) {
   mockGetConfig.mockImplementation((key: string, fallback?: string) => {

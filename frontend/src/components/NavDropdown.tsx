@@ -4,11 +4,9 @@ import { ChevronDown, Boxes, ArrowLeftRight, Users, ShieldCheck, Coins, ArrowRig
 import { useAuth } from '../lib/auth';
 import { redirectToLogin } from '../lib/login';
 import { usePrivacyEnabled } from '../hooks/usePrivacyEnabled';
-import { MetaMaskFox } from './MetaMask';
-import { addNetworkToMetaMask } from '../lib/metamask';
+import { AddNetworkButton } from './AddNetworkButton';
 import { useTheme } from '../hooks/useTheme';
 import { formatDID } from '../lib/utils';
-import { getConfig } from '../lib/runtimeConfig';
 import { features } from '../lib/features';
 import { NetworkMenu } from './NetworkMenu';
 
@@ -250,39 +248,10 @@ function AuthButton() {
   );
 }
 
-const TARGET_CHAIN_ID = '0x' + Number(getConfig('VITE_CHAIN_ID', '1001')).toString(16);
-
 export function NavDropdown() {
-  const [networkAdded, setNetworkAdded] = useState(false);
-
-  useEffect(() => {
-    if (!window.ethereum) return;
-
-    const checkChain = (chainId: string) => {
-      setNetworkAdded(chainId.toLowerCase() === TARGET_CHAIN_ID.toLowerCase());
-    };
-
-    window.ethereum.request({ method: 'eth_chainId' }).then(checkChain).catch(() => {});
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const eth = window.ethereum as any;
-    eth.on('chainChanged', checkChain);
-    return () => {
-      eth.removeListener('chainChanged', checkChain);
-    };
-  }, []);
-
   return (
     <div className="flex items-center gap-1">
-      {!networkAdded && (
-        <button
-          onClick={addNetworkToMetaMask}
-          className="flex items-center gap-1.5 px-3 py-2 text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors text-sm font-medium dark:text-amber-300 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 dark:border-amber-700"
-        >
-          <MetaMaskFox className="w-4 h-4" />
-          Add Network
-        </button>
-      )}
+      <AddNetworkButton variant="header" />
       <Dropdown label="Blockchain" items={blockchainItems} testid="nav-blockchain" />
       <Dropdown label="Tokens" items={tokenItems} testid="nav-tokens" />
       {/* "Charts" hidden in privacy mode (RD-1063) — /charts is gated off on

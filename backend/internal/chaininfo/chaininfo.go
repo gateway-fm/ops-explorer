@@ -6,23 +6,33 @@ import (
 	"sync"
 	"time"
 
-	"explorer/pkg/log"
 	"explorer/internal/rpc"
+	"explorer/pkg/log"
 )
 
 // Info holds cached chain metadata fetched from the node.
 type Info struct {
-	ChainID         string `json:"chainId"`
-	ChainIDDecimal  uint64 `json:"chainIdDecimal"`
-	NetworkID       string `json:"networkId"`
-	ClientVersion   string `json:"clientVersion"`
-	ProtocolVersion string `json:"protocolVersion"`
-	LatestBlock     uint64 `json:"latestBlock"`
-	GasPrice        string `json:"gasPrice"`
-	PeerCount       int    `json:"peerCount"`
-	IsSyncing       bool   `json:"isSyncing"`
-	GenesisHash     string `json:"genesisHash"`
-	UpdatedAt       string `json:"updatedAt"`
+	ChainID        string `json:"chainId"`
+	ChainIDDecimal uint64 `json:"chainIdDecimal"`
+	// PrivacyProxyPublicURL is the privacy-proxy PUBLIC BASE url (WITHOUT any
+	// "/rpc" suffix). It is surfaced ONLY so the privacy-mode MetaMask setup
+	// dialog can pre-fill the jwt-injector --upstream hint. It is NOT a wallet
+	// RPC target: a browser wallet cannot attach the bearer + org path the
+	// proxy requires, so we never hand the proxy endpoint to a wallet. The
+	// public proxy URL is already public (it is the OAuth endpoint), so
+	// surfacing it is safe; internal hosts (RPC_URL, internal PRIVACY_PROXY_URL,
+	// INDEXER_URL, DATABASE_URL) are never exposed here. Empty (and omitted)
+	// when PRIVACY_PROXY_PUBLIC_URL is not configured.
+	PrivacyProxyPublicURL string `json:"privacyProxyPublicUrl,omitempty"`
+	NetworkID             string `json:"networkId"`
+	ClientVersion         string `json:"clientVersion"`
+	ProtocolVersion       string `json:"protocolVersion"`
+	LatestBlock           uint64 `json:"latestBlock"`
+	GasPrice              string `json:"gasPrice"`
+	PeerCount             int    `json:"peerCount"`
+	IsSyncing             bool   `json:"isSyncing"`
+	GenesisHash           string `json:"genesisHash"`
+	UpdatedAt             string `json:"updatedAt"`
 }
 
 // Service caches chain info in memory and refreshes periodically.
@@ -31,6 +41,12 @@ type Service struct {
 	mu       sync.RWMutex
 	cached   *Info
 	interval time.Duration
+	// privacyProxyPublicURL is the static privacy-proxy public base URL
+	// surfaced via Info.PrivacyProxyPublicURL (a hint for the MetaMask setup
+	// dialog, NOT a wallet RPC target). Configured once at startup (from
+	// PRIVACY_PROXY_PUBLIC_URL) and never changes; the periodic node refresh
+	// does not touch it.
+	privacyProxyPublicURL string
 }
 
 // NewService creates a chain info service that refreshes at the given interval.
@@ -39,6 +55,17 @@ func NewService(rpcClient *rpc.Client, interval time.Duration) *Service {
 		rpc:      rpcClient,
 		interval: interval,
 	}
+}
+
+// SetPrivacyProxyPublicURL sets the privacy-proxy public base URL surfaced via
+// Info.PrivacyProxyPublicURL. Callers should pass the proxy PUBLIC base URL
+// WITHOUT any "/rpc" suffix — it is only a hint for the MetaMask setup dialog's
+// jwt-injector --upstream field, never a wallet RPC target. An empty value
+// leaves Info.PrivacyProxyPublicURL unset (omitted from the JSON response).
+func (s *Service) SetPrivacyProxyPublicURL(url string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.privacyProxyPublicURL = url
 }
 
 // Start fetches chain info immediately, then refreshes on a timer until ctx is cancelled.
@@ -58,14 +85,19 @@ func (s *Service) Start(ctx context.Context) {
 	}
 }
 
-// Get returns the most recently cached chain info.
+// Get returns the most recently cached chain info. The returned value is a
+// copy with the statically-configured privacy-proxy public URL injected, so
+// callers never mutate the internal cache and the periodically-refreshed node
+// fields stay separate from the configured proxy URL.
 func (s *Service) Get() *Info {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if s.cached == nil {
-		return &Info{}
+	out := Info{}
+	if s.cached != nil {
+		out = *s.cached
 	}
-	return s.cached
+	out.PrivacyProxyPublicURL = s.privacyProxyPublicURL
+	return &out
 }
 
 func (s *Service) refresh(ctx context.Context) {

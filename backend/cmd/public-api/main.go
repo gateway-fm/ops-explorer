@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -76,6 +77,12 @@ func main() {
 		log.Fatal("failed to construct indexerclient provider", "error", err)
 	}
 	chainInfo := chaininfo.NewService(rpcClient, 10*time.Minute)
+	// RD-1031 (Option B): surface the privacy-proxy public base URL only as a
+	// hint for the MetaMask setup dialog's jwt-injector --upstream field — NOT
+	// a wallet RPC target. Stored WITHOUT a "/rpc" suffix; omitted when unset.
+	if publicURL := strings.TrimSpace(os.Getenv("PRIVACY_PROXY_PUBLIC_URL")); publicURL != "" {
+		chainInfo.SetPrivacyProxyPublicURL(strings.TrimSuffix(publicURL, "/"))
+	}
 
 	server := publicapi.NewServer(dataProvider, nil, chainInfo, port, rateLimit, rateWindow)
 

@@ -28,6 +28,9 @@ vi.mock('../lib/api', () => ({
 
 // Stub heavy children — irrelevant to the poller assertion.
 vi.mock('./NavDropdown', () => ({ NavDropdown: () => null }));
+// Layout renders <AddNetworkButton variant="footer" /> directly in the mobile
+// menu; it pulls in react-query + metamask helpers unrelated to the pollers.
+vi.mock('./AddNetworkButton', () => ({ AddNetworkButton: () => null }));
 vi.mock('./NetworkMenu', () => ({ MobileNetworkList: () => null, NetworkMenu: () => null }));
 vi.mock('./ImpersonationBanner', () => ({ ImpersonationBanner: () => null }));
 vi.mock('./MetaMask', () => ({ MetaMaskFox: () => null }));
