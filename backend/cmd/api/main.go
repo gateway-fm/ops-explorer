@@ -72,12 +72,12 @@ func main() {
 	priceService.SetEventBus(eventBus)
 
 	serverCfg := &api.ServerConfig{
-		SolcPath:             cfg.SolcPath,
-		UseSourcifyFallback:  cfg.UseSourcifyFallback,
-		MetricsEnabled:       cfg.MetricsEnabled,
-		PostLoginRedirectURL: cfg.PostLoginRedirectURL,
-		EnableGasPrices:      cfg.EnableGasPrices,
-		BrowserRPCURL:        browserRPCURL(),
+		SolcPath:              cfg.SolcPath,
+		UseSourcifyFallback:   cfg.UseSourcifyFallback,
+		MetricsEnabled:        cfg.MetricsEnabled,
+		PostLoginRedirectURL:  cfg.PostLoginRedirectURL,
+		EnableGasPrices:       cfg.EnableGasPrices,
+		PrivacyProxyPublicURL: privacyProxyPublicURL(),
 	}
 
 	// chooseProvider decides which chain-data source the api will serve
@@ -116,21 +116,20 @@ func main() {
 	}
 }
 
-// browserRPCURL derives the canonical browser-facing JSON-RPC endpoint that
-// wallets (MetaMask) should connect to, surfaced via GET /chain-info as
-// rpcUrl (RD-1031).
+// privacyProxyPublicURL returns the privacy-proxy PUBLIC BASE url (no "/rpc"
+// suffix), surfaced via GET /chain-info as privacyProxyPublicUrl (RD-1031,
+// Option B). It is only a hint for the MetaMask setup dialog's jwt-injector
+// --upstream field — NOT a wallet RPC target, since a browser wallet cannot
+// attach the bearer + org path the proxy requires.
 //
-// Architecture invariant: in privacy mode all chain access must go through the
-// privacy-proxy, so the wallet RPC must be the proxy's *public* /rpc endpoint —
-// never an internal Docker hostname or localhost. We therefore derive it from
-// PRIVACY_PROXY_PUBLIC_URL only (the browser-reachable URL), not from
-// PrivacyProxyURL (the internal hostname). When PRIVACY_PROXY_PUBLIC_URL is not
-// explicitly set we return "" so the frontend derives a same-origin endpoint
-// instead of receiving an unreachable internal address.
-func browserRPCURL() string {
+// We read PRIVACY_PROXY_PUBLIC_URL (the browser-reachable URL), never the
+// internal PrivacyProxyURL hostname. The public proxy URL is already public
+// (it is the OAuth endpoint), so surfacing it is safe; internal hosts are not.
+// When PRIVACY_PROXY_PUBLIC_URL is unset we return "" so the field is omitted.
+func privacyProxyPublicURL() string {
 	publicURL := strings.TrimSpace(os.Getenv("PRIVACY_PROXY_PUBLIC_URL"))
 	if publicURL == "" {
 		return ""
 	}
-	return strings.TrimSuffix(publicURL, "/") + "/rpc"
+	return strings.TrimSuffix(publicURL, "/")
 }

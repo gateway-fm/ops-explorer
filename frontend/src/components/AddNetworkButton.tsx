@@ -1,7 +1,10 @@
+import { useState } from 'react';
 import { Check } from 'lucide-react';
 import { MetaMaskFox } from './MetaMask';
 import { addNetworkToMetaMask } from '../lib/metamask';
 import { useNetworkButton } from '../hooks/useNetworkButton';
+import { usePrivacyEnabled } from '../hooks/usePrivacyEnabled';
+import { MetaMaskSetupDialog } from './MetaMaskSetupDialog';
 
 interface AddNetworkButtonProps {
   /**
@@ -28,13 +31,22 @@ const ADD_CLASSES =
  *   - active  → disabled "Network added" with a check icon
  *   - else    → enabled "Add Network" / "Add Network to MetaMask"
  *
+ * Click behaviour branches by runtime mode (RD-1031):
+ *   - STANDALONE → adds the network directly (node RPC via addNetworkToMetaMask)
+ *   - PRIVACY    → opens the jwt-injector setup dialog; a browser wallet cannot
+ *                  attach the bearer + org path the proxy requires, so we never
+ *                  auto-push the anonymous proxy /rpc to the wallet.
+ *
  * When no wallet is present the button still renders the add affordance; the
- * underlying handler prompts the user to install MetaMask. The add flow is
- * idempotent — re-adding an existing chain is a no-op in MetaMask — so we don't
- * need to detect added-but-inactive chains (which MetaMask doesn't expose).
+ * underlying handler/dialog prompts the user to install MetaMask. The add flow
+ * is idempotent — re-adding an existing chain is a no-op in MetaMask — so we
+ * don't need to detect added-but-inactive chains (which MetaMask doesn't
+ * expose).
  */
 export function AddNetworkButton({ variant = 'footer' }: AddNetworkButtonProps) {
   const { state } = useNetworkButton();
+  const privacyEnabled = usePrivacyEnabled();
+  const [dialogOpen, setDialogOpen] = useState(false);
   const isActive = state === 'active';
   const label = variant === 'header' ? 'Add Network' : 'Add Network to MetaMask';
 
@@ -54,15 +66,24 @@ export function AddNetworkButton({ variant = 'footer' }: AddNetworkButtonProps) 
   }
 
   return (
-    <button
-      type="button"
-      onClick={() => {
-        void addNetworkToMetaMask();
-      }}
-      className={`flex items-center rounded-lg font-medium transition-colors ${SIZE_CLASSES[variant]} ${ADD_CLASSES}`}
-    >
-      <MetaMaskFox className="w-4 h-4" />
-      {label}
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          if (privacyEnabled) {
+            setDialogOpen(true);
+          } else {
+            void addNetworkToMetaMask();
+          }
+        }}
+        className={`flex items-center rounded-lg font-medium transition-colors ${SIZE_CLASSES[variant]} ${ADD_CLASSES}`}
+      >
+        <MetaMaskFox className="w-4 h-4" />
+        {label}
+      </button>
+      {privacyEnabled && (
+        <MetaMaskSetupDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
+      )}
+    </>
   );
 }

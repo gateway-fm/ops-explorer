@@ -113,9 +113,10 @@ function FunctionCard({ contractAddress, abiFragment, index, type, isExpanded, o
     setResult(null);
 
     try {
-      // Use JSON-RPC provider for read operations. resolveRpcUrl never
-      // returns the old localhost fallback: it prefers the backend-provided
-      // proxy /rpc URL, then VITE_RPC_URL, then the current page origin.
+      // Use JSON-RPC provider for read operations. resolveRpcUrl resolves to
+      // VITE_RPC_URL, else the node's default localhost:8545 (standalone). In
+      // privacy mode reads are only fully functional through the jwt-injector
+      // helper — a known pre-existing limitation, out of scope here.
       const { JsonRpcProvider } = await import('ethers');
       const provider = new JsonRpcProvider(resolveRpcUrl());
       const contract = new Contract(contractAddress, [abiFragment], provider);

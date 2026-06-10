@@ -68,11 +68,11 @@ type ServerConfig struct {
 	MetricsEnabled       bool
 	PostLoginRedirectURL string
 	EnableGasPrices      bool
-	// BrowserRPCURL is the canonical browser-facing JSON-RPC endpoint that
-	// wallets (MetaMask) should connect to, surfaced via GET /chain-info as
-	// rpcUrl. In privacy mode this is the privacy-proxy public URL + "/rpc";
-	// empty when not configured (frontend then derives a same-origin URL).
-	BrowserRPCURL string
+	// PrivacyProxyPublicURL is the privacy-proxy PUBLIC BASE url (no "/rpc"
+	// suffix), surfaced via GET /chain-info as privacyProxyPublicUrl. It is a
+	// hint for the privacy-mode MetaMask setup dialog (jwt-injector --upstream),
+	// NOT a wallet RPC target. Empty when not configured (field omitted).
+	PrivacyProxyPublicURL string
 }
 
 // New constructs the api Server. The idx parameter is retained for
@@ -124,10 +124,11 @@ func New(database APIDatabase, rpcClient *rpc.Client, idx any, priceService *pri
 	// gas prices are served via provider.GetGasPrices; no in-process tracker.
 	s.chainInfo = chaininfo.NewService(rpcClient, 10*time.Minute)
 	if cfg != nil {
-		// RD-1031: expose the canonical browser RPC endpoint (privacy-proxy
-		// /rpc) so MetaMask connects to a reachable, redaction-enforcing
-		// endpoint instead of the old localhost:8545 fallback.
-		s.chainInfo.SetBrowserRPCURL(cfg.BrowserRPCURL)
+		// RD-1031 (Option B): surface the privacy-proxy public base URL purely
+		// as a hint for the MetaMask setup dialog's jwt-injector --upstream
+		// field. We do NOT hand any proxy /rpc endpoint to the wallet — a
+		// browser wallet cannot attach the bearer + org path the proxy needs.
+		s.chainInfo.SetPrivacyProxyPublicURL(cfg.PrivacyProxyPublicURL)
 	}
 
 	s.setupRoutes()

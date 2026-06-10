@@ -168,13 +168,14 @@ services:
     environment:
       VITE_API_URL: /api
       # MetaMask "Add Network" config (RD-1031). Injected into
-      # window.__runtimeConfig at container startup by entrypoint.sh. These are
-      # fallbacks; the authoritative chainId + rpcUrl come from GET /chain-info.
-      # VITE_RPC_URL MUST be the browser-facing privacy-proxy /rpc endpoint so
-      # all chain access stays behind the proxy redaction layer — never a
-      # direct node/localhost. In privacy mode default it to the proxy public
-      # URL + /rpc; operators can override explicitly.
-      VITE_RPC_URL: ${VITE_RPC_URL:-${PRIVACY_PROXY_PUBLIC_URL:+${PRIVACY_PROXY_PUBLIC_URL}/rpc}}
+      # window.__runtimeConfig at container startup by entrypoint.sh. The
+      # authoritative chainId comes from GET /chain-info; VITE_CHAIN_ID is a
+      # fallback. VITE_RPC_URL is a standalone/node concern — the node's
+      # browser-facing public RPC a wallet connects to directly. It is left to
+      # the operator (no default), and is NOT the privacy-proxy: in privacy mode
+      # the wallet connects via a locally-run jwt-injector configured in the
+      # in-app MetaMask setup dialog, so no proxy /rpc is ever fed to a wallet.
+      VITE_RPC_URL: ${VITE_RPC_URL:-}
       VITE_CHAIN_ID: ${VITE_CHAIN_ID:-${CHAIN_ID:-}}
       VITE_NETWORK_NAME: ${VITE_NETWORK_NAME:-${NETWORK_NAME:-}}
 

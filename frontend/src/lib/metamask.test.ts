@@ -3,6 +3,7 @@ import {
   resolveRpcUrl,
   resolveChainIdHex,
   buildAddEthereumChainParams,
+  buildHelperAddEthereumChainParams,
   deriveNetworkButtonState,
 } from './metamask';
 import type { ChainInfo } from './api';
@@ -24,7 +25,7 @@ function chainInfo(overrides: Partial<ChainInfo> = {}): ChainInfo {
   };
 }
 
-describe('resolveRpcUrl (RD-1031)', () => {
+describe('resolveRpcUrl (RD-1031, standalone)', () => {
   beforeEach(() => {
     window.__runtimeConfig = {};
   });
@@ -32,23 +33,20 @@ describe('resolveRpcUrl (RD-1031)', () => {
     window.__runtimeConfig = {};
   });
 
-  it('prefers the backend-provided rpcUrl', () => {
-    window.__runtimeConfig = { VITE_RPC_URL: 'https://config.example.com/rpc' };
-    expect(resolveRpcUrl({ rpcUrl: 'https://proxy.example.com/rpc' })).toBe(
-      'https://proxy.example.com/rpc',
-    );
+  it('prefers VITE_RPC_URL (the node RPC in standalone)', () => {
+    window.__runtimeConfig = { VITE_RPC_URL: 'https://rpc.example.com' };
+    expect(resolveRpcUrl()).toBe('https://rpc.example.com');
   });
 
-  it('falls back to VITE_RPC_URL when backend rpcUrl is absent', () => {
-    window.__runtimeConfig = { VITE_RPC_URL: 'https://config.example.com/rpc' };
-    expect(resolveRpcUrl(null)).toBe('https://config.example.com/rpc');
-    expect(resolveRpcUrl({ rpcUrl: '' })).toBe('https://config.example.com/rpc');
+  it('falls back to the node default localhost:8545 as a standalone last resort', () => {
+    // This fallback equals the node default and is only reachable when there
+    // is no privacy-proxy in front, so it is not a privacy bypass.
+    expect(resolveRpcUrl()).toBe('http://localhost:8545');
   });
 
-  it('falls back to the page origin + /rpc, never localhost:8545', () => {
-    const url = resolveRpcUrl(null);
-    expect(url).toBe(`${window.location.origin}/rpc`);
-    expect(url).not.toBe('http://localhost:8545');
+  it('never invents the explorer origin + /rpc (the removed RD-1031 fallback)', () => {
+    const url = resolveRpcUrl();
+    expect(url).not.toBe(`${window.location.origin}/rpc`);
   });
 });
 
@@ -77,7 +75,7 @@ describe('resolveChainIdHex (RD-1031)', () => {
   });
 });
 
-describe('buildAddEthereumChainParams (RD-1031)', () => {
+describe('buildAddEthereumChainParams (RD-1031, standalone)', () => {
   beforeEach(() => {
     window.__runtimeConfig = {};
   });
@@ -85,27 +83,78 @@ describe('buildAddEthereumChainParams (RD-1031)', () => {
     window.__runtimeConfig = {};
   });
 
-  it('builds params from authoritative backend chain info', () => {
-    const params = buildAddEthereumChainParams(
-      chainInfo({ chainId: '0x1092', rpcUrl: 'https://proxy.example.com/rpc' }),
-    );
+  it('builds params from the node RPC + authoritative backend chainId', () => {
+    window.__runtimeConfig = { VITE_RPC_URL: 'https://rpc.example.com' };
+    const params = buildAddEthereumChainParams(chainInfo({ chainId: '0x1092' }));
     expect(params).not.toBeNull();
     expect(params!.chainId).toBe('0x1092');
-    expect(params!.rpcUrls).toEqual(['https://proxy.example.com/rpc']);
+    expect(params!.rpcUrls).toEqual(['https://rpc.example.com']);
     expect(params!.nativeCurrency.decimals).toBe(18);
   });
 
-  it('never emits the unreachable localhost RPC fallback', () => {
+  it('uses the standalone localhost fallback, never the explorer origin + /rpc', () => {
     window.__runtimeConfig = { VITE_CHAIN_ID: '4242' };
     const params = buildAddEthereumChainParams(null);
     expect(params).not.toBeNull();
-    expect(params!.rpcUrls[0]).not.toBe('http://localhost:8545');
-    expect(params!.rpcUrls[0]).toBe(`${window.location.origin}/rpc`);
+    expect(params!.rpcUrls[0]).toBe('http://localhost:8545');
+    expect(params!.rpcUrls[0]).not.toBe(`${window.location.origin}/rpc`);
   });
 
   it('returns null when no chain ID can be resolved (so we never push a broken network)', () => {
     expect(buildAddEthereumChainParams(null)).toBeNull();
     expect(buildAddEthereumChainParams(chainInfo({ chainId: '' }))).toBeNull();
+  });
+});
+
+describe('buildHelperAddEthereumChainParams (RD-1031, privacy setup dialog)', () => {
+  beforeEach(() => {
+    window.__runtimeConfig = {};
+  });
+  afterEach(() => {
+    window.__runtimeConfig = {};
+  });
+
+  it('uses the supplied jwt-injector helper URL as the wallet RPC', () => {
+    const params = buildHelperAddEthereumChainParams(
+      'http://127.0.0.1:9001',
+      chainInfo({ chainId: '0x1092' }),
+    );
+    expect(params).not.toBeNull();
+    expect(params!.chainId).toBe('0x1092');
+    expect(params!.rpcUrls).toEqual(['http://127.0.0.1:9001']);
+  });
+
+  it('trims the helper URL', () => {
+    const params = buildHelperAddEthereumChainParams(
+      '  http://127.0.0.1:9001  ',
+      chainInfo({ chainId: '0x1092' }),
+    );
+    expect(params!.rpcUrls).toEqual(['http://127.0.0.1:9001']);
+  });
+
+  it('falls back to VITE_CHAIN_ID for the chainId when the backend is absent', () => {
+    window.__runtimeConfig = { VITE_CHAIN_ID: '4242' };
+    const params = buildHelperAddEthereumChainParams('http://127.0.0.1:9001', null);
+    expect(params!.chainId).toBe('0x1092');
+  });
+
+  it('returns null when no chain ID can be resolved', () => {
+    expect(buildHelperAddEthereumChainParams('http://127.0.0.1:9001', null)).toBeNull();
+  });
+
+  it('returns null when no helper URL is supplied (never pushes a broken network)', () => {
+    expect(buildHelperAddEthereumChainParams('', chainInfo({ chainId: '0x1092' }))).toBeNull();
+    expect(buildHelperAddEthereumChainParams('   ', chainInfo({ chainId: '0x1092' }))).toBeNull();
+  });
+
+  it('never targets the proxy /rpc endpoint — only the explicit helper URL', () => {
+    const params = buildHelperAddEthereumChainParams(
+      'http://127.0.0.1:9001',
+      chainInfo({ chainId: '0x1092', privacyProxyPublicUrl: 'https://proxy.example.com' }),
+    );
+    expect(params!.rpcUrls).toEqual(['http://127.0.0.1:9001']);
+    expect(params!.rpcUrls[0]).not.toContain('proxy.example.com');
+    expect(params!.rpcUrls[0]).not.toContain('/rpc');
   });
 });
 

@@ -25,32 +25,30 @@ function getProvider(): EthereumProvider | undefined {
   return (window as unknown as { ethereum?: EthereumProvider }).ethereum;
 }
 
-/**
- * Resolve the canonical browser-facing JSON-RPC URL that wallets should
- * connect to. Priority (RD-1031):
- *   1. backend-provided rpcUrl from /chain-info (privacy-proxy public /rpc)
- *   2. VITE_RPC_URL build/runtime config
- *   3. the current page origin (same host the user already loaded the
- *      explorer from — reachable by definition)
- *
- * We deliberately NEVER fall back to http://localhost:8545: it is unreachable
- * for remote users and is a direct-node target that bypasses the privacy-proxy
- * redaction layer.
- */
-export function resolveRpcUrl(chainInfo?: Pick<ChainInfo, 'rpcUrl'> | null): string {
-  const fromBackend = chainInfo?.rpcUrl?.trim();
-  if (fromBackend) return fromBackend;
+/** The node's default local JSON-RPC port — used only as a standalone-mode
+ * last resort (see resolveRpcUrl). It equals the geth/anvil default and is NOT
+ * a privacy bypass: it is only reachable when no privacy-proxy is involved. */
+const STANDALONE_NODE_RPC_FALLBACK = 'http://localhost:8545';
 
+/**
+ * Resolve the JSON-RPC URL for STANDALONE-mode wallet add and contract reads.
+ * Priority (RD-1031):
+ *   1. VITE_RPC_URL build/runtime config (the node's public RPC in standalone)
+ *   2. http://localhost:8545 — the node default, as a standalone last resort
+ *
+ * This is a standalone/node concern. In privacy mode the wallet does NOT use
+ * this: chain access goes through a locally-run jwt-injector configured in the
+ * MetaMask setup dialog (see buildHelperAddEthereumChainParams). We deliberately
+ * never invent a `window.location.origin + '/rpc'` target — the explorer origin
+ * does not serve /rpc and would 404 — nor do we feed the proxy /rpc to a wallet.
+ */
+export function resolveRpcUrl(): string {
   const fromConfig = getConfig('VITE_RPC_URL', '').trim();
   if (fromConfig) return fromConfig;
 
-  // Same-origin fallback. In privacy deployments the explorer and the
-  // proxy /rpc are typically served from the same public host, so the
-  // page origin is a reachable default — unlike localhost.
-  if (typeof window !== 'undefined' && window.location?.origin) {
-    return `${window.location.origin}/rpc`;
-  }
-  return '';
+  // Standalone last resort: the node's default local RPC. Reachable only when
+  // there is no proxy in front, so it is not a privacy bypass.
+  return STANDALONE_NODE_RPC_FALLBACK;
 }
 
 /**
@@ -76,24 +74,41 @@ export function resolveChainIdHex(chainInfo?: Pick<ChainInfo, 'chainId'> | null)
 }
 
 /**
- * Build the wallet_addEthereumChain parameters from authoritative chain info.
- * Pure and testable — no network or wallet access. Returns null when no valid
- * chain ID or RPC URL can be resolved (so we never push a broken network to
- * MetaMask).
+ * Build the wallet_addEthereumChain parameters for STANDALONE mode from
+ * authoritative chain info, using the node RPC (resolveRpcUrl). Pure and
+ * testable — no network or wallet access. Returns null when no valid chain ID
+ * can be resolved (so we never push a broken network to MetaMask).
+ *
+ * Privacy mode does NOT use this; it builds params from the user-supplied
+ * jwt-injector helper URL via buildHelperAddEthereumChainParams.
  */
 export function buildAddEthereumChainParams(
   chainInfo?: ChainInfo | null,
 ): AddEthereumChainParameter | null {
+  return buildHelperAddEthereumChainParams(resolveRpcUrl(), chainInfo);
+}
+
+/**
+ * Build wallet_addEthereumChain parameters from an explicit RPC URL (e.g. the
+ * jwt-injector helper URL entered in the privacy setup dialog) plus the
+ * authoritative chain metadata. Pure and testable. Returns null when no valid
+ * chain ID can be resolved or no rpcUrl is supplied, so callers never push a
+ * broken network to MetaMask.
+ */
+export function buildHelperAddEthereumChainParams(
+  rpcUrl: string,
+  chainInfo?: ChainInfo | null,
+): AddEthereumChainParameter | null {
   const chainId = resolveChainIdHex(chainInfo);
-  const rpcUrl = resolveRpcUrl(chainInfo);
-  if (!chainId || !rpcUrl) {
+  const trimmedRpc = rpcUrl?.trim() ?? '';
+  if (!chainId || !trimmedRpc) {
     return null;
   }
   return {
     chainId,
     chainName: getConfig('VITE_NETWORK_NAME') || getShortName(),
     nativeCurrency: { name: 'Ether', symbol: getNetworkCurrency(), decimals: 18 },
-    rpcUrls: [rpcUrl],
+    rpcUrls: [trimmedRpc],
   };
 }
 
@@ -107,9 +122,10 @@ async function fetchChainInfo(): Promise<ChainInfo | null> {
 }
 
 /**
- * Add the network to MetaMask using authoritative chain config from the
- * backend. Falls back to config/origin-derived values when the backend is
- * unreachable, but never to localhost.
+ * Add the network to MetaMask (STANDALONE mode) using authoritative chain
+ * config from the backend, falling back to VITE_RPC_URL / the node's default
+ * localhost RPC. Privacy mode uses the setup dialog (addNetworkViaHelper)
+ * instead and never calls this directly.
  */
 export async function addNetworkToMetaMask(): Promise<void> {
   const provider = getProvider();
@@ -120,6 +136,36 @@ export async function addNetworkToMetaMask(): Promise<void> {
 
   const chainInfo = await fetchChainInfo();
   const params = buildAddEthereumChainParams(chainInfo);
+  if (!params) {
+    alert('Network configuration is unavailable. Please try again later.');
+    return;
+  }
+
+  await provider.request({
+    method: 'wallet_addEthereumChain',
+    params: [params],
+  });
+}
+
+/**
+ * Add the network to MetaMask pointing at an explicit RPC URL — the locally-run
+ * jwt-injector helper URL entered in the privacy setup dialog. Throws on a
+ * missing wallet (so the caller can surface the install prompt) or unresolved
+ * chain config; rethrows wallet errors (e.g. the injector not being up) so the
+ * dialog/MetaMask can surface them.
+ */
+export async function addNetworkViaHelper(
+  helperUrl: string,
+  chainInfo?: ChainInfo | null,
+): Promise<void> {
+  const provider = getProvider();
+  if (!provider) {
+    alert('MetaMask is not installed. Please install MetaMask to add the network.');
+    return;
+  }
+
+  const info = chainInfo ?? (await fetchChainInfo());
+  const params = buildHelperAddEthereumChainParams(helperUrl, info);
   if (!params) {
     alert('Network configuration is unavailable. Please try again later.');
     return;
