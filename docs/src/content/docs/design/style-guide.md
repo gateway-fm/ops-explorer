@@ -1,12 +1,15 @@
-# Gateway Block Explorer Style Guide
-
-Based on [Gateway.fm](https://gateway.fm/) design system.
-
+---
+title: Style Guide
+description: The Gateway block explorer design system — colours, typography, spacing, components, and accessibility.
 ---
 
-## Color Palette
+Based on the [Gateway.fm](https://gateway.fm/) design system. This guide documents the
+visual language of the explorer UI so deployments and contributions stay consistent.
 
-### Primary Purple
+## Color palette
+
+### Primary purple
+
 The signature Gateway purple is the primary brand color.
 
 | Name | Hex | RGB | Usage |
@@ -18,6 +21,7 @@ The signature Gateway purple is the primary brand color.
 | Primary Dark | `#6B3DD4` | `rgb(107, 61, 212)` | Active states, emphasis |
 
 ### Neutrals
+
 Clean, professional grays for text and UI.
 
 | Name | Hex | RGB | Usage |
@@ -31,7 +35,7 @@ Clean, professional grays for text and UI.
 | Neutral 100 | `#F1F5F9` | `rgb(241, 245, 249)` | Page background |
 | Neutral 50 | `#FFFFFF` | `rgb(255, 255, 255)` | Cards, surfaces |
 
-### Status Colors
+### Status colors
 
 | Name | Hex | Usage |
 |------|-----|-------|
@@ -43,11 +47,8 @@ Clean, professional grays for text and UI.
 | Error Light | `#FEE2E2` | Error backgrounds |
 | Info | `#8950FA` | Information (uses primary) |
 
----
-
 ## Typography
 
-### Font Family
 ```css
 /* Primary font - Gotham or fallback */
 font-family: 'Gotham', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -55,8 +56,6 @@ font-family: 'Gotham', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', R
 /* Monospace for addresses, hashes, code */
 font-family: 'JetBrains Mono', 'SF Mono', 'Monaco', 'Consolas', monospace;
 ```
-
-### Type Scale
 
 | Element | Size | Weight | Line Height |
 |---------|------|--------|-------------|
@@ -69,11 +68,9 @@ font-family: 'JetBrains Mono', 'SF Mono', 'Monaco', 'Consolas', monospace;
 | Caption | 12px / 0.75rem | Medium (500) | 1.4 |
 | Mono | 14px / 0.875rem | Regular (400) | 1.5 |
 
----
-
 ## Spacing
 
-Based on 4px grid system.
+Based on a 4px grid system.
 
 | Token | Value | Usage |
 |-------|-------|-------|
@@ -85,9 +82,7 @@ Based on 4px grid system.
 | 2xl | 48px | Page sections |
 | 3xl | 64px | Major sections |
 
----
-
-## Border Radius
+## Border radius
 
 | Token | Value | Usage |
 |-------|-------|-------|
@@ -97,8 +92,6 @@ Based on 4px grid system.
 | xl | 16px | Large cards |
 | 2xl | 24px | Hero sections, modals |
 | full | 9999px | Pills, avatars, round buttons |
-
----
 
 ## Shadows
 
@@ -116,13 +109,10 @@ Based on 4px grid system.
 --shadow-primary: 0 0 20px rgba(137, 80, 250, 0.3);
 ```
 
----
-
 ## Components
 
 ### Buttons
 
-**Primary Button**
 ```css
 .btn-primary {
   background: #8950FA;
@@ -136,10 +126,7 @@ Based on 4px grid system.
   background: #6B3DD4;
   box-shadow: 0 0 20px rgba(137, 80, 250, 0.4);
 }
-```
 
-**Secondary Button**
-```css
 .btn-secondary {
   background: #FFFFFF;
   color: #0F0F0F;
@@ -147,16 +134,12 @@ Based on 4px grid system.
   border: 1px solid #CBD5E1;
   border-radius: 9999px;
   font-weight: 500;
-  transition: all 0.2s ease;
 }
 .btn-secondary:hover {
   background: #F5F3FF;
   border-color: #8950FA;
 }
-```
 
-**Ghost Button**
-```css
 .btn-ghost {
   background: transparent;
   color: #8950FA;
@@ -171,7 +154,6 @@ Based on 4px grid system.
 
 ### Cards
 
-**Standard Card**
 ```css
 .card {
   background: #FFFFFF;
@@ -180,10 +162,7 @@ Based on 4px grid system.
   padding: 24px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
-```
 
-**Feature Card (with accent)**
-```css
 .card-feature {
   background: #F5F3FF;
   border: 2px solid #C4A8FD;
@@ -213,9 +192,8 @@ Based on 4px grid system.
 }
 ```
 
-### Badges / Tags
+### Badges / tags
 
-**Status Badge**
 ```css
 .badge {
   display: inline-flex;
@@ -225,31 +203,16 @@ Based on 4px grid system.
   font-size: 12px;
   font-weight: 500;
 }
-.badge-success {
-  background: #DCFCE7;
-  color: #166534;
-}
-.badge-warning {
-  background: #FEF9C3;
-  color: #854D0E;
-}
-.badge-error {
-  background: #FEE2E2;
-  color: #991B1B;
-}
-.badge-primary {
-  background: #F5F3FF;
-  color: #8950FA;
-}
+.badge-success { background: #DCFCE7; color: #166534; }
+.badge-warning { background: #FEF9C3; color: #854D0E; }
+.badge-error   { background: #FEE2E2; color: #991B1B; }
+.badge-primary { background: #F5F3FF; color: #8950FA; }
 ```
 
 ### Tables
 
 ```css
-.table {
-  width: 100%;
-  border-collapse: collapse;
-}
+.table { width: 100%; border-collapse: collapse; }
 .table th {
   text-align: left;
   padding: 12px 16px;
@@ -264,14 +227,10 @@ Based on 4px grid system.
   padding: 16px;
   border-bottom: 1px solid #F1F5F9;
 }
-.table tr:hover {
-  background: #F5F3FF;
-}
+.table tr:hover { background: #F5F3FF; }
 ```
 
----
-
-## Tailwind CSS Configuration
+## Tailwind CSS configuration
 
 If using Tailwind, add these to `tailwind.config.js`:
 
@@ -310,40 +269,33 @@ module.exports = {
         sans: ['Gotham', 'Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'SF Mono', 'monospace'],
       },
-      borderRadius: {
-        'xl': '16px',
-        '2xl': '24px',
-      },
+      borderRadius: { xl: '16px', '2xl': '24px' },
       boxShadow: {
-        'card': '0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.1)',
-        'primary': '0 0 20px rgba(137, 80, 250, 0.3)',
+        card: '0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.1)',
+        primary: '0 0 20px rgba(137, 80, 250, 0.3)',
       },
     },
   },
 };
 ```
 
----
-
-## Light Theme (Default)
+## Light theme (default)
 
 The Gateway design uses a **light theme** by default:
+
 - Page background: `#F1F5F9` (light slate)
 - Cards: `#FFFFFF` (white)
-- Text: Dark neutrals (`#0F0F0F` to `#374151`)
-- Accents: Purple (`#8950FA`)
-
----
+- Text: dark neutrals (`#0F0F0F` to `#374151`)
+- Accents: purple (`#8950FA`)
 
 ## Accessibility
 
-- Maintain contrast ratio of at least 4.5:1 for body text
-- Primary purple (`#8950FA`) on white has ~4.6:1 contrast - use for large text or interactive elements
-- For small text on light backgrounds, use `#374151` or darker
-- Always provide focus states with visible outlines
-- Use semantic HTML and ARIA labels
-
----
+- Maintain a contrast ratio of at least **4.5:1** for body text.
+- Primary purple (`#8950FA`) on white has ~4.6:1 contrast — use for large text or
+  interactive elements.
+- For small text on light backgrounds, use `#374151` or darker.
+- Always provide focus states with visible outlines.
+- Use semantic HTML and ARIA labels.
 
 ## Animation
 
@@ -352,9 +304,7 @@ The Gateway design uses a **light theme** by default:
 transition: all 0.2s ease;
 
 /* Hover scale effect */
-.interactive:hover {
-  transform: scale(1.02);
-}
+.interactive:hover { transform: scale(1.02); }
 
 /* Focus ring */
 .focus-ring:focus-visible {
@@ -362,18 +312,3 @@ transition: all 0.2s ease;
   box-shadow: 0 0 0 3px rgba(137, 80, 250, 0.4);
 }
 ```
-
----
-
-## Example: Address Display
-
-```html
-<a href="/address/0x..." class="address-link">
-  <span class="font-mono text-primary">0xf3c8...cdb6</span>
-  <span class="text-primary-300 text-sm">(Greeter)</span>
-</a>
-```
-
----
-
-*Style guide generated for Gateway Block Explorer based on Gateway.fm branding.*

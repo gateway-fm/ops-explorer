@@ -1,10 +1,16 @@
-# Branding Configuration
+---
+title: Branding & Whitelabel
+description: Rebrand the entire explorer — name, logo, colours, and footer links — from environment variables alone, with no code changes.
+---
 
-The block explorer supports full whitelabel branding via environment variables. No code changes are required — set the variables at build time and the entire UI updates accordingly.
+The block explorer supports full whitelabel branding via environment variables. No code
+changes are required — set the variables at build time and the entire UI updates
+accordingly.
 
-All branding is centralised in `frontend/src/lib/branding.ts`. Each variable has a sensible Gateway default, so the explorer works out of the box without any configuration.
+All branding is centralised in `frontend/src/lib/branding.ts`. Each variable has a sensible
+Gateway default, so the explorer works out of the box without any configuration.
 
-## Environment Variables
+## Environment variables
 
 ### Identity
 
@@ -41,7 +47,7 @@ All link variables are optional. Set to an empty string to hide the correspondin
 | `VITE_BRAND_SECURITY` | Security page URL | `https://gateway.fm/security/` |
 | `VITE_BRAND_TRUST` | Trust center URL | `https://trust.gateway.fm` |
 
-### Social Media
+### Social media
 
 All social variables are optional. Set to an empty string to hide the corresponding icon in the footer.
 
@@ -54,7 +60,8 @@ All social variables are optional. Set to an empty string to hide the correspond
 
 ## Usage with Docker Compose
 
-The simplest way to apply branding is with a docker-compose override file. Create a file like `docker-compose.brand.yml` and run:
+The simplest way to apply branding is with a docker-compose override file. Create a file
+like `docker-compose.brand.yml` and run:
 
 ```bash
 docker compose -f docker-compose.dev.yml -f docker-compose.brand.yml up --build -d
@@ -71,13 +78,22 @@ services:
       VITE_BRAND_COLOR_PRIMARY: "#FF6B00"
 ```
 
-See the `examples/branding/` directory for complete override files.
+:::tip[Ready-made examples]
+The `examples/branding/` directory contains complete override files:
 
-## Usage with .env Files
+| File | Description |
+|------|-------------|
+| `docker-compose.minimal.yml` | Just rename the explorer (2 variables) |
+| `docker-compose.full.yml` | Every branding option customised |
+| `docker-compose.no-socials.yml` | Internal deploy — no footer links |
+| `docker-compose.l2-chain.yml` | L2 chain — branding + network config |
+:::
+
+## Usage with .env files
 
 Create a `.env` file in the `frontend/` directory:
 
-```env
+```ini
 VITE_BRAND_NAME=My Chain Explorer
 VITE_BRAND_COMPANY=My Company Inc.
 VITE_BRAND_COLOR_PRIMARY=#FF6B00
@@ -85,25 +101,28 @@ VITE_BRAND_WEBSITE=https://mycompany.com
 VITE_BRAND_TWITTER=https://x.com/mychain
 ```
 
-Vite automatically loads `.env` files. See the [Vite docs](https://vite.dev/guide/env-and-mode) for `.env.production`, `.env.local`, etc.
+Vite automatically loads `.env` files. See the [Vite docs](https://vite.dev/guide/env-and-mode)
+for `.env.production`, `.env.local`, etc.
 
-## Custom Logos
+## Custom logos
 
-The navbar logo has a flip animation — the **logo** is shown by default, and the **icon/mascot** is revealed on hover. Both images also appear in the footer. The favicon defaults to the icon if `VITE_BRAND_FAVICON` is not set.
+The navbar logo has a flip animation — the **logo** is shown by default, and the
+**icon/mascot** is revealed on hover. Both images also appear in the footer. The favicon
+defaults to the icon if `VITE_BRAND_FAVICON` is not set.
 
-To use custom logos:
+**Local files** — place your images in `frontend/public/` and reference by path:
 
-1. **Local files**: Place your images in `frontend/public/` and reference by path:
-   ```
-   VITE_BRAND_LOGO=/my-logo.svg
-   VITE_BRAND_ICON=/my-mascot.png
-   ```
+```ini
+VITE_BRAND_LOGO=/my-logo.svg
+VITE_BRAND_ICON=/my-mascot.png
+```
 
-2. **Remote URLs**: Point to any hosted image:
-   ```
-   VITE_BRAND_LOGO=https://cdn.example.com/logo.svg
-   VITE_BRAND_ICON=https://cdn.example.com/mascot.png
-   ```
+**Remote URLs** — point to any hosted image:
+
+```ini
+VITE_BRAND_LOGO=https://cdn.example.com/logo.svg
+VITE_BRAND_ICON=https://cdn.example.com/mascot.png
+```
 
 **Where logos appear:**
 
@@ -114,13 +133,15 @@ To use custom logos:
 | `VITE_BRAND_FAVICON` | — | — | — | Yes |
 
 **Recommended formats:**
-- **Logo**: SVG or PNG, displayed at 40x40px in the header and 32x32px in the footer
+
+- **Logo**: SVG or PNG, displayed at 40×40px in the header and 32×32px in the footer
 - **Icon/Mascot**: PNG, used for hover-flip and as fallback favicon
 - **Favicon**: ICO, PNG, or SVG
 
-## Hiding Sections
+## Hiding sections
 
-To hide footer sections that don't apply to your brand, set the relevant variables to empty strings:
+To hide footer sections that don't apply to your brand, set the relevant variables to
+empty strings:
 
 ```yaml
 # Hide all social links
@@ -139,9 +160,12 @@ VITE_BRAND_SECURITY: ""
 VITE_BRAND_TRUST: ""
 ```
 
-## How It Works
+## How it works
 
-1. `frontend/src/lib/branding.ts` reads all `VITE_` environment variables at build time with fallback defaults
-2. `frontend/src/main.tsx` applies the page title, favicon, meta description, and CSS color variables on app load
-3. `frontend/src/components/Layout.tsx` reads from `branding` for all header/footer content
-4. Tailwind CSS references `--primary-rgb` CSS variable so the brand color flows through all utility classes and opacity modifiers
+1. `frontend/src/lib/branding.ts` reads all `VITE_` environment variables at build time
+   with fallback defaults.
+2. `frontend/src/main.tsx` applies the page title, favicon, meta description, and CSS color
+   variables on app load.
+3. `frontend/src/components/Layout.tsx` reads from `branding` for all header/footer content.
+4. Tailwind CSS references the `--primary-rgb` CSS variable, so the brand color flows
+   through all utility classes and opacity modifiers.

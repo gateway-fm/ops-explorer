@@ -180,7 +180,7 @@ services:
       VITE_NETWORK_NAME: ${VITE_NETWORK_NAME:-${NETWORK_NAME:-}}
       # Network switcher is off by default (single-network deployment). To run
       # the multi-network switcher, set this to "true" AND serve a
-      # featured-networks.json listing >= 2 networks. See docs/network-modes.md.
+      # featured-networks.json listing >= 2 networks. See https://gateway-fm.github.io/block-explorer/configuration/network-modes/.
       VITE_MULTI_NETWORK_ENABLED: "false"
 
 volumes:

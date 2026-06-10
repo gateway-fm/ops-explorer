@@ -1,0 +1,62 @@
+---
+// Wraps Starlight's default site title and appends a version badge showing the
+// release these docs describe. The version is resolved at build time from the
+// latest git tag in astro.config.mjs (PUBLIC_DOCS_VERSION).
+import Default from '@astrojs/starlight/components/SiteTitle.astro';
+
+const version = import.meta.env.PUBLIC_DOCS_VERSION;
+const releaseUrl = version
+  ? `https://github.com/gateway-fm/block-explorer/releases/tag/${version}`
+  : undefined;
+---
+
+<div class="be-site-title">
+  <Default {...Astro.props}><slot /></Default>
+  {
+    version && (
+      <a
+        class="be-version-badge"
+        href={releaseUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={`Documentation for block-explorer ${version}`}
+      >
+        {version}
+      </a>
+    )
+  }
+</div>
+
+<style>
+  .be-site-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+  .be-version-badge {
+    flex-shrink: 0;
+    font-family: var(--sl-font-mono);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0.01em;
+    padding: 0.25rem 0.45rem;
+    border-radius: 9999px;
+    color: var(--sl-color-text-accent);
+    background: color-mix(in srgb, #8950fa 14%, transparent);
+    border: 1px solid color-mix(in srgb, #8950fa 35%, transparent);
+    text-decoration: none;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .be-version-badge:hover {
+    background: color-mix(in srgb, #8950fa 22%, transparent);
+    border-color: color-mix(in srgb, #8950fa 55%, transparent);
+  }
+  /* Hide the badge on very narrow viewports so the header stays tidy. */
+  @media (max-width: 30rem) {
+    .be-version-badge {
+      display: none;
+    }
+  }
+</style>
