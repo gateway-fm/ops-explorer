@@ -141,7 +141,7 @@ dev-multi:
 	@echo "    Anvil RPC:  http://localhost:8556"
 	@echo ""
 	@echo "Open either frontend — the navbar 'Networks' dropdown switches between them."
-	@echo "Edit deploy/featured-networks.multi.json to rename / add networks (see docs/network-modes.md)."
+	@echo "Edit deploy/featured-networks.multi.json to rename / add networks (see https://gateway-fm.github.io/block-explorer/configuration/network-modes/)."
 	@echo ""
 
 dev-multi-stop:

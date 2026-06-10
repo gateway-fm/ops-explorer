@@ -1,24 +1,24 @@
-# Public API
+---
+title: Public REST API
+description: A read-only, rate-limited REST API for programmatic access to indexed blockchain data — blocks, transactions, addresses, tokens, search, and stats.
+---
 
-The block explorer exposes a read-only public REST API for programmatic access to indexed blockchain data. It runs as a separate service with its own rate limiting, isolated from the explorer frontend API.
+The block explorer exposes a read-only public REST API for programmatic access to indexed
+blockchain data. It runs as a separate service with its own rate limiting, isolated from
+the explorer frontend API.
 
 ## Architecture
 
-The public API is a standalone Go binary (`cmd/public-api`) that connects directly to the same PostgreSQL database and RPC node as the explorer. Running it as a separate service provides:
+The public API is a standalone Go binary (`cmd/public-api`) that connects directly to the
+same PostgreSQL database and RPC node as the explorer. Running it as a separate service
+provides crash isolation, independent scaling, zero-downtime deploys, and dedicated rate
+limiting. See [System Architecture](../../architecture/overview/) for the full picture.
 
-- **Crash isolation** — a panic in the public API doesn't affect the explorer
-- **Independent scaling** — scale the public API horizontally without touching the explorer
-- **Zero-downtime deploys** — update the public API without restarting the explorer
-- **Dedicated rate limiting** — public API rate limits don't affect the explorer UI
-
-## Quick Start
+## Quick start
 
 ```bash
-# Dev mode (includes public API automatically)
-make dev
-
-# Production
-make run
+make dev    # dev mode (includes public API automatically)
+make run    # production
 ```
 
 The public API is available at `http://localhost:8082` by default.
@@ -33,15 +33,12 @@ The public API is available at `http://localhost:8082` by default.
 | `DATABASE_URL` | — | PostgreSQL connection string |
 | `RPC_URL` | — | Ethereum JSON-RPC endpoint |
 
-## Rate Limiting
+## Rate limiting
 
 All requests are rate-limited by client IP address using a sliding window algorithm.
+**Default: 100 requests per minute.**
 
-**Default:** 100 requests per minute.
-
-**Response Headers:**
-
-| Header | Description |
+| Response header | Description |
 |--------|-------------|
 | `X-RateLimit-Limit` | Maximum requests allowed per window |
 | `X-RateLimit-Remaining` | Requests remaining in current window |
@@ -50,9 +47,7 @@ All requests are rate-limited by client IP address using a sliding window algori
 When the limit is exceeded, the API returns `429 Too Many Requests`:
 
 ```json
-{
-  "error": "rate limit exceeded"
-}
+{ "error": "rate limit exceeded" }
 ```
 
 ## Base URL
@@ -73,12 +68,8 @@ http://localhost:8082/api/v1/blocks
 | GET | `/api/v1/blocks/latest` | Get latest block |
 | GET | `/api/v1/blocks/{number}` | Get block by number (includes transactions) |
 
-**Query parameters for list:**
-
-| Param | Type | Default | Description |
-|-------|------|---------|-------------|
-| `limit` | int | 25 | Number of blocks (max 100) |
-| `before` | int | — | Cursor: return blocks before this number |
+**Query parameters for list:** `limit` (int, default 25, max 100), `before` (int — cursor:
+return blocks before this number).
 
 ### Transactions
 
@@ -90,12 +81,7 @@ http://localhost:8082/api/v1/blocks
 | GET | `/api/v1/transactions/{hash}/transfers` | Get token transfers in transaction |
 | GET | `/api/v1/transactions/{hash}/internal` | Get internal transactions |
 
-**Query parameters for list:**
-
-| Param | Type | Default | Description |
-|-------|------|---------|-------------|
-| `page` | int | 1 | Page number |
-| `pageSize` | int | 25 | Items per page (max 100) |
+**Query parameters for list:** `page` (int, default 1), `pageSize` (int, default 25, max 100).
 
 ### Addresses
 
@@ -109,7 +95,8 @@ http://localhost:8082/api/v1/blocks
 | GET | `/api/v1/addresses/{address}/logs` | Get address event logs |
 | GET | `/api/v1/addresses/{address}/contract` | Get contract details + ABI |
 
-**Address transactions** use cursor pagination (`limit`, `before`). Other sub-endpoints use offset pagination (`page`, `pageSize`).
+**Address transactions** use cursor pagination (`limit`, `before`). Other sub-endpoints use
+offset pagination (`page`, `pageSize`).
 
 ### Tokens
 
@@ -120,15 +107,10 @@ http://localhost:8082/api/v1/blocks
 | GET | `/api/v1/tokens/{address}/holders` | Get token holders |
 | GET | `/api/v1/tokens/{address}/transfers` | Get token transfers |
 
-**Query parameters for list:**
+**Query parameters for list:** `page` (int, default 1), `pageSize` (int, default 25, max
+100), `type` (string — filter by token type: `erc20`, `erc721`).
 
-| Param | Type | Default | Description |
-|-------|------|---------|-------------|
-| `page` | int | 1 | Page number |
-| `pageSize` | int | 25 | Items per page (max 100) |
-| `type` | string | — | Filter by token type (`erc20`, `erc721`) |
-
-### Token Transfers
+### Token transfers
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -147,11 +129,7 @@ http://localhost:8082/api/v1/blocks
 | GET | `/api/v1/search` | Search blocks, transactions, addresses |
 | GET | `/api/v1/search/suggestions` | Get autocomplete suggestions |
 
-**Query parameters:**
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `q` | string | yes | Search query |
+**Query parameter:** `q` (string, required) — the search query.
 
 ### Stats
 
@@ -172,13 +150,13 @@ http://localhost:8082/api/v1/blocks
 
 ## Pagination
 
-The API uses two pagination styles depending on the endpoint:
+The API uses two pagination styles depending on the endpoint.
 
 **Cursor pagination** (blocks, address transactions):
 
 ```json
 {
-  "data": [...],
+  "data": [],
   "nextCursor": "12345",
   "hasMore": true
 }
@@ -190,7 +168,7 @@ Pass the `nextCursor` value as the `before` parameter to get the next page.
 
 ```json
 {
-  "data": [...],
+  "data": [],
   "total": 1000,
   "page": 1,
   "pageSize": 25,
@@ -198,14 +176,12 @@ Pass the `nextCursor` value as the `before` parameter to get the next page.
 }
 ```
 
-## Error Responses
+## Error responses
 
 All errors return a JSON object with an `error` field:
 
 ```json
-{
-  "error": "block not found"
-}
+{ "error": "block not found" }
 ```
 
 | Status | Description |
@@ -222,24 +198,24 @@ All errors return a JSON object with an `error` field:
 curl http://localhost:8082/api/v1/blocks/latest
 
 # List recent transactions
-curl http://localhost:8082/api/v1/transactions?page=1&pageSize=10
+curl "http://localhost:8082/api/v1/transactions?page=1&pageSize=10"
 
 # Get address info
 curl http://localhost:8082/api/v1/addresses/0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 
-# Search
-curl http://localhost:8082/api/v1/search/suggestions?q=0xf39
+# Search suggestions
+curl "http://localhost:8082/api/v1/search/suggestions?q=0xf39"
 
-# Get chain info
+# Chain info and gas
 curl http://localhost:8082/api/v1/chain-info
-
-# Get gas prices
 curl http://localhost:8082/api/v1/gas
 ```
 
-## API Documentation UI
+## Interactive docs
 
-The explorer includes an interactive API documentation page at `/api-docs` in the frontend. This page documents all endpoints with example requests and responses, and includes a "Try it" feature for making live requests.
+The explorer includes an interactive API documentation page at **`/api-docs`** in the
+frontend. It documents all endpoints with example requests and responses, and includes a
+"Try it" feature for making live requests.
 
 ## Docker
 

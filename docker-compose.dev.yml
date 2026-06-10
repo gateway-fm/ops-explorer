@@ -97,7 +97,7 @@ services:
       VITE_PUBLIC_API_URL: http://localhost:${PUBLIC_API_PORT:-8082}
       # Single-network mode: no network switcher. This is the default for every
       # deployment; flip to "true" (and provide featured-networks.json) only to
-      # run the multi-network switcher. See docs/network-modes.md.
+      # run the multi-network switcher. See https://gateway-fm.github.io/block-explorer/configuration/network-modes/.
       VITE_MULTI_NETWORK_ENABLED: "false"
     command: sh -c "npm install --legacy-peer-deps && npm run dev -- --host 0.0.0.0 --port 3001"
     depends_on:

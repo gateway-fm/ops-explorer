@@ -127,7 +127,7 @@ RPC_URL=https://rpc.example.com make run BRAND=examples/branding/docker-compose.
 
 Set any social or company link to `""` to hide it from the footer.
 
-See [docs/BRANDING.md](docs/BRANDING.md) for the full reference.
+See the [Branding & Whitelabel docs](https://gateway-fm.github.io/block-explorer/configuration/branding/) for the full reference.
 
 ## Public API
 
@@ -146,7 +146,7 @@ curl http://localhost:8082/api/v1/search/suggestions?q=0xf39
 | `RATE_LIMIT` | `100` | Requests per window |
 | `RATE_LIMIT_WINDOW` | `1m` | Rate limit window |
 
-Interactive API docs are available at `/api-docs` in the explorer UI. See [docs/PUBLIC_API.md](docs/PUBLIC_API.md) for the full reference.
+Interactive API docs are available at `/api-docs` in the explorer UI. See the [Public REST API docs](https://gateway-fm.github.io/block-explorer/api/public-api/) for the full reference.
 
 ## Docker Images
 

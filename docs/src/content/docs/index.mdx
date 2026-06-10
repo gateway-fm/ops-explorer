@@ -1,0 +1,45 @@
+---
+title: Block Explorer
+description: A lightweight, self-hosted block explorer for EVM-compatible chains. Point it at any RPC endpoint and get a fully indexed, searchable explorer with real-time updates.
+template: splash
+hero:
+  tagline: A lightweight, self-hosted block explorer for EVM-compatible chains. Point it at any RPC endpoint and get a fully indexed, searchable explorer with real-time updates.
+  image:
+    file: ../../assets/mascot.png
+  actions:
+    - text: Get Started
+      link: ./getting-started/introduction/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/gateway-fm/block-explorer
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## What is it?
+
+The Block Explorer is a self-hosted explorer for any EVM-compatible chain. It indexes
+blocks, transactions, accounts, tokens, and logs into PostgreSQL and serves them through
+a fast React UI and a rate-limited public REST API. It runs anywhere Docker runs, and
+every part of the UI can be whitelabelled without touching code.
+
+<CardGrid stagger>
+  <Card title="Run it in minutes" icon="rocket">
+    A single `make dev` spins up a local testnet, database, indexer, API, and frontend.
+    [Quickstart →](./getting-started/quickstart/)
+  </Card>
+  <Card title="Configure everything" icon="setting">
+    Ports, branding, network switching, and deployment modes — all driven by environment
+    variables. [Configuration →](./configuration/overview/)
+  </Card>
+  <Card title="Whitelabel branding" icon="pencil">
+    Name, logo, colours, and footer links update from environment variables alone.
+    [Branding →](./configuration/branding/)
+  </Card>
+  <Card title="Public REST API" icon="open-book">
+    A read-only, rate-limited API for blocks, transactions, addresses, and tokens.
+    [API Reference →](./api/public-api/)
+  </Card>
+</CardGrid>
