@@ -162,6 +162,7 @@ export function SearchBar({ variant = 'default', autoFocus }: SearchBarProps) {
           <input
             ref={inputRef}
             type="text"
+            data-testid="search-input"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
@@ -188,6 +189,9 @@ export function SearchBar({ variant = 'default', autoFocus }: SearchBarProps) {
           {suggestions.map((suggestion, index) => (
             <button
               key={`${suggestion.type}-${suggestion.value}`}
+              data-testid="search-suggestion"
+              data-suggestion-type={suggestion.type}
+              aria-selected={index === selectedIndex}
               onClick={() => navigateToSuggestion(suggestion)}
               className={`w-full px-4 py-3 flex items-center gap-3 text-left transition-colors ${
                 index === selectedIndex ? 'bg-primary-50' : 'hover:bg-neutral-50'

@@ -19,13 +19,19 @@ const mobileNavItems = [
   { to: '/accounts', label: 'Top Accounts', icon: Users },
   { to: '/tokens', label: 'Tokens', icon: Coins },
   { to: '/token-transfers', label: 'Token Transfers', icon: ArrowLeftRight },
-  { to: '/gas-tracker', label: 'Gas Tracker', icon: Fuel },
+  // "Gas Tracker" hidden in privacy mode (RD-1063, see lib/features.ts).
+  ...(features().gasTracker
+    ? [{ to: '/gas-tracker', label: 'Gas Tracker', icon: Fuel }]
+    : []),
   // "Verify Contract" hidden in privacy mode (see lib/features.ts).
   ...(features().contractVerification
     ? [{ to: '/verify', label: 'Verify Contract', icon: ShieldCheck }]
     : []),
   { to: '/chain-info', label: 'Chain Info', icon: Info },
-  { to: '/stats', label: 'Charts', icon: BarChart3 },
+  // "Charts" hidden in privacy mode (RD-1063, see lib/features.ts).
+  ...(features().charts
+    ? [{ to: '/stats', label: 'Charts', icon: BarChart3 }]
+    : []),
   { to: '/api-docs', label: 'API Docs', icon: BookOpen },
   { to: '/privacy', label: 'Auditor', icon: Eye },
 ];
@@ -41,12 +47,16 @@ export function Layout() {
   const searchRef = useRef<HTMLDivElement>(null);
   const mobileInputRef = useRef<HTMLInputElement>(null);
 
-  // Fetch ETH price (used in commented-out UI sections)
+  // Fetch ETH price (used in commented-out UI sections).
+  // RD-1063 (M1): gate the header pollers behind the gasTracker flag so privacy
+  // mode doesn't storm /price (60s) and /gas (15s) on EVERY page — the backend
+  // routes are 404 there and these run regardless of which page is mounted.
   useQuery({
     queryKey: ['ethPrice'],
     queryFn: api.getPrice,
     refetchInterval: 60000,
     staleTime: 30000,
+    enabled: features().gasTracker,
   });
 
   const { data: gasPrices } = useQuery({
@@ -54,6 +64,7 @@ export function Layout() {
     queryFn: api.getGasPrices,
     refetchInterval: 15000,
     staleTime: 10000,
+    enabled: features().gasTracker,
   });
 
   // Close mobile menu on route change
@@ -209,7 +220,7 @@ export function Layout() {
           <div className="flex items-center justify-between gap-2 sm:gap-4">
             {/* Logo and ETH Price */}
             <div className="flex items-center gap-3 sm:gap-4 shrink-0">
-              <Link to="/" className="shrink-0 w-8 h-8 sm:w-10 sm:h-10 [perspective:200px] group">
+              <Link to="/" className="shrink-0 w-8 h-8 sm:w-10 sm:h-10 [perspective:200px] group" data-testid="header-brand">
                 <div className="relative w-full h-full transition-transform duration-500 [transform-style:preserve-3d] group-hover:[transform:rotateX(180deg)]">
                   <div className="absolute inset-0 [backface-visibility:hidden]">
                     <img src={branding.logo} alt={branding.name} className="w-full h-full rounded-xl object-contain" />
@@ -296,6 +307,7 @@ export function Layout() {
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="md:hidden p-2 rounded-lg bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 transition-colors"
               aria-label="Toggle menu"
+              data-testid="mobile-menu-trigger"
             >
               {mobileMenuOpen ? (
                 <X className="w-5 h-5 text-neutral-700" />
@@ -309,7 +321,7 @@ export function Layout() {
 
       {/* Mobile Menu Overlay */}
       {mobileMenuOpen && (
-        <div className="fixed inset-0 z-30 md:hidden">
+        <div className="fixed inset-0 z-30 md:hidden" data-testid="mobile-menu-overlay">
           {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/20 backdrop-blur-sm"
@@ -445,7 +457,9 @@ export function Layout() {
                 <Link to="/transactions" className="text-sm text-neutral-500 hover:text-primary transition-colors">Transactions</Link>
                 <Link to="/token-transfers" className="text-sm text-neutral-500 hover:text-primary transition-colors">Token Transfers</Link>
                 <Link to="/accounts" className="text-sm text-neutral-500 hover:text-primary transition-colors">Top Accounts</Link>
-                <Link to="/gas-tracker" className="text-sm text-neutral-500 hover:text-primary transition-colors">Gas Tracker</Link>
+                {features().gasTracker && (
+                  <Link to="/gas-tracker" className="text-sm text-neutral-500 hover:text-primary transition-colors">Gas Tracker</Link>
+                )}
                 {features().contractVerification && (
                   <Link to="/verify" className="text-sm text-neutral-500 hover:text-primary transition-colors">Verify Contract</Link>
                 )}

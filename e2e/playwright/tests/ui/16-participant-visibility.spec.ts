@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { ProxyAdminFixture } from '../../helpers/proxy-admin';
 import { loginViaCookie, logout } from '../../helpers/explorer-auth';
+import { assertPrivacyNotLeaked } from '../../helpers/security-skip';
 import {
   ANVIL_ACCOUNTS,
   sendETH,
@@ -24,7 +25,7 @@ import {
 
 const PARTICIPANT_WALLET = ANVIL_ACCOUNTS[8].address;
 
-test.describe('Participant Visibility Override', () => {
+test.describe('Participant Visibility Override @security', () => {
   test.slow(); // beforeAll setup creates org, users, sends tx, waits for indexer
   let fixture: ProxyAdminFixture;
   let userADid: string;
@@ -143,22 +144,17 @@ test.describe('Participant Visibility Override', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
-    // User A's address should NOT be visible to outsider User B
+    // User A's address must NOT be visible to outsider User B. Exposure is the
+    // exact regression this test guards — a HARD failure, never a skip
+    // (previously this self-greened via test.skip when addrExposed).
     const addrFragment = PARTICIPANT_WALLET.toLowerCase().slice(2, 10);
     const bodyText = await page.locator('body').textContent();
     const addrExposed = bodyText?.toLowerCase().includes(addrFragment);
 
-    if (addrExposed) {
-      // On some setups, linked wallets may be publicly visible if the
-      // privacy layer is not fully configured. Skip rather than hard-fail.
-      test.skip(
-        true,
-        'Participant wallet visible to outsider — privacy filtering may not be active for linked wallets',
-      );
-      return;
-    }
-
-    expect(addrExposed).toBe(false);
+    assertPrivacyNotLeaked(
+      addrExposed,
+      `non-participant (${userBDid}) can see participant wallet ${PARTICIPANT_WALLET} on /tx/${txHash}`,
+    );
 
     // Some form of privacy indicator should be present
     const hasPrivate = await page

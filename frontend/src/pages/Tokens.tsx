@@ -138,6 +138,7 @@ function Toolbar({
               key={f.value || 'all'}
               role="tab"
               aria-selected={active}
+              data-testid={`tab-${f.value || 'all'}`}
               onClick={() => onFilter(f.value)}
               className={[
                 'px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors',
@@ -232,7 +233,7 @@ function TokenRow({ token, index }: { token: Token; index: number }) {
   ].join(' ');
 
   return (
-    <tr className="border-b border-neutral-200/60 transition-colors last:border-b-0 hover:bg-primary-50/40 dark:hover:bg-primary-900/10">
+    <tr data-testid="token-row" className="border-b border-neutral-200/60 transition-colors last:border-b-0 hover:bg-primary-50/40 dark:hover:bg-primary-900/10">
       <td className="px-4 py-4 align-middle text-sm tabular-nums text-neutral-400">{index}</td>
       <td className="px-4 py-4 align-middle">
         <div className="flex items-center gap-3">
@@ -287,13 +288,14 @@ function Pagination({
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className="text-xs text-neutral-500 tabular-nums">
+      <span className="text-xs text-neutral-500 tabular-nums" data-testid="pagination-status">
         Page {page} of {Math.max(totalPages, 1)}
       </span>
       <div className="inline-flex items-center overflow-hidden rounded-full border border-neutral-200 bg-neutral-50">
         <button
           onClick={() => onChange(page - 1)}
           disabled={page <= 1}
+          data-testid="pagination-prev"
           className="px-4 py-1.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-primary-50 hover:text-primary disabled:cursor-not-allowed disabled:text-neutral-300 disabled:hover:bg-transparent"
         >
           Previous
@@ -302,6 +304,7 @@ function Pagination({
         <button
           onClick={() => onChange(page + 1)}
           disabled={page >= totalPages}
+          data-testid="pagination-next"
           className="px-4 py-1.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-primary-50 hover:text-primary disabled:cursor-not-allowed disabled:text-neutral-300 disabled:hover:bg-transparent"
         >
           Next
@@ -342,6 +345,7 @@ function EmptyState({
 }) {
   return (
     <div
+      data-testid={tone === 'error' ? 'app-error' : 'app-empty'}
       className={[
         'rounded-2xl border border-dashed px-6 py-12 text-center text-sm',
         tone === 'error'

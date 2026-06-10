@@ -104,7 +104,7 @@ func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	secure := s.cookieSecure(r) // A-3: config-driven, not from a spoofable header
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     AuthCookieName,
@@ -194,12 +194,32 @@ func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"logged_out": true})
 }
 
+// GetAuthDID returns the DID from the auth cookie.
+//
+// A-2: when a JWKS verifier is configured (SSO_JWKS_URL set), the cookie JWT is
+// signature-verified (alg-confusion-safe; iss/aud/exp checked) before its
+// subject is trusted — so callers that make local authz decisions on this DID
+// (the impersonation caller-DID binding) act on a verified identity. When NO
+// verifier is configured this is DISPLAY-ONLY: the subject is decoded from an
+// unverified token and must not be the sole basis for any authorization
+// decision (the impersonation feature is disabled in that case — see New). The
+// raw cookie is still forwarded as the Bearer and privacy-proxy re-validates it
+// on every call; the proxy remains the authoritative gate.
 func (s *Server) GetAuthDID(r *http.Request) string {
 	cookie, err := r.Cookie(AuthCookieName)
 	if err != nil || cookie.Value == "" {
 		return ""
 	}
 
+	if s.jwtVerifier != nil {
+		claims, err := s.jwtVerifier.VerifyToken(cookie.Value)
+		if err != nil {
+			return ""
+		}
+		return claims.GetDID()
+	}
+
+	// Display-only fallback (no JWKS configured).
 	claims, err := auth.ExtractClaims(cookie.Value)
 	if err != nil || claims.IsExpired() {
 		return ""
@@ -317,7 +337,7 @@ func (s *Server) refreshAuthMiddleware(next http.Handler) http.Handler {
 		}
 
 		newTokens := res.(*auth.RefreshResponse)
-		secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+		secure := s.cookieSecure(r) // A-3: config-driven, not from a spoofable header
 		http.SetCookie(w, &http.Cookie{
 			Name:     AuthCookieName,
 			Value:    newTokens.AccessToken,
@@ -339,6 +359,30 @@ func (s *Server) refreshAuthMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// cookieSecure resolves the Secure flag for auth cookies from explicit config
+// (A-3), so a default bring-up cannot emit non-Secure session cookies off a
+// spoofable/absent X-Forwarded-Proto:
+//   - "true"  -> always Secure (privacy-mode default).
+//   - "false" -> never Secure (local HTTP dev only).
+//   - "auto"  (or unset) -> Secure only when the request is actually HTTPS
+//     (r.TLS set) or carries X-Forwarded-Proto: https. Only honor that header
+//     behind a trusted proxy that sets it (the bundled nginx now does — see
+//     nginx.conf / nginx.custom.conf).
+func (s *Server) cookieSecure(r *http.Request) bool {
+	mode := "auto"
+	if s.cfg != nil && s.cfg.CookieSecure != "" {
+		mode = s.cfg.CookieSecure
+	}
+	switch mode {
+	case "true":
+		return true
+	case "false":
+		return false
+	default: // "auto"
+		return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	}
 }
 
 // clearAuthCookies removes both the access and refresh cookies.

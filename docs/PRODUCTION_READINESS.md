@@ -61,12 +61,33 @@ chain-indexer (gRPC) ──► privacy-proxy ──► block-explorer api ──
 | `PRIVACY_PROXY_PUBLIC_URL` | Privacy mode | Browser-facing URL of privacy-proxy, e.g. `https://proxy.yourdomain.com`. |
 | `SSO_REDIRECT_URI` | Privacy mode | OAuth callback URI, e.g. `https://explorer.yourdomain.com/api/auth/callback`. |
 | `SSO_CLIENT_ID` | No | Default: `explorer` — must match the client ID registered in privacy-proxy. |
+| `SSO_CLIENT_SECRET` | Privacy mode (OAuth) | Client secret sent to privacy-proxy `/oauth/token` via HTTP Basic. **Secret — source from AWS Secrets Manager, never plaintext.** |
+| `SSO_JWKS_URL` | Privacy mode | privacy-proxy JWKS endpoint. When set, the auth-cookie JWT is signature-verified in-process (alg-confusion-safe; RS256/ES256 only; `exp` mandatory; 30s leeway) before its DID is trusted for any local decision. **Required to enable "View as user" impersonation** — without it the caller-DID binding has no verified identity, so the feature stays disabled. |
+| `SSO_ISSUER` | No | If set, the JWT `iss` claim must equal it (only checked when `SSO_JWKS_URL` is set). |
+| `SSO_AUDIENCE` | No | If set, the JWT `aud` claim must include it (only checked when `SSO_JWKS_URL` is set). |
+| `CORS_ALLOWED_ORIGINS` | **Privacy: yes** / Standalone: no | Comma-separated allowlist of browser origins permitted to make credentialed cross-origin requests (also reused for CSRF Origin/Referer checks). **Required in privacy mode** (fail-closed). In standalone, empty = reflect any Origin (permissive, with a startup warning). |
+| `COOKIE_SECURE` | No | `auto` \| `true` \| `false`. Controls the `Secure` flag on auth cookies. **Default: `true` in privacy mode** (always Secure), `auto` in standalone (Secure only over real HTTPS / `X-Forwarded-Proto: https` from a trusted proxy). |
+| `ENABLE_PRICE` | No | Gates the CoinGecko price refresher + `/price` data source. **Default: `false` in privacy mode** (no third-party egress for confidential/air-gapped deployments), `true` in standalone. |
+| `PRICE_COIN_ID` | No | Default: `ethereum`. CoinGecko coin id to price (set per chain). |
+| `PRICE_CURRENCY` | No | Default: `usd`. Fiat currency for the price quote. |
 
-**Validation rules (enforced in `cmd/api/main.go` at startup):**
+**Validation rules (enforced at startup — `internal/config` `Validate()` + `cmd/api/main.go`):**
 
 - Neither `INDEXER_URL` nor `PRIVACY_PROXY_URL` set → `log.Fatal`.
 - Both set → `log.Fatal`. No mixed-mode is supported.
 - Exactly one set → starts in the corresponding mode.
+- **Privacy mode is FAIL-CLOSED.** With `PRIVACY_PROXY_URL` set:
+  - `CORS_ALLOWED_ORIGINS` is **required** (empty → startup error). This is an
+    intentional **breaking change** for existing privacy operators.
+  - `COOKIE_SECURE` defaults to `true` (forced Secure cookies).
+  - `ENABLE_PRICE` defaults to `false` (no CoinGecko egress).
+  - The "View as user" impersonation feature is enabled only when
+    `SSO_JWKS_URL` is set (the caller-DID binding requires a verified DID).
+  - The default (non-`-tags privacy`) binary additionally disables the
+    contract-verification / Sourcify write surfaces at runtime; deploy the
+    `-tags privacy` image to compile them out entirely. Keep
+    `ENABLE_PROVIDER_CACHE` off in privacy mode (the per-caller proxy provider
+    must never be cache-wrapped — startup now panics fail-closed if it is).
 
 **MetaMask "Add Network" (RD-1031).** How a wallet connects depends on the
 mode:
@@ -143,7 +164,14 @@ export RPC_URL="http://privacy-proxy-backend:8080"
 export PRIVACY_PROXY_URL="http://privacy-proxy-backend:8080"
 export PRIVACY_PROXY_PUBLIC_URL="https://proxy.yourdomain.com"
 export SSO_REDIRECT_URI="https://explorer.yourdomain.com/api/auth/callback"
+export SSO_CLIENT_SECRET="$(aws secretsmanager get-secret-value ... )"  # never inline
+# REQUIRED in privacy mode (fail-closed) — comma-separated trusted origins:
+export CORS_ALLOWED_ORIGINS="https://explorer.yourdomain.com"
+# Optional but recommended in privacy mode:
+export SSO_JWKS_URL="http://privacy-proxy-backend:8080/.well-known/jwks.json"  # enables JWT verification + "View as user"
+# COOKIE_SECURE defaults to true and ENABLE_PRICE defaults to false in privacy mode.
 # Do NOT set INDEXER_URL — the api rejects both being set.
+# Prefer the `-tags privacy` image (compiles out verification write surfaces).
 
 # The external privacy-proxy network must exist before starting
 docker network create privacy-proxy_proxy-network 2>/dev/null || true

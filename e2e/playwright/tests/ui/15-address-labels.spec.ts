@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { ProxyAdminFixture } from '../../helpers/proxy-admin';
 import { loginViaCookie, logout } from '../../helpers/explorer-auth';
+import { assertPrivacyNotLeaked } from '../../helpers/security-skip';
 import {
   ANVIL_ACCOUNTS,
   sendETH,
@@ -28,7 +29,7 @@ import {
 // Avoids collision with test 08 (account[5]) and manual testing (accounts 0-4).
 const LABEL_USER_WALLET = ANVIL_ACCOUNTS[7].address;
 
-test.describe('Address Labels', () => {
+test.describe('Address Labels @security', () => {
   test.slow(); // beforeAll setup creates org, users, sends tx, waits for indexer
   let fixture: ProxyAdminFixture;
   let labelUserDid: string;
@@ -139,21 +140,18 @@ test.describe('Address Labels', () => {
       .isVisible({ timeout: 3000 })
       .catch(() => false);
 
-    // The raw address must NOT be visible
+    // The raw address must NOT be visible. An outsider seeing the label user's
+    // private wallet is the exact regression this test exists to catch — so it
+    // is a HARD failure, never a skip (previously this self-greened via
+    // test.skip when addrExposed, masking the leak it was meant to detect).
     const addrFragment = LABEL_USER_WALLET.toLowerCase().slice(2, 10);
     const bodyText = await page.locator('body').textContent();
     const addrExposed = bodyText?.toLowerCase().includes(addrFragment);
 
-    if (addrExposed) {
-      // If the address IS visible, the privacy layer is not active for this user.
-      // This could mean the address is public (not org-owned). Skip rather than
-      // fail, since on some test setups the linked wallet isn't treated as private.
-      test.skip(
-        true,
-        'Address visible to outsider — privacy layer may not be active for linked wallets on this setup',
-      );
-      return;
-    }
+    assertPrivacyNotLeaked(
+      addrExposed,
+      `outsider (${outsiderDid}) can see label user's wallet ${LABEL_USER_WALLET} on /tx/${txHash}`,
+    );
 
     // Address is hidden; at least one privacy indicator should be present
     expect(hasPrivateLabel || hasRedacted).toBe(true);

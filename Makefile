@@ -12,7 +12,7 @@ IMAGE_PREFIX ?= block-explorer
 .PHONY: run run-privacy stop destroy logs rebuild-backend dev-stack
 .PHONY: standalone standalone-stop
 .PHONY: version docker-build docker-build-api docker-build-public-api docker-build-frontend docker-build-dry-run
-.PHONY: lint test build clean clean-build
+.PHONY: lint test cover build clean clean-build
 
 # Default RPC URL (use host.docker.internal to reach host from Docker)
 RPC_URL ?= http://privacy-proxy-anvil-1:8545
@@ -141,7 +141,7 @@ dev-multi:
 	@echo "    Anvil RPC:  http://localhost:8556"
 	@echo ""
 	@echo "Open either frontend — the navbar 'Networks' dropdown switches between them."
-	@echo "Edit frontend/public/featured-networks.json to rename / add networks."
+	@echo "Edit deploy/featured-networks.multi.json to rename / add networks (see docs/network-modes.md)."
 	@echo ""
 
 dev-multi-stop:
@@ -325,7 +325,27 @@ lint:
 
 test:
 	@echo "--- Backend ---"
-	cd backend && go test -race -count=1 ./...
+	# Strip the exported docker-compose port vars (see `cover`) so the config
+	# package's env-sensitive default tests see a clean environment.
+	cd backend && env -u API_PORT -u FRONTEND_PORT -u POSTGRES_PORT -u ANVIL_PORT -u PUBLIC_API_PORT -u PROXY_NETWORK \
+		go test -race -count=1 ./...
+
+# Meaningful backend coverage: generated code (gen/) is excluded from the
+# denominator (it is machine-generated and 0%), and internal/db is INCLUDED by
+# building with -tags dbtest against a Postgres. Set EXPLORER_TEST_DATABASE_URL
+# to a reachable postgres:16 (the dbtest suite fails — does NOT skip — if unset).
+# Prints the gen-excluded total and the per-package breakdown.
+COVER_PKGS = $(shell cd backend && go list ./... | grep -v '/gen/' | tr '\n' ',')
+cover:
+	@echo "--- Backend coverage (gen-excluded, dbtest) ---"
+	# This Makefile exports the docker-compose port vars (API_PORT, etc.) which
+	# would otherwise leak into the config package's env-sensitive default tests.
+	# Strip them so `go test` sees a clean environment and measures true defaults.
+	cd backend && env -u API_PORT -u FRONTEND_PORT -u POSTGRES_PORT -u ANVIL_PORT -u PUBLIC_API_PORT -u PROXY_NETWORK \
+		go test -tags dbtest -count=1 -coverpkg="$(COVER_PKGS)" -coverprofile=coverage.out ./...
+	@echo ""
+	@echo "TOTAL (gen-excluded, db-included):"
+	@cd backend && go tool cover -func=coverage.out | grep '^total:'
 
 build:
 	@echo "--- Backend ---"

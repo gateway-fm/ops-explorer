@@ -94,6 +94,18 @@ func FlattenCallFrame(frame *CallFrame, txHash string, blockNumber uint64, times
 }
 
 func flattenCallFrameRecursive(frame *CallFrame, txHash string, blockNumber uint64, timestamp *uint64, path []int, result *[]*explorerTypes.InternalTransaction) {
+	// The root frame (empty path) is the transaction's own top-level call, not
+	// an internal transaction (matching the geth callTracer schema and the
+	// Etherscan "Internal Txns" convention). Skip emitting it; only its nested
+	// sub-calls are internal txs. We still recurse into the children below.
+	if len(path) == 0 {
+		for i := range frame.Calls {
+			childPath := append(append([]int{}, path...), i)
+			flattenCallFrameRecursive(&frame.Calls[i], txHash, blockNumber, timestamp, childPath, result)
+		}
+		return
+	}
+
 	traceAddr := ""
 	if len(path) > 0 {
 		parts := make([]string, len(path))

@@ -189,6 +189,7 @@ function FunctionCard({ contractAddress, abiFragment, index, type, isExpanded, o
     <div className="border border-neutral-200 rounded-lg overflow-hidden">
       <button
         onClick={onToggle}
+        data-testid={type === 'write' ? 'contract-write-fn' : 'contract-read-fn'}
         className="w-full px-4 py-3 flex items-center justify-between bg-neutral-50 hover:bg-neutral-100 transition-colors text-left"
       >
         <span className="font-medium text-neutral-900">
@@ -279,7 +280,7 @@ function FunctionCard({ contractAddress, abiFragment, index, type, isExpanded, o
 
           {/* Result */}
           {result !== null && (
-            <div className="p-3 bg-success-50 border border-success-200 rounded-lg">
+            <div data-testid="fn-result" className="p-3 bg-success-50 border border-success-200 rounded-lg">
               <div className="flex items-start gap-2">
                 <CheckCircle className="w-4 h-4 text-success-600 mt-0.5" />
                 <div className="font-mono text-sm text-neutral-900 break-all">{result}</div>
@@ -304,7 +305,7 @@ function FunctionCard({ contractAddress, abiFragment, index, type, isExpanded, o
 
           {/* Error */}
           {error && (
-            <div className="p-3 bg-error-50 border border-error-200 rounded-lg">
+            <div data-testid="fn-error" className="p-3 bg-error-50 border border-error-200 rounded-lg">
               <div className="flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 text-error-600 mt-0.5" />
                 <div className="text-sm text-error-600 break-all">{error}</div>

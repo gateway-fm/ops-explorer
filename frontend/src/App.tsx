@@ -5,6 +5,7 @@ import { AuthProvider } from './lib/auth';
 import { ImpersonationProvider, ImpersonationTokenMirror } from './hooks/useImpersonation';
 import { ThemeProvider } from './hooks/useTheme';
 import { getConfig } from './lib/runtimeConfig';
+import { shouldRetryQuery } from './lib/queryRetry';
 import { Layout } from './components/Layout';
 import { Home } from './pages/Home';
 import { Blocks } from './pages/Blocks';
@@ -31,6 +32,8 @@ const queryClient = new QueryClient({
     queries: {
       staleTime: 1000,
       refetchOnWindowFocus: false,
+      // RD-1063: don't retry doomed requests (e.g. 403/404). See queryRetry.ts.
+      retry: shouldRetryQuery,
     },
   },
 });
