@@ -27,7 +27,7 @@ export function AddressLink({ address, chars = 6, full = false, className = '', 
   // Handle [PRIVATE] placeholder from backend redaction
   if (isPrivatePlaceholder) {
     return (
-      <span className={`inline-flex items-center gap-1 text-neutral-400 italic ${className}`}>
+      <span data-testid="private-address" data-redaction="private" className={`inline-flex items-center gap-1 text-neutral-400 italic ${className}`}>
         <Lock className="w-3 h-3" />
         <span>Private</span>
       </span>
@@ -46,16 +46,16 @@ export function AddressLink({ address, chars = 6, full = false, className = '', 
   // If visibility is provided and address is not fully visible, render privacy-aware display
   if (visibility && !visibility.visible) {
     if (visibility.level === 'redacted') {
-      return <span className={`text-neutral-400 italic ${className}`}>[REDACTED]</span>;
+      return <span data-testid="private-address" data-redaction="redacted" className={`text-neutral-400 italic ${className}`}>[REDACTED]</span>;
     }
-    return <span className={`text-neutral-400 italic ${className}`}>[PRIVATE]</span>;
+    return <span data-testid="private-address" data-redaction="private" className={`text-neutral-400 italic ${className}`}>[PRIVATE]</span>;
   }
 
   if (visibility?.level === 'pseudonymous' && visibility.pseudonym) {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className={`font-mono text-amber-600 cursor-help ${className}`}>
+          <span data-testid="private-address" data-redaction="pseudonymous" className={`font-mono text-amber-600 cursor-help ${className}`}>
             {visibility.pseudonym}
           </span>
         </TooltipTrigger>

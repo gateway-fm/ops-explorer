@@ -254,6 +254,51 @@ jobs:
       - name: Type check & build
         run: npm run build
 
+  e2e-ui-mock:
+    name: E2E (Playwright, mock UI) — PR
+    # Self-contained mock-based basic-UI suite (PLAN_UI_E2E_TESTS.md §1/§4):
+    # serves the built frontend via `vite preview` and intercepts every /api
+    # call in-browser (e2e/playwright/fixtures/api-mock.ts). No backend /
+    # privacy-proxy required, so it runs on every PR — distinct from the
+    # real-stack `e2e-playwright` job below (workflow_dispatch only).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci --legacy-peer-deps
+
+      - name: Build frontend (served by Playwright's vite preview webServer)
+        working-directory: frontend
+        run: npm run build
+
+      - name: Install Playwright + chromium
+        working-directory: e2e/playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run ui-mock suite
+        working-directory: e2e/playwright
+        env:
+          CI: '1'
+        run: npx playwright test --project=ui-mock
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-report-ui-mock
+          path: e2e/playwright/playwright-report
+          if-no-files-found: ignore
+
   e2e-playwright:
     name: E2E (Playwright, privacy) — manual
     # Per-PR e2e needs a privacy-proxy image, which is NOT in this repo. This

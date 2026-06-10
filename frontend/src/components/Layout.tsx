@@ -210,7 +210,7 @@ export function Layout() {
           <div className="flex items-center justify-between gap-2 sm:gap-4">
             {/* Logo and ETH Price */}
             <div className="flex items-center gap-3 sm:gap-4 shrink-0">
-              <Link to="/" className="shrink-0 w-8 h-8 sm:w-10 sm:h-10 [perspective:200px] group">
+              <Link to="/" className="shrink-0 w-8 h-8 sm:w-10 sm:h-10 [perspective:200px] group" data-testid="header-brand">
                 <div className="relative w-full h-full transition-transform duration-500 [transform-style:preserve-3d] group-hover:[transform:rotateX(180deg)]">
                   <div className="absolute inset-0 [backface-visibility:hidden]">
                     <img src={branding.logo} alt={branding.name} className="w-full h-full rounded-xl object-contain" />
@@ -297,6 +297,7 @@ export function Layout() {
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="md:hidden p-2 rounded-lg bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 transition-colors"
               aria-label="Toggle menu"
+              data-testid="mobile-menu-trigger"
             >
               {mobileMenuOpen ? (
                 <X className="w-5 h-5 text-neutral-700" />
@@ -310,7 +311,7 @@ export function Layout() {
 
       {/* Mobile Menu Overlay */}
       {mobileMenuOpen && (
-        <div className="fixed inset-0 z-30 md:hidden">
+        <div className="fixed inset-0 z-30 md:hidden" data-testid="mobile-menu-overlay">
           {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/20 backdrop-blur-sm"

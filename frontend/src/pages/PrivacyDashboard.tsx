@@ -105,6 +105,7 @@ export function PrivacyDashboard() {
         <div className="mt-4">
           <button
             onClick={() => redirectToLogin('/privacy')}
+            data-testid="sign-in-button"
             className="btn-primary flex items-center gap-2"
           >
             <Fingerprint className="w-4 h-4" />
@@ -143,7 +144,7 @@ export function PrivacyDashboard() {
       {/* Disclosed Addresses */}
       <div className="card">
         <div className="px-4 py-3 border-b border-neutral-200">
-          <span className="text-sm font-medium text-neutral-700">
+          <span className="text-sm font-medium text-neutral-700" data-testid="disclosure-banner">
             Disclosed Addresses ({disclosedCount})
           </span>
         </div>
@@ -182,7 +183,7 @@ export function PrivacyDashboard() {
                   const viewLink = `/grant/${disclosed.grantId}/${disclosed.addressId}`;
 
                   return (
-                    <tr key={disclosed.grantId + disclosed.addressId}>
+                    <tr key={disclosed.grantId + disclosed.addressId} data-testid="disclosed-row">
                       <td>
                         <div className="flex items-center gap-2">
                           {isRedacted ? (
@@ -207,7 +208,7 @@ export function PrivacyDashboard() {
                         </div>
                       </td>
                       <td className="hidden md:table-cell">
-                        <span className={`badge capitalize ${
+                        <span data-testid="disclosure-level-badge" className={`badge capitalize ${
                           isPseudonymous
                             ? 'bg-amber-100 text-amber-700 border-amber-200'
                             : isRedacted

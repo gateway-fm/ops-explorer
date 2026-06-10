@@ -13,6 +13,7 @@ import { CallTraceTree } from '../components/CallTraceTree';
 
 import { PageHeader } from '../components/PageHeader';
 import { CopyButton } from '../components/CopyButton';
+import { StateMessage } from '../components/StateMessage';
 import { decodeEvent, getMethodId, fetchEventSignature, decodeEventWithSignature, KNOWN_EVENTS } from '../lib/eventDecoder';
 import type { DecodedEvent } from '../lib/eventDecoder';
 
@@ -85,26 +86,28 @@ export function TransactionDetail() {
 
   // Batch check logic removed; visibility metadata is now attached directly to API responses
 
-  if (isLoading) return <div className="text-neutral-400">Loading...</div>;
+  if (isLoading) return <StateMessage variant="loading" />;
   if (error && error instanceof Error && (error.message.includes('403') || error.message.includes('500'))) {
     return (
       <div className="space-y-6">
         <PageHeader title="Transaction" />
         <div className="card">
-          <div className="flex flex-col items-center justify-center py-16 space-y-4">
-            <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center border border-neutral-200">
-              <svg className="w-8 h-8 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v.01M12 12a1.5 1.5 0 001.5-1.5c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5M19.5 12c0 4.14-3.36 7.5-7.5 7.5S4.5 16.14 4.5 12 7.86 4.5 12 4.5s7.5 3.36 7.5 7.5z" /></svg>
-            </div>
-            <h2 className="text-xl font-semibold text-neutral-900">Transaction Restricted</h2>
-            <p className="text-neutral-500 text-center max-w-md text-sm">
-              This transaction involves private addresses. Sign in to view it if you are a participant.
-            </p>
-          </div>
+          <StateMessage
+            variant="restricted"
+            title="Transaction Restricted"
+            detail="This transaction involves private addresses. Sign in to view it if you are a participant."
+            className="py-16"
+            icon={
+              <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center border border-neutral-200">
+                <svg className="w-8 h-8 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v.01M12 12a1.5 1.5 0 001.5-1.5c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5M19.5 12c0 4.14-3.36 7.5-7.5 7.5S4.5 16.14 4.5 12 7.86 4.5 12 4.5s7.5 3.36 7.5 7.5z" /></svg>
+              </div>
+            }
+          />
         </div>
       </div>
     );
   }
-  if (error || !tx) return <div className="text-error-600">Transaction not found</div>;
+  if (error || !tx) return <StateMessage variant="error" title="Transaction not found" />;
 
   const fromReason = tx.addressMetadata?.[tx.from?.toLowerCase()];
   const toReason = tx.to ? tx.addressMetadata?.[tx.to.toLowerCase()] : undefined;
@@ -118,9 +121,12 @@ export function TransactionDetail() {
 
       {/* Tabs - only show when there are logs or internal calls to display */}
       {(hasLogs || hasTrace) && (
-        <div className="tabs">
+        <div className="tabs" role="tablist">
           <button
             onClick={() => setActiveTab('overview')}
+            role="tab"
+            data-testid="tab-overview"
+            aria-selected={activeTab === 'overview'}
             className={activeTab === 'overview' ? 'tab-active' : 'tab'}
           >
             Overview
@@ -128,6 +134,9 @@ export function TransactionDetail() {
           {hasLogs && (
             <button
               onClick={() => setActiveTab('logs')}
+              role="tab"
+              data-testid="tab-logs"
+              aria-selected={activeTab === 'logs'}
               className={activeTab === 'logs' ? 'tab-active' : 'tab'}
             >
               Logs ({logs?.length || 0})
@@ -136,6 +145,9 @@ export function TransactionDetail() {
           {hasTrace && (
             <button
               onClick={() => setActiveTab('trace')}
+              role="tab"
+              data-testid="tab-trace"
+              aria-selected={activeTab === 'trace'}
               className={activeTab === 'trace' ? 'tab-active' : 'tab'}
             >
               Internal Txns ({internalTxs?.length || 0})
@@ -161,7 +173,7 @@ export function TransactionDetail() {
               label="Status"
               value={
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`badge ${tx.status === 1 ? 'badge-success' : 'badge-error'}`}>
+                  <span data-testid="tx-status" className={`badge ${tx.status === 1 ? 'badge-success' : 'badge-error'}`}>
                     {tx.status === 1 ? 'Success' : 'Failed'}
                   </span>
                   {tx.status !== 1 && tx.error && (
@@ -263,6 +275,7 @@ export function TransactionDetail() {
           {/* Show More / Show Less toggle */}
           <button
             onClick={() => setShowMore(!showMore)}
+            data-testid="show-more-toggle"
             className="w-full px-4 py-3 flex items-center justify-center gap-2 text-sm text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50 transition-colors border-t border-neutral-100"
           >
             {showMore ? (
@@ -357,7 +370,7 @@ export function TransactionDetail() {
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="info-row">
+    <div className="info-row" data-testid="info-row" data-label={label}>
       <div className="info-label">{label}</div>
       <div className="info-value">{value}</div>
     </div>
@@ -370,7 +383,7 @@ function TokenTransferRow({ transfer, tokenDecimals, tokenSymbol }: { transfer: 
   const toReason = transfer.addressMetadata?.[transfer.to?.toLowerCase()];
 
   return (
-    <div className="flex items-center gap-1.5 flex-wrap text-sm">
+    <div data-testid="transfer-row" className="flex items-center gap-1.5 flex-wrap text-sm">
       <span className="text-neutral-500">From</span>
       <AddressLink address={transfer.from} reason={fromReason} />
       <AddressLabel reason={fromReason} />

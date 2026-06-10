@@ -125,7 +125,7 @@ function GasPriceCard({
   const styles = colorStyles[color];
 
   return (
-    <div className="card p-6">
+    <div className="card p-6" data-testid={`gas-card-${label.toLowerCase()}`}>
       <div className="flex items-center justify-between mb-4">
         <span className="text-sm font-medium text-neutral-500">{label}</span>
         <div className={`p-2 rounded-lg border ${styles.bg} ${styles.text} ${styles.border}`}>

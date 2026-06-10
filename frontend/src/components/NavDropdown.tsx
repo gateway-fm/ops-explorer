@@ -33,9 +33,10 @@ const tokenItems = [
 interface DropdownProps {
   label: string;
   items: { to: string; label: string; icon: React.ComponentType<{ className?: string }> }[];
+  testid?: string;
 }
 
-function Dropdown({ label, items }: DropdownProps) {
+function Dropdown({ label, items, testid }: DropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -54,6 +55,8 @@ function Dropdown({ label, items }: DropdownProps) {
     <div ref={dropdownRef} className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
+        data-testid={testid}
+        aria-expanded={isOpen}
         className="flex items-center gap-1.5 px-3 py-2 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors text-sm font-medium"
       >
         {label}
@@ -68,6 +71,7 @@ function Dropdown({ label, items }: DropdownProps) {
               <Link
                 key={item.to}
                 to={item.to}
+                data-testid="nav-link"
                 onClick={() => setIsOpen(false)}
                 className="flex items-center gap-3 px-4 py-3 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
               >
@@ -107,6 +111,8 @@ function SettingsDropdown() {
     <div ref={dropdownRef} className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
+        data-testid="theme-menu-trigger"
+        aria-expanded={isOpen}
         className="flex items-center justify-center w-9 h-9 text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors"
         title="Settings"
       >
@@ -125,6 +131,8 @@ function SettingsDropdown() {
               <button
                 key={opt.value}
                 onClick={() => setTheme(opt.value)}
+                data-testid={`theme-option-${opt.value}`}
+                aria-selected={active}
                 className={`w-full flex items-center gap-3 px-4 py-3 transition-colors ${
                   active
                     ? 'bg-primary-50 dark:bg-primary-900/20 text-primary dark:text-primary-400'
@@ -229,6 +237,7 @@ function AuthButton() {
   return (
     <button
       onClick={() => redirectToLogin()}
+      data-testid="sign-in-button"
       className="flex items-center gap-1.5 px-3 py-2 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors text-sm font-medium"
     >
       <LogIn className="w-4 h-4" />
@@ -270,8 +279,8 @@ export function NavDropdown() {
           Add Network
         </button>
       )}
-      <Dropdown label="Blockchain" items={blockchainItems} />
-      <Dropdown label="Tokens" items={tokenItems} />
+      <Dropdown label="Blockchain" items={blockchainItems} testid="nav-blockchain" />
+      <Dropdown label="Tokens" items={tokenItems} testid="nav-tokens" />
       <Link
         to="/stats"
         className="flex items-center gap-1.5 px-3 py-2 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors text-sm font-medium"
