@@ -16,7 +16,11 @@ const blockchainItems = [
   { to: '/blocks', label: 'Blocks', icon: Boxes },
   { to: '/transactions', label: 'Transactions', icon: ArrowLeftRight },
   { to: '/accounts', label: 'Top Accounts', icon: Users },
-  { to: '/gas-tracker', label: 'Gas Tracker', icon: Fuel },
+  // "Gas Tracker" is hidden in privacy mode (RD-1063) — /gas is gated off on
+  // the backend and the page early-returns FeatureUnavailable.
+  ...(features().gasTracker
+    ? [{ to: '/gas-tracker', label: 'Gas Tracker', icon: Fuel }]
+    : []),
   // "Verify Contract" is hidden in privacy mode — the surface is
   // compiled out on the privacy build (see lib/features.ts).
   ...(features().contractVerification
@@ -281,12 +285,16 @@ export function NavDropdown() {
       )}
       <Dropdown label="Blockchain" items={blockchainItems} testid="nav-blockchain" />
       <Dropdown label="Tokens" items={tokenItems} testid="nav-tokens" />
-      <Link
-        to="/stats"
-        className="flex items-center gap-1.5 px-3 py-2 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors text-sm font-medium"
-      >
-        Charts
-      </Link>
+      {/* "Charts" hidden in privacy mode (RD-1063) — /charts is gated off on
+          the backend and the /stats page early-returns FeatureUnavailable. */}
+      {features().charts && (
+        <Link
+          to="/stats"
+          className="flex items-center gap-1.5 px-3 py-2 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors text-sm font-medium"
+        >
+          Charts
+        </Link>
+      )}
       <Link
         to="/api-docs"
         className="flex items-center gap-1.5 px-3 py-2 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors text-sm font-medium"
