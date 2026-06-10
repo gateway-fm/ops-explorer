@@ -68,6 +68,28 @@ commented out by default in `.env`:
 | `RPC_RATE_LIMIT` | Maximum RPC requests per second. |
 | `LOG_LEVEL` | Log verbosity (`debug`, `info`, `warn`, `error`). |
 
+## Frontend & wallet (MetaMask)
+
+The frontend reads these `VITE_*` variables at container startup (injected into
+`window.__runtimeConfig`). They configure the **Add Network** button that adds the chain to a
+wallet like MetaMask. The authoritative `chainId` always comes from `GET /api/v1/chain-info`;
+the values below are deploy-time fallbacks.
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `VITE_API_URL` | No | Path/URL to the internal API. Default: `/api` (proxied by nginx/ingress). |
+| `VITE_RPC_URL` | Standalone | The node's **browser-facing public JSON-RPC URL** a wallet connects to directly in standalone mode. A node concern, **not** the privacy-proxy. Falls back to `http://localhost:8545`. |
+| `VITE_CHAIN_ID` | Recommended | Chain ID in **decimal** (e.g. `4242`) for the Add Network button. Used only when the backend doesn't supply `chainId`. A wrong value here is what makes MetaMask add the network with the wrong chain. |
+| `VITE_NETWORK_NAME` | No | Network name shown in MetaMask. |
+| `VITE_NETWORK_CURRENCY` | No | Native currency symbol shown in MetaMask. Default: `ETH`. |
+
+:::caution[Wallets in privacy mode]
+In **standalone** mode a wallet uses `VITE_RPC_URL` to talk to the node directly. In
+**privacy** mode the wallet cannot reach the chain directly; it connects through a locally-run
+[jwt-injector](../../privacy/wallet-access/) helper instead, so `VITE_RPC_URL` is not the
+wallet's target there. See [Wallet Access](../../privacy/wallet-access/).
+:::
+
 ## Optional integrations
 
 | Variable | Default | Description |

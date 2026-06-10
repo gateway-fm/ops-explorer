@@ -31,6 +31,13 @@ Signing in is only half the job. On every authenticated request the explorer has
 privacy-proxy *who* is asking, so privacy-proxy can apply that user's redaction. It does this
 by **injecting the session JWT as a bearer token** on each backend-to-backend call.
 
+:::note[Not the same as the wallet jwt-injector]
+This section is about the explorer **API** attaching the user's token to its own server-side
+reads. Connecting a *wallet* (MetaMask) in privacy mode uses a separate, locally-run
+[jwt-injector helper](../wallet-access/). Same goal, forward the user's identity to
+privacy-proxy, but a different place it happens.
+:::
+
 What happens on every authenticated request:
 
 1. The browser sends its `explorer_auth` session cookie to the explorer.

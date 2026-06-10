@@ -50,6 +50,7 @@ then point the explorer at it.
 
 - **[How privacy mode works](../how-it-works/)** — the request and redaction flow end to end.
 - **[Authentication & SSO](../authentication/)** — how login works and the `SSO_*` settings.
+- **[Wallet access (MetaMask)](../wallet-access/)** — connecting a wallet via the jwt-injector.
 - **[View as user](../view-as-user/)** — let an operator browse exactly as a chosen user.
 - **[Deploying in privacy mode](../deployment/)** — the fail-closed rules and rollout steps.
 

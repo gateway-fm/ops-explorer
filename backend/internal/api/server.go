@@ -102,6 +102,12 @@ type ServerConfig struct {
 	PostLoginRedirectURL string
 	EnableGasPrices      bool
 
+	// PrivacyProxyPublicURL is the privacy-proxy PUBLIC BASE url (no "/rpc"
+	// suffix), surfaced via GET /chain-info as privacyProxyPublicUrl. It is a
+	// hint for the privacy-mode MetaMask setup dialog (jwt-injector --upstream),
+	// NOT a wallet RPC target. Empty when not configured (field omitted).
+	PrivacyProxyPublicURL string
+
 	// CORSAllowedOrigins is the allowlist of browser Origins permitted to make
 	// credentialed cross-origin requests (W-1). When non-empty, only these
 	// Origins are reflected into Access-Control-Allow-Origin. When empty in
@@ -212,6 +218,13 @@ func New(database APIDatabase, rpcClient *rpc.Client, idx any, priceService *pri
 
 	// gas prices are served via provider.GetGasPrices; no in-process tracker.
 	s.chainInfo = chaininfo.NewService(rpcClient, 10*time.Minute)
+	if cfg != nil {
+		// RD-1031 (Option B): surface the privacy-proxy public base URL purely
+		// as a hint for the MetaMask setup dialog's jwt-injector --upstream
+		// field. We do NOT hand any proxy /rpc endpoint to the wallet — a
+		// browser wallet cannot attach the bearer + org path the proxy needs.
+		s.chainInfo.SetPrivacyProxyPublicURL(cfg.PrivacyProxyPublicURL)
+	}
 
 	s.setupRoutes()
 	return s

@@ -118,6 +118,7 @@ export default defineConfig({
             { label: 'Privacy Mode', slug: 'privacy/overview' },
             { label: 'How It Works', slug: 'privacy/how-it-works' },
             { label: 'Authentication & SSO', slug: 'privacy/authentication' },
+            { label: 'Wallet Access (MetaMask)', slug: 'privacy/wallet-access' },
             { label: 'View as User', slug: 'privacy/view-as-user' },
             { label: 'Deploying Privacy Mode', slug: 'privacy/deployment' },
           ],

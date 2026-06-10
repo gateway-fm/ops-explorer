@@ -264,6 +264,12 @@ export interface NFTItem {
 export interface ChainInfo {
   chainId: string;
   chainIdDecimal: number;
+  // privacyProxyPublicUrl is the privacy-proxy PUBLIC BASE url (no /rpc
+  // suffix), surfaced only so the privacy-mode MetaMask setup dialog can
+  // pre-fill the jwt-injector --upstream hint. It is NOT a wallet RPC target:
+  // a browser wallet cannot attach the bearer + org path the proxy requires.
+  // Optional: omitted by the backend when PRIVACY_PROXY_PUBLIC_URL is unset.
+  privacyProxyPublicUrl?: string;
   networkId: string;
   clientVersion: string;
   protocolVersion: string;
