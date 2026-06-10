@@ -1,6 +1,6 @@
 // @ts-check
 import { execSync } from 'node:child_process';
-import { defineConfig } from 'astro/config';
+import { defineConfig, passthroughImageService } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
 // Resolve the version these docs describe: the latest git tag, overridable via
@@ -18,6 +18,12 @@ const DOCS_VERSION = resolveDocsVersion();
 
 // https://astro.build/config
 export default defineConfig({
+  image: {
+    // Use the no-op image service so the build does not depend on sharp/libvips.
+    // This docs site has two small images, so optimization isn't worth pulling in
+    // the LGPL @img/sharp-libvips binaries (flagged by the license scan).
+    service: passthroughImageService(),
+  },
   vite: {
     define: {
       'import.meta.env.PUBLIC_DOCS_VERSION': JSON.stringify(DOCS_VERSION),
