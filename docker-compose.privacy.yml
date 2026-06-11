@@ -25,6 +25,17 @@ services:
           - explorer-postgres
 
   api:
+    # Privacy-mode dev defaults (e.g. `make run-privacy` over HTTP localhost).
+    # docker-compose.prod.yml overrides BOTH of these for an HTTPS prod deploy.
+    environment:
+      # W-1: REQUIRED in privacy mode (empty → fail-closed startup error).
+      # Localhost default so `make run-privacy` works OOTB; the prod overlay
+      # drops it to fail-closed so prod must name its real HTTPS origins.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:${FRONTEND_PORT:-3001},http://localhost:5173}
+      # A-3: the BFF forces Secure cookies in privacy mode; browsers drop Secure
+      # cookies over plain HTTP, so use false for the HTTP dev stack. The prod
+      # overlay flips this to true (forced Secure) for HTTPS.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
     networks:
       - default
       - privacy-proxy
