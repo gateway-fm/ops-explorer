@@ -110,9 +110,11 @@ export function Home() {
         </div>
       </div>
 
-      {/* Stats + Chart */}
-      <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
-        <div className="grid grid-cols-2 gap-2 sm:gap-4">
+      {/* Stats + Chart. When the chart is gated off (privacy mode, RD-1063),
+          drop the 2-col split and spread the stat tiles across the full width
+          instead of leaving the right half empty. */}
+      <div className={`grid gap-4 sm:gap-6 ${features().charts ? 'md:grid-cols-2' : ''}`}>
+        <div className={`grid grid-cols-2 gap-2 sm:gap-4 ${features().charts ? '' : 'md:grid-cols-4'}`}>
           {stats ? (
             <>
               <StatCard
