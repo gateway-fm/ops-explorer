@@ -130,6 +130,16 @@ services:
       PRIVACY_PROXY_URL: ${PRIVACY_PROXY_URL:-}
       PRIVACY_PROXY_PUBLIC_URL: ${PRIVACY_PROXY_PUBLIC_URL:-}
       SSO_REDIRECT_URI: ${SSO_REDIRECT_URI:-}
+      # REQUIRED in privacy mode (empty → fail-closed startup error). Set to the
+      # exact trusted browser origins (HTTPS), comma-separated. No default on
+      # purpose — a localhost/wildcard default would be an insecure prod footgun.
+      # In standalone, empty is allowed (reflects any Origin, with a warning).
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      # A-3: force Secure auth cookies for HTTPS prod, overriding the privacy
+      # overlay's dev `false`. Set true explicitly (not left to the BFF default)
+      # so an empty value can't downgrade to "auto" → non-Secure behind a
+      # TLS-terminating proxy.
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
     # Host port mapping inherited from base compose (${API_PORT:-8081}:8080).
     # Operators behind a reverse proxy can override `API_PORT` to bind a
     # firewalled port, or layer their own override file to add `ports: !reset []`.
