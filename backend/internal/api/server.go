@@ -176,17 +176,31 @@ func New(database APIDatabase, rpcClient *rpc.Client, idx any, priceService *pri
 		// "View as user" (RD-928): only meaningful when privacy-proxy is
 		// reachable — without it there is nothing to impersonate against.
 		//
-		// A-2 (JWKS-required path): the impersonation caller-DID binding makes a
-		// local authz decision keyed off GetAuthDID, so it must be a VERIFIED
-		// DID. Enable the feature only when a JWT verifier is configured
-		// (SSO_JWKS_URL set); otherwise leave s.impersonations nil so start/stop
-		// return 503 and the middleware is a no-op — fail-closed rather than bind
-		// against an unverified, spoofable DID.
-		if s.jwtVerifier != nil {
-			s.impersonations = NewMemoryImpersonationStore(0)
-		} else {
-			log.Warn("privacy mode: 'View as user' impersonation is DISABLED because SSO_JWKS_URL is not set — " +
-				"the caller-DID binding requires a signature-verified DID (A-2). Set SSO_JWKS_URL to enable it.")
+		// A-2 (JWKS path): ideally the impersonation caller-DID binding acts on a
+		// signature-verified DID — that needs SSO_JWKS_URL set so s.jwtVerifier
+		// can verify the auth-cookie JWT before its subject is trusted.
+		//
+		// TEMPORARY DECOUPLING (for release): until privacy-proxy exposes JWKS +
+		// RS256-signed sessions, View-as is enabled even when SSO_JWKS_URL is
+		// unset, so the feature is usable in the current privacy stack. This is a
+		// deliberate, tracked relaxation of an access-control safeguard.
+		//
+		// Why acceptable as an interim: privacy-proxy re-validates the forwarded
+		// Bearer and independently enforces the tier-2-admin + same-org checks on
+		// /api/v1/admin/impersonate/<did>/in/<org> for EVERY call — it remains the
+		// authoritative gate. With no verifier the caller DID comes from
+		// GetAuthDID's display-only (unverified) fallback, which here only drives
+		// the BFF self-view-as guard + session label, NOT the proxy's authz.
+		//
+		// TODO(<LINEAR>): re-couple — require s.jwtVerifier again (delete the warn
+		// branch, restore fail-closed: leave s.impersonations nil when verifier is
+		// absent) once JWKS lands. Tracked in Linear.
+		s.impersonations = NewMemoryImpersonationStore(0)
+		if s.jwtVerifier == nil {
+			log.Warn("privacy mode: 'View as user' impersonation is ENABLED WITHOUT JWKS verification " +
+				"(SSO_JWKS_URL unset) — TEMPORARY decoupling for release. Caller DID is taken from the " +
+				"UNVERIFIED auth cookie; privacy-proxy re-validates the Bearer and remains the authoritative " +
+				"gate. Re-enable signature verification once JWKS lands (see Linear tracking issue).")
 		}
 	}
 
