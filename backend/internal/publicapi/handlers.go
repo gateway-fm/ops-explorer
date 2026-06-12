@@ -9,6 +9,7 @@ import (
 
 	"explorer/internal/api"
 	"explorer/internal/types"
+	"explorer/internal/version"
 
 	"explorer/pkg/eth/common"
 	"github.com/go-chi/chi/v5"
@@ -128,6 +129,18 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"status": "healthy"})
+}
+
+// --- Version ---
+
+// handleVersion returns the build identity (version / commit / build time) of
+// the running binary, injected via -ldflags at build time.
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]any{
+		"version":   version.Version,
+		"commit":    version.Commit,
+		"buildTime": version.BuildTime,
+	})
 }
 
 // --- Blocks ---

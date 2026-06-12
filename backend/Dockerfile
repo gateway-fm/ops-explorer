@@ -14,7 +14,16 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o /api ./cmd/api
+# Build identity stamped into the binary via -ldflags (mirrors privacy-proxy
+# RD-1023). docker-compose `args:` / `make` forward these; a plain `docker build`
+# falls back to the safe defaults so it never fails without git metadata.
+ARG VERSION=dev
+ARG GIT_COMMIT=none
+ARG BUILD_TIME=unknown
+
+RUN CGO_ENABLED=0 GOOS=linux go build \
+	-ldflags "-X explorer/internal/version.Version=${VERSION} -X explorer/internal/version.Commit=${GIT_COMMIT} -X explorer/internal/version.BuildTime=${BUILD_TIME}" \
+	-o /api ./cmd/api
 # cmd/indexer was retired in RD-855 Phase 6 — chain data now comes
 # from the gateway-fm/chain-indexer service over gRPC, so the api
 # image no longer ships an embedded indexer binary.

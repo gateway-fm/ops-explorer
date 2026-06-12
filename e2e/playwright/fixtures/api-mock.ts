@@ -333,6 +333,9 @@ export async function apiMock(page: Page, over: MockOverrides = {}): Promise<voi
       return json(route, FIXTURE.gas);
     }
     if (path === '/chain-info') return json(route, FIXTURE.chainInfo);
+    // Build identity (footer reads this once). Mock-stable so the footer
+    // renders a deterministic version without an unmocked /api call.
+    if (path === '/version') return json(route, { version: 'v0.0.0-test', commit: 'testcmt', buildTime: '2024-01-01T00:00:00Z' });
     if (path === '/price') return json(route, { price: 0, currency: 'USD', change24h: 0, lastUpdated: '2024-01-01T00:00:00Z' });
     if (path === '/sync') {
       return json(route, {

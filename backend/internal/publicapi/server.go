@@ -56,9 +56,11 @@ func (s *Server) setupRoutes() {
 	s.router.Use(s.rateLimiter.Middleware)
 
 	s.router.Get("/health", s.handleHealthCheck)
+	s.router.Get("/version", s.handleVersion)
 
 	s.router.Route("/api/v1", func(r chi.Router) {
 		r.Get("/openapi.json", s.handleOpenAPISpec)
+		r.Get("/version", s.handleVersion)
 
 		// Blocks
 		r.Get("/blocks", s.handleGetBlocks)

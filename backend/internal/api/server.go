@@ -373,6 +373,10 @@ func (s *Server) setupRoutes() {
 	s.router.Get("/health", s.handleHealthCheck)
 	s.router.Get("/health/live", s.handleLivenessCheck)
 	s.router.Get("/health/ready", s.handleReadinessCheck)
+	// Build identity, both top-level (ops/curl, sibling of /health) and under
+	// /api so the frontend reaches it through the same proxy path as every
+	// other call (see setupAPIRoutes for /api/version + /api/v1/version).
+	s.router.Get("/version", s.handleVersion)
 
 	if s.metrics != nil {
 		s.router.Handle("/metrics", s.metrics.Handler())
@@ -467,6 +471,10 @@ func (s *Server) setupAPIRoutes(r chi.Router) {
 	if !s.inPrivacyMode() {
 		s.registerVerificationAPI(r)
 	}
+
+	// Build identity — unauthenticated, available in every mode (the UI footer
+	// reads it via /api/version). Also mounted top-level at /version.
+	r.Get("/version", s.handleVersion)
 
 	r.Get("/stats", s.handleGetStats)
 	r.Get("/chain-info", s.handleGetChainInfo)

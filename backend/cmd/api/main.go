@@ -15,10 +15,16 @@ import (
 	"explorer/internal/events"
 	"explorer/internal/price"
 	"explorer/internal/rpc"
+	"explorer/internal/version"
 	"explorer/pkg/log"
 )
 
 func main() {
+	// Emit the build identity first thing so every deployment's logs say
+	// exactly which binary is running. Values are injected via -ldflags at
+	// build time; a plain `go build` logs version=dev.
+	log.Info("build info", "version", version.Version, "commit", version.Commit, "built", version.BuildTime)
+
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatal("failed to load config", "error", err)

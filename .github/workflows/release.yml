@@ -49,6 +49,15 @@ jobs:
             org.opencontainers.image.created=${{ github.event.release.created_at }}
             org.opencontainers.image.revision=${{ github.sha }}
 
+      # Build identity stamped into the binary via -ldflags. The build context
+      # is backend/, which excludes .git, so compute these on the runner and
+      # forward them as build-args. VERSION is the release tag.
+      - name: Resolve build metadata
+        id: build_meta
+        run: |
+          echo "short_sha=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Build and push API image (standalone)
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
@@ -64,6 +73,10 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            GIT_COMMIT=${{ steps.build_meta.outputs.short_sha }}
+            BUILD_TIME=${{ steps.build_meta.outputs.build_time }}
 
   release-api-privacy:
     name: Release API Image (privacy build)
@@ -111,6 +124,13 @@ jobs:
             org.opencontainers.image.created=${{ github.event.release.created_at }}
             org.opencontainers.image.revision=${{ github.sha }}
 
+      # Build identity stamped into the binary via -ldflags (see release-api).
+      - name: Resolve build metadata
+        id: build_meta
+        run: |
+          echo "short_sha=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Build and push API image (privacy)
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
@@ -121,6 +141,10 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            GIT_COMMIT=${{ steps.build_meta.outputs.short_sha }}
+            BUILD_TIME=${{ steps.build_meta.outputs.build_time }}
 
 
   release-public-api:
@@ -162,6 +186,13 @@ jobs:
             org.opencontainers.image.created=${{ github.event.release.created_at }}
             org.opencontainers.image.revision=${{ github.sha }}
 
+      # Build identity stamped into the binary via -ldflags (see release-api).
+      - name: Resolve build metadata
+        id: build_meta
+        run: |
+          echo "short_sha=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Build and push Public API image
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
@@ -171,6 +202,10 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            GIT_COMMIT=${{ steps.build_meta.outputs.short_sha }}
+            BUILD_TIME=${{ steps.build_meta.outputs.build_time }}
 
   release-frontend:
     name: Release Frontend Image
