@@ -349,7 +349,7 @@ cover:
 
 build:
 	@echo "--- Backend ---"
-	cd backend && CGO_ENABLED=0 go build -o /dev/null ./cmd/api
+	cd backend && CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o /dev/null ./cmd/api
 	@echo "--- Frontend ---"
 	cd frontend && npm run build
 
@@ -359,13 +359,17 @@ build:
 
 docker-build: docker-build-api docker-build-public-api docker-build-frontend
 
+# Build identity forwarded as --build-args so the prod images report a real
+# version/commit/time instead of the Dockerfile defaults (dev/none/unknown).
+BUILD_ARGS := --build-arg VERSION=$(VERSION) --build-arg GIT_COMMIT=$(GIT_COMMIT) --build-arg BUILD_TIME=$(BUILD_TIME)
+
 docker-build-api:
 	@echo "Building $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-api:$(VERSION)"
-	docker build -f backend/Dockerfile.api -t $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-api:$(VERSION) backend/
+	docker build -f backend/Dockerfile.api $(BUILD_ARGS) -t $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-api:$(VERSION) backend/
 
 docker-build-public-api:
 	@echo "Building $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-public-api:$(VERSION)"
-	docker build -f backend/Dockerfile.public-api -t $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-public-api:$(VERSION) backend/
+	docker build -f backend/Dockerfile.public-api $(BUILD_ARGS) -t $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-public-api:$(VERSION) backend/
 
 docker-build-frontend:
 	@echo "Building $(DOCKER_REGISTRY)/$(IMAGE_PREFIX)-frontend:$(VERSION)"

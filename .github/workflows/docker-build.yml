@@ -19,6 +19,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
+      - name: Resolve build metadata
+        id: build_meta
+        run: |
+          echo "short_sha=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Build API image
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
@@ -26,6 +32,12 @@ jobs:
           file: backend/Dockerfile.api
           push: false
           tags: gatewayfm/block-explorer-api:${{ github.sha }}
+          # No release tag on a PR; stamp the binary with the short SHA so a
+          # dry-run image reports an identifiable build.
+          build-args: |
+            VERSION=${{ steps.build_meta.outputs.short_sha }}
+            GIT_COMMIT=${{ steps.build_meta.outputs.short_sha }}
+            BUILD_TIME=${{ steps.build_meta.outputs.build_time }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -42,6 +54,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
+      - name: Resolve build metadata
+        id: build_meta
+        run: |
+          echo "short_sha=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Build Public API image
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
@@ -49,6 +67,12 @@ jobs:
           file: backend/Dockerfile.public-api
           push: false
           tags: gatewayfm/block-explorer-public-api:${{ github.sha }}
+          # No release tag on a PR; stamp the binary with the short SHA so a
+          # dry-run image reports an identifiable build.
+          build-args: |
+            VERSION=${{ steps.build_meta.outputs.short_sha }}
+            GIT_COMMIT=${{ steps.build_meta.outputs.short_sha }}
+            BUILD_TIME=${{ steps.build_meta.outputs.build_time }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

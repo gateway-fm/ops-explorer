@@ -17,10 +17,16 @@ import (
 	"explorer/internal/db"
 	"explorer/internal/publicapi"
 	"explorer/internal/rpc"
+	"explorer/internal/version"
 	"explorer/pkg/log"
 )
 
 func main() {
+	// Emit the build identity first thing so every deployment's logs say
+	// exactly which binary is running. Values are injected via -ldflags at
+	// build time; a plain `go build` logs version=dev.
+	log.Info("build info", "version", version.Version, "commit", version.Commit, "built", version.BuildTime)
+
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
 		log.Fatal("DATABASE_URL is required")

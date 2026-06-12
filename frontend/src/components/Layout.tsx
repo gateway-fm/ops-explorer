@@ -67,6 +67,18 @@ export function Layout() {
     enabled: features().gasTracker,
   });
 
+  // Build identity of the running backend (stamped via -ldflags), shown in the
+  // footer. Static for the life of the page, so fetch once and never retry — a
+  // failure just hides the version rather than logging noise.
+  const { data: versionInfo } = useQuery({
+    queryKey: ['appVersion'],
+    queryFn: api.getVersion,
+    staleTime: Infinity,
+    gcTime: Infinity,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+
   // Close mobile menu on route change
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset on navigation
@@ -511,9 +523,20 @@ export function Layout() {
 
           {/* Bottom bar */}
           <div className="mt-8 pt-6 border-t border-neutral-200 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <p className="text-xs text-neutral-400">
-              &copy; {new Date().getFullYear()} {branding.company}. All rights reserved.
-            </p>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+              <p className="text-xs text-neutral-400">
+                &copy; {new Date().getFullYear()} {branding.company}. All rights reserved.
+              </p>
+              {versionInfo?.version && (
+                <span
+                  className="text-xs text-neutral-400 font-mono"
+                  title={`commit ${versionInfo.commit} · built ${versionInfo.buildTime}`}
+                  data-testid="footer-version"
+                >
+                  {versionInfo.version}
+                </span>
+              )}
+            </div>
             {branding.legal && (
             <div className="flex items-center gap-4 text-xs text-neutral-400">
               <a href={branding.legal} target="_blank" rel="noopener noreferrer" className="hover:text-neutral-600 transition-colors">Terms of Service</a>

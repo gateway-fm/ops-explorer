@@ -14,6 +14,7 @@ import (
 
 	"explorer/internal/rpc"
 	"explorer/internal/types"
+	"explorer/internal/version"
 	"explorer/pkg/eth/common"
 	"explorer/pkg/log"
 
@@ -848,6 +849,18 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleLivenessCheck(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"status": "alive"})
+}
+
+// handleVersion returns the build identity (version / commit / build time) of
+// the running binary, injected via -ldflags at build time. It is unauthenticated
+// by design: the explorer's own build version is surfaced in the UI footer (as
+// is conventional for block explorers) and exposes no chain data.
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]any{
+		"version":   version.Version,
+		"commit":    version.Commit,
+		"buildTime": version.BuildTime,
+	})
 }
 
 func (s *Server) handleReadinessCheck(w http.ResponseWriter, r *http.Request) {

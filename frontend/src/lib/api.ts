@@ -445,6 +445,12 @@ export interface ChartCounter {
   description: string;
 }
 
+export interface VersionInfo {
+  version: string;
+  commit: string;
+  buildTime: string;
+}
+
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${endpoint}`, {
     credentials: 'include',
@@ -460,6 +466,10 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
 
 export const api = {
   getStats: () => fetchAPI<ChainStats>('/stats'),
+
+  // Build identity of the running backend, stamped via -ldflags. Surfaced in
+  // the footer so you can tell which build is deployed.
+  getVersion: () => fetchAPI<VersionInfo>('/version'),
 
   // Chart endpoints
   getChartLines: () => fetchAPI<ChartLineInfo[]>('/charts/lines'),

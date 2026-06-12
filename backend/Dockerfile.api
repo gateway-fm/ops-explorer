@@ -10,12 +10,20 @@ RUN go mod download
 
 COPY . .
 
+# Build identity stamped into the binary via -ldflags (mirrors privacy-proxy
+# RD-1023). CI forwards these as --build-arg; a plain `docker build` falls back
+# to the safe defaults so it never fails when git metadata is unavailable.
+ARG VERSION=dev
+ARG GIT_COMMIT=none
+ARG BUILD_TIME=unknown
+ENV VERSION_LDFLAGS="-X explorer/internal/version.Version=${VERSION} -X explorer/internal/version.Commit=${GIT_COMMIT} -X explorer/internal/version.BuildTime=${BUILD_TIME}"
+
 # Standalone build — supports both INDEXER_URL (chain-indexer gRPC)
 # and PRIVACY_PROXY_URL (privacy-proxy REST) modes. Published as
 # gatewayfm/block-explorer-api by .github/workflows/release.yml's
 # release-api job (with `target: standalone` set explicitly).
 FROM builder AS builder-standalone
-RUN CGO_ENABLED=0 GOOS=linux go build -o /api ./cmd/api
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "${VERSION_LDFLAGS}" -o /api ./cmd/api
 
 # Privacy build — compiles out internal/api/indexerclient via the
 # "privacy" build tag so the binary cannot speak chain-indexer gRPC at
@@ -25,7 +33,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /api ./cmd/api
 # gatewayfm/block-explorer-api-privacy by the release-api-privacy job
 # (with `target: privacy` set explicitly).
 FROM builder AS builder-privacy
-RUN CGO_ENABLED=0 GOOS=linux go build -tags privacy -o /api ./cmd/api
+RUN CGO_ENABLED=0 GOOS=linux go build -tags privacy -ldflags "${VERSION_LDFLAGS}" -o /api ./cmd/api
 
 # Both runtime stages below are explicitly selected by their respective
 # release jobs via `target:`. Stage ORDER does not determine which one

@@ -10,7 +10,16 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o /public-api ./cmd/public-api
+# Build identity stamped into the binary via -ldflags (mirrors privacy-proxy
+# RD-1023). CI forwards these as --build-arg; a plain `docker build` falls back
+# to the safe defaults so it never fails when git metadata is unavailable.
+ARG VERSION=dev
+ARG GIT_COMMIT=none
+ARG BUILD_TIME=unknown
+
+RUN CGO_ENABLED=0 GOOS=linux go build \
+	-ldflags "-X explorer/internal/version.Version=${VERSION} -X explorer/internal/version.Commit=${GIT_COMMIT} -X explorer/internal/version.BuildTime=${BUILD_TIME}" \
+	-o /public-api ./cmd/public-api
 
 FROM alpine:3.22
 
