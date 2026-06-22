@@ -17,6 +17,7 @@ const mockGetPrice = vi.fn();
 const mockGetGasPrices = vi.fn();
 const mockGetStats = vi.fn();
 const mockSearchSuggestions = vi.fn();
+const mockUsePrivacyEnabled = vi.fn();
 vi.mock('../lib/api', () => ({
   api: {
     getPrice: () => mockGetPrice(),
@@ -35,7 +36,7 @@ vi.mock('./NetworkMenu', () => ({ MobileNetworkList: () => null, NetworkMenu: ()
 vi.mock('./ImpersonationBanner', () => ({ ImpersonationBanner: () => null }));
 vi.mock('./MetaMask', () => ({ MetaMaskFox: () => null }));
 vi.mock('../lib/metamask', () => ({ addNetworkToMetaMask: vi.fn() }));
-vi.mock('../hooks/usePrivacyEnabled', () => ({ usePrivacyEnabled: () => false }));
+vi.mock('../hooks/usePrivacyEnabled', () => ({ usePrivacyEnabled: () => mockUsePrivacyEnabled() }));
 vi.mock('./ui/tooltip', () => ({
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
   TooltipTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -47,6 +48,12 @@ function setPrivacy(on: boolean) {
     if (key === 'VITE_PRIVACY_MODE') return on ? 'true' : '';
     return fallback ?? '';
   });
+}
+
+// RD-1082: the backend-derived privacy signal (usePrivacyEnabled, from
+// /api/stats) — independent of the VITE_PRIVACY_MODE build flag.
+function setBackendPrivacy(on: boolean) {
+  mockUsePrivacyEnabled.mockReturnValue(on);
 }
 
 async function renderLayout() {
@@ -70,12 +77,26 @@ describe('Layout header pollers (privacy gate, M1)', () => {
     mockGetPrice.mockResolvedValue({ price: 1 });
     mockGetGasPrices.mockResolvedValue({ normal: { price: 2 } });
     mockGetStats.mockResolvedValue({});
+    setBackendPrivacy(false);
   });
 
-  it('privacy: does NOT call api.getPrice or api.getGasPrices', async () => {
+  it('privacy (build flag): does NOT call api.getPrice or api.getGasPrices', async () => {
     setPrivacy(true);
     await renderLayout();
     // Let any (erroneously enabled) queries flush.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockGetPrice).not.toHaveBeenCalled();
+    expect(mockGetGasPrices).not.toHaveBeenCalled();
+  });
+
+  // RD-1082: the reported deployment had VITE_PRIVACY_MODE unset, so the build
+  // flag said "standalone" while the backend was in privacy mode — the pollers
+  // stormed /price and /gas (both 404). The backend-derived signal must gate
+  // them regardless of the build flag.
+  it('privacy (backend signal, build flag unset): does NOT call api.getPrice or api.getGasPrices', async () => {
+    setPrivacy(false);
+    setBackendPrivacy(true);
+    await renderLayout();
     await new Promise((r) => setTimeout(r, 0));
     expect(mockGetPrice).not.toHaveBeenCalled();
     expect(mockGetGasPrices).not.toHaveBeenCalled();

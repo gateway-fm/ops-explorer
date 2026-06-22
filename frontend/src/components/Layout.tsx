@@ -47,16 +47,23 @@ export function Layout() {
   const searchRef = useRef<HTMLDivElement>(null);
   const mobileInputRef = useRef<HTMLInputElement>(null);
 
-  // Fetch ETH price (used in commented-out UI sections).
-  // RD-1063 (M1): gate the header pollers behind the gasTracker flag so privacy
-  // mode doesn't storm /price (60s) and /gas (15s) on EVERY page — the backend
-  // routes are 404 there and these run regardless of which page is mounted.
+  // Header pollers — ETH price (60s) and gas prices (15s, shown in the nav).
+  // They run on EVERY page, so they must not fire in privacy mode where the
+  // backend 404s /price and /gas.
+  // RD-1063 (M1): gate behind the gasTracker feature flag (VITE_PRIVACY_MODE).
+  // RD-1082: ALSO gate on the backend-derived privacy signal (`privacyEnabled`,
+  // from /api/stats). The build-time flag lives in deploy env, not in code, so
+  // a privacy deployment that forgot to set VITE_PRIVACY_MODE would otherwise
+  // storm both endpoints with 404s. The backend always reports privacyEnabled,
+  // so this gate holds regardless of the flag. (404s aren't retried — App.tsx
+  // shouldRetryQuery — and the query is disabled once /stats resolves, so the
+  // worst case is a single request during the brief pre-stats window.)
   useQuery({
     queryKey: ['ethPrice'],
     queryFn: api.getPrice,
     refetchInterval: 60000,
     staleTime: 30000,
-    enabled: features().gasTracker,
+    enabled: features().gasTracker && !privacyEnabled,
   });
 
   const { data: gasPrices } = useQuery({
@@ -64,7 +71,7 @@ export function Layout() {
     queryFn: api.getGasPrices,
     refetchInterval: 15000,
     staleTime: 10000,
-    enabled: features().gasTracker,
+    enabled: features().gasTracker && !privacyEnabled,
   });
 
   // Build identity of the running backend (stamped via -ldflags), shown in the
