@@ -23,7 +23,6 @@ package indexerclient
 
 import (
 	"context"
-	"math"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -81,10 +80,13 @@ func (p *Provider) GetTransactionsByAddress(ctx context.Context, address string,
 
 // ----- Transactions: offset-paginated feeds -----
 //
-// The indexer doesn't expose offset pagination on ListTransactions; we
-// translate by fetching page*pageSize rows cursor-style and slicing. For
-// deep pages this is less efficient than the SQL OFFSET/LIMIT path; the
-// first several pages (the common case in the UI) are fine.
+// Uses the indexer's offset-paginated ListTransactionsPaginated RPC, which
+// returns a true chain-wide total in OffsetPageResponse.total_items (RD-1061).
+// Previously this fell back to the cursor-based ListTransactions and returned
+// len(fetched) as the total — a page-local value that grew as the client
+// paginated (e.g. 47 on page 1, 70 on page 2), inflating the computed page
+// count. Mirrors GetAccountsPaginated / GetTokens, which already ride
+// OffsetPageResponse.
 
 func (p *Provider) GetTransactionsPaginated(ctx context.Context, page, pageSize int) ([]types.Transaction, int64, error) {
 	if page < 1 {
@@ -93,30 +95,13 @@ func (p *Provider) GetTransactionsPaginated(ctx context.Context, page, pageSize 
 	if pageSize < 1 {
 		pageSize = 1
 	}
-	// BUG-9: fetchLimit := int32(page * pageSize) overflowed int32 to a negative
-	// page_size for a large page. Compute in int64 and clamp to MaxInt32 (the
-	// indexer is server-capped anyway), so the wire value is always >= 0.
-	want := int64(page) * int64(pageSize)
-	if want > math.MaxInt32 {
-		want = math.MaxInt32
-	}
-	fetchLimit := int32(want)
-	resp, err := p.client.ListTransactions(ctx, &indexerv1.ListTransactionsRequest{
-		Page: &indexerv1.PageRequest{PageSize: fetchLimit},
+	resp, err := p.client.ListTransactionsPaginated(ctx, &indexerv1.ListTransactionsPaginatedRequest{
+		Page: &indexerv1.OffsetPageRequest{Page: int32(page), PageSize: int32(pageSize)},
 	})
 	if err != nil {
 		return nil, 0, err
 	}
-	all := mapTransactions(resp.GetTransactions())
-	start := (page - 1) * pageSize
-	if start >= len(all) {
-		return nil, int64(len(all)), nil
-	}
-	end := start + pageSize
-	if end > len(all) {
-		end = len(all)
-	}
-	return all[start:end], int64(len(all)), nil
+	return mapTransactions(resp.GetTransactions()), resp.GetPage().GetTotalItems(), nil
 }
 
 func (p *Provider) GetTransactionsPaginatedWithCategories(ctx context.Context, page, pageSize int) ([]types.Transaction, int64, error) {

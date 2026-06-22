@@ -42,6 +42,7 @@ type fakeIndexer struct {
 	getSyncStatus    func() (*indexerv1.SyncStatus, error)
 	listBlocks       func(*indexerv1.ListBlocksRequest) (*indexerv1.ListBlocksResponse, error)
 	listTxs          func(*indexerv1.ListTransactionsRequest) (*indexerv1.ListTransactionsResponse, error)
+	listTxsPaginated func(*indexerv1.ListTransactionsPaginatedRequest) (*indexerv1.ListTransactionsPaginatedResponse, error)
 	listLogs         func(*indexerv1.ListLogsRequest) (*indexerv1.ListLogsResponse, error)
 	listAddresses    func(*indexerv1.ListAddressesRequest) (*indexerv1.ListAddressesResponse, error)
 	listTokens       func(*indexerv1.ListTokensRequest) (*indexerv1.ListTokensResponse, error)
@@ -80,6 +81,9 @@ func (f *fakeIndexer) ListBlocks(ctx context.Context, req *indexerv1.ListBlocksR
 }
 func (f *fakeIndexer) ListTransactions(ctx context.Context, req *indexerv1.ListTransactionsRequest) (*indexerv1.ListTransactionsResponse, error) {
 	return f.listTxs(req)
+}
+func (f *fakeIndexer) ListTransactionsPaginated(ctx context.Context, req *indexerv1.ListTransactionsPaginatedRequest) (*indexerv1.ListTransactionsPaginatedResponse, error) {
+	return f.listTxsPaginated(req)
 }
 func (f *fakeIndexer) ListLogs(ctx context.Context, req *indexerv1.ListLogsRequest) (*indexerv1.ListLogsResponse, error) {
 	return f.listLogs(req)

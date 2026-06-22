@@ -3,7 +3,12 @@ import { Copy, Check, ChevronDown, ChevronRight, Play, Loader2, BookOpen, AlertT
 import { PageHeader } from '../components/PageHeader';
 import { getConfig } from '../lib/runtimeConfig';
 
-const BASE_URL = getConfig('VITE_PUBLIC_API_URL', 'http://localhost:8082');
+// RD-1083: fall back to the page's own origin, never a baked-in
+// http://localhost:8082. A deployment that didn't set VITE_PUBLIC_API_URL
+// would otherwise display (and offer a Copy button for) an unreachable
+// localhost Base URL on /api-docs. window.location.origin matches the host the
+// docs are served from — where the public API is exposed for that deployment.
+const BASE_URL = getConfig('VITE_PUBLIC_API_URL', window.location.origin);
 
 // ---------------------------------------------------------------------------
 // Types
