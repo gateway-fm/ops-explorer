@@ -13,7 +13,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "overrides": {
-    "ws": "^8.21.0"
+    "ws": "^8.21.0",
+    "esbuild": "0.28.1"
   },
   "dependencies": {
     "@radix-ui/react-tooltip": "^1.2.8",
