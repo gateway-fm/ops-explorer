@@ -11,105 +11,117 @@ import (
 	indexerv1 "explorer/gen/go/chain_indexer/v1"
 )
 
-// BUG-9: GetTransactionsPaginated set fetchLimit := int32(page * pageSize). The
-// int multiplication is fine, but the int32 narrowing overflows to a NEGATIVE
-// page_size for a large page, which then travels to the indexer as PageSize.
-// A negative page size is nonsensical and (depending on the server) errors or
-// returns garbage. The request's page_size must always be >= 0.
+// BUG-9 (historical): the old cursor-fetch path computed fetchLimit :=
+// int32(page * pageSize), which overflowed int32 to a NEGATIVE page_size for a
+// large page. The offset RPC sends page and pageSize as independent int32s
+// (no multiplication), so the overflow is structurally impossible — this pins
+// that the forwarded page_size is never negative even at the int boundary.
 func TestGetTransactionsPaginated_PageSizeNeverNegative(t *testing.T) {
 	var gotPageSize int32 = -999
 	p := setupProvider(t, &fakeIndexer{
-		listTxs: func(req *indexerv1.ListTransactionsRequest) (*indexerv1.ListTransactionsResponse, error) {
+		listTxsPaginated: func(req *indexerv1.ListTransactionsPaginatedRequest) (*indexerv1.ListTransactionsPaginatedResponse, error) {
 			gotPageSize = req.GetPage().GetPageSize()
-			return &indexerv1.ListTransactionsResponse{}, nil
+			return &indexerv1.ListTransactionsPaginatedResponse{
+				Page: &indexerv1.OffsetPageResponse{TotalItems: 0},
+			}, nil
 		},
 	})
 
-	// page * pageSize = MaxInt32 * 100, which overflows int32.
 	_, _, err := p.GetTransactionsPaginated(context.Background(), math.MaxInt32, 100)
 	if err != nil {
 		t.Fatalf("GetTransactionsPaginated: %v", err)
 	}
 	if gotPageSize < 0 {
-		t.Fatalf("page_size sent to indexer = %d, must never be negative (int32 overflow, BUG-9)", gotPageSize)
+		t.Fatalf("page_size sent to indexer = %d, must never be negative", gotPageSize)
 	}
 }
 
-// BUG-8 (documented cross-repo gap): the chain-indexer ListTransactions RPC
-// uses CURSOR pagination (PageResponse carries only next_cursor) — there is NO
-// total_items field, unlike ListAddresses/ListTokens (OffsetPageResponse). So
-// GetTransactionsPaginated cannot surface a true chain-wide total; it currently
-// returns len(fetched), which scales with the page and is misleading. Surfacing
-// a correct total needs a chain-indexer change (offset-paginate ListTransactions
-// or add a count). Skipped so CI stays green; tracked as a chain-indexer issue.
-func TestGetTransactionsPaginated_TrueTotalIsUpstreamGap(t *testing.T) {
-	t.Skip("TODO(chain-indexer): ListTransactions is cursor-only (no total_items) " +
-		"— /transactions/paginated cannot report a real total. See report.")
-
+// BUG-8 (FIXED by chain-indexer RD-1061): the indexer now exposes an
+// offset-paginated ListTransactionsPaginated whose OffsetPageResponse carries a
+// true chain-wide total_items — unlike the cursor-based ListTransactions, which
+// has no count. GetTransactionsPaginated surfaces total_items directly, so the
+// /transactions page total is the real chain total, stable across pages, not
+// len(fetched). This is the previously-skipped gap, now closed.
+func TestGetTransactionsPaginated_TrueTotalIsSurfaced(t *testing.T) {
 	const realChainTotal = 10_000
 	p := setupProvider(t, &fakeIndexer{
-		listTxs: func(req *indexerv1.ListTransactionsRequest) (*indexerv1.ListTransactionsResponse, error) {
-			// Even if the server only returns one page, the response should
-			// carry the real total somewhere. It does not today.
-			return &indexerv1.ListTransactionsResponse{
+		listTxsPaginated: func(req *indexerv1.ListTransactionsPaginatedRequest) (*indexerv1.ListTransactionsPaginatedResponse, error) {
+			// Server returns just one page of rows but the real total in total_items.
+			return &indexerv1.ListTransactionsPaginatedResponse{
 				Transactions: make([]*indexerv1.Transaction, 25),
+				Page:         &indexerv1.OffsetPageResponse{Page: 1, PageSize: 25, TotalItems: realChainTotal},
 			}, nil
 		},
 	})
-	_, total, _ := p.GetTransactionsPaginated(context.Background(), 1, 25)
+	_, total, err := p.GetTransactionsPaginated(context.Background(), 1, 25)
+	if err != nil {
+		t.Fatalf("GetTransactionsPaginated: %v", err)
+	}
 	if total != realChainTotal {
-		t.Errorf("total = %d, want the real chain total %d (needs upstream total_items)", total, realChainTotal)
+		t.Errorf("total = %d, want the real chain total %d (total_items)", total, realChainTotal)
 	}
 }
 
-// TestGetTransactionsPaginated_NoOverlapAcrossPages pins the behavior we CAN
-// guarantee today: the cursor-fetch + slice path returns disjoint, in-order
-// windows across pages (no dupes, no gaps within the fetched window). This is
-// the reliability floor while the true-total gap (above) is upstream.
-func TestGetTransactionsPaginated_NoOverlapAcrossPages(t *testing.T) {
-	const pageSize = 10
-	// Fake server returns the first req.PageSize rows of a deterministic 60-row
-	// descending feed (mirrors the indexer's cursor semantics: each call yields
-	// the head of the list up to page_size).
-	makeRows := func(n int) []*indexerv1.Transaction {
-		rows := make([]*indexerv1.Transaction, n)
-		for i := 0; i < n; i++ {
-			rows[i] = &indexerv1.Transaction{Hash: fmt.Sprintf("0x%04d", 1000-i), BlockNumber: uint64(1000 - i)}
-		}
-		return rows
-	}
+// TestGetTransactionsPaginated_MultiPage reconciles the offset-paginated tx
+// feed end-to-end: total_items is surfaced unchanged on EVERY page (stable, not
+// page-local — the bug this fixed), windows are disjoint and in-order, the row
+// union has no dupes/gaps, and the number of non-empty pages == ceil(N/pageSize).
+// Mirrors TestReconcile_AccountsMultiPage now that the indexer offset-paginates.
+func TestGetTransactionsPaginated_MultiPage(t *testing.T) {
+	const (
+		N        = 57
+		pageSize = 10
+	)
 	p := setupProvider(t, &fakeIndexer{
-		listTxs: func(req *indexerv1.ListTransactionsRequest) (*indexerv1.ListTransactionsResponse, error) {
+		listTxsPaginated: func(req *indexerv1.ListTransactionsPaginatedRequest) (*indexerv1.ListTransactionsPaginatedResponse, error) {
+			page := int(req.GetPage().GetPage())
 			ps := int(req.GetPage().GetPageSize())
-			if ps < 0 {
-				t.Fatalf("negative page_size %d", ps)
+			if ps != pageSize {
+				t.Errorf("page_size = %d, want %d", ps, pageSize)
 			}
-			all := makeRows(60)
-			if ps > len(all) {
-				ps = len(all)
+			start, end := offsetWindow(N, page, ps)
+			rows := make([]*indexerv1.Transaction, 0, end-start)
+			for i := start; i < end; i++ {
+				rows = append(rows, &indexerv1.Transaction{Hash: fmt.Sprintf("0x%05d", i), BlockNumber: uint64(N - i)})
 			}
-			return &indexerv1.ListTransactionsResponse{Transactions: all[:ps]}, nil
+			return &indexerv1.ListTransactionsPaginatedResponse{
+				Transactions: rows,
+				Page:         &indexerv1.OffsetPageResponse{Page: int32(page), PageSize: int32(ps), TotalItems: N},
+			}, nil
 		},
 	})
 
-	seen := map[string]int{}
-	for page := 1; page <= 3; page++ {
-		txs, _, err := p.GetTransactionsPaginated(context.Background(), page, pageSize)
+	seen := map[string]bool{}
+	sum := 0
+	nonEmptyPages := 0
+	wantPages := (N + pageSize - 1) / pageSize
+	for page := 1; page <= wantPages+2; page++ { // overshoot to prove empties past the end
+		rows, total, err := p.GetTransactionsPaginated(context.Background(), page, pageSize)
 		if err != nil {
 			t.Fatalf("page %d: %v", page, err)
 		}
-		if len(txs) != pageSize {
-			t.Fatalf("page %d: got %d rows, want %d", page, len(txs), pageSize)
+		if total != N {
+			t.Errorf("page %d: total = %d, want %d (must surface total_items unchanged, not page-local)", page, total, N)
 		}
-		for _, tx := range txs {
-			seen[tx.Hash]++
-			if seen[tx.Hash] > 1 {
-				t.Errorf("tx %s appeared on more than one page (overlap)", tx.Hash)
+		if len(rows) > 0 {
+			nonEmptyPages++
+		}
+		for _, tx := range rows {
+			if seen[tx.Hash] {
+				t.Errorf("tx %s seen on more than one page (overlap)", tx.Hash)
 			}
+			seen[tx.Hash] = true
+			sum++
 		}
 	}
-	if len(seen) != 3*pageSize {
-		t.Errorf("union across 3 pages = %d unique, want %d (no dupes/gaps)", len(seen), 3*pageSize)
+	if sum != N {
+		t.Errorf("Σ len(pages) = %d, want %d", sum, N)
+	}
+	if len(seen) != N {
+		t.Errorf("union(data) = %d unique, want %d (no gaps)", len(seen), N)
+	}
+	if nonEmptyPages != wantPages {
+		t.Errorf("non-empty pages = %d, want ceil(%d/%d) = %d", nonEmptyPages, N, pageSize, wantPages)
 	}
 }
 
