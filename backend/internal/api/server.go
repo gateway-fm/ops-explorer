@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"explorer/internal/auth"
@@ -50,6 +51,14 @@ type Server struct {
 	port                 int
 	router               *chi.Mux
 	etherscanResults     sync.Map // guid -> *etherscanVerifyResult
+
+	// draining is flipped to true when graceful shutdown begins (SIGTERM →
+	// ctx cancel in Start). While true, the readiness probe reports 503 so
+	// Kubernetes takes the pod out of the Service endpoints and stops routing
+	// new requests before in-flight ones finish draining. It is the ONLY input
+	// to readiness — the probe deliberately does not check upstreams, so a
+	// chain-indexer / privacy-proxy outage can never evict the pod (RD-1181).
+	draining atomic.Bool
 
 	// refreshGroup collapses concurrent access-token refreshes for the same
 	// session into a single privacy-proxy /refresh call. privacy-proxy rotates
@@ -615,6 +624,10 @@ func (s *Server) Start(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
+		// Flip readiness to 503 BEFORE draining so Kubernetes stops routing new
+		// requests to this pod while srv.Shutdown lets in-flight ones finish
+		// (RD-1181). Liveness stays 200 throughout — we're draining, not dead.
+		s.draining.Store(true)
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		srv.Shutdown(shutdownCtx)
