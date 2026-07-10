@@ -1,5 +1,10 @@
 # Security Policy
 
+## Ownership
+
+This repository is owned and maintained by Gateway.fm. Responsible
+maintainer: Ivan Beliakov (@gateway-fm maintainers team).
+
 ## Supported Versions
 
 This project is preparing an initial source-only open-source release. Until the
@@ -21,8 +26,8 @@ Include:
 - Impact and affected deployment assumptions.
 - Suggested mitigation, if known.
 
-Maintainers should acknowledge reports within 3 business days and provide an
-initial triage response within 10 business days.
+Disclosure response SLA: maintainers acknowledge reports within 3 business
+days and provide an initial triage response within 10 business days.
 
 ## Public Disclosure
 
