@@ -22,7 +22,9 @@ scanner-backed SBOMs and update this file (see "Required Follow-Up").
 
 ## Notable Go Dependencies (direct)
 
-All direct Go dependencies are under permissive licenses:
+All direct Go dependencies are Apache-2.0-compatible: permissive licenses
+throughout, except hashicorp/golang-lru which is MPL-2.0 (a weak file-level
+copyleft, satisfied here by using it as an unmodified library):
 
 - github.com/go-chi/chi/v5 — MIT
 - github.com/golang-jwt/jwt/v5 — MIT
