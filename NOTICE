@@ -1,0 +1,23 @@
+Open Privacy Suite - Block Explorer
+Copyright 2026 Gateway.fm and contributors
+
+This product is licensed under the Apache License, Version 2.0.
+
+This repository includes protocol definitions and generated Go code for the
+chain-indexer API under backend/proto/chain_indexer/v1 and
+backend/gen/go/chain_indexer/v1. The source repository for those protocol
+definitions is expected to be published as gateway-fm/chain-indexer under
+Apache-2.0 as part of the same open-source release plan.
+
+The Ethereum utility packages under backend/pkg/eth are an original,
+minimal, API-compatible implementation written for this project. They
+implement public specifications (EIP-55 checksums, RLP encoding, Ethereum
+JSON-RPC). This repository does not vendor and does not depend on
+github.com/ethereum/go-ethereum. See THIRD_PARTY_NOTICES.md.
+
+Third-party dependencies retain their own licenses. See
+THIRD_PARTY_NOTICES.md for the source-only third-party notice starter.
+
+The names Gateway, Ethereum, MetaMask, Sourcify, Etherscan, CoinGecko,
+Solidity, Foundry, Anvil, and other third-party marks are the property of
+their respective owners. This NOTICE does not grant trademark rights.
