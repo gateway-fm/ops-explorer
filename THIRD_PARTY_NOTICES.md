@@ -56,9 +56,15 @@ installed when building the container images. They matter for official image
 releases, not for source publication:
 
 - solc (Solidity compiler) static binaries — GPL-3.0. Downloaded (checksum-
-  pinned) into the verification-enabled backend image and invoked as a
-  separate process (not linked). Distributing images that bundle solc
-  requires GPL-3.0 distribution compliance (offer of source, license text).
+  pinned) into the verification-enabled backend image (backend/Dockerfile)
+  and invoked as a separate process (not linked). That image is
+  local-build-only: the images published to Docker Hub (api, api-privacy,
+  public-api, frontend) are built from Dockerfile.api / Dockerfile.public-api
+  / frontend/Dockerfile and contain no solc or sol2uml (verified against
+  gatewayfm/block-explorer-api:0.8.5). Distributing an image that bundles
+  solc would require GPL-3.0 distribution compliance (license text + source
+  availability for solc itself; mere aggregation — it does not affect this
+  repository's Apache-2.0 licensing).
 - sol2uml (npm) — MIT. Installed into the backend image for the contract UML
   diagram feature.
 - Base images (golang:alpine builders, distroless/static-debian13, nginx for
