@@ -2,8 +2,8 @@
 
 ## Ownership
 
-This repository is owned and maintained by Gateway.fm. Responsible
-maintainer: Ivan Beliakov (@gateway-fm maintainers team).
+This repository is owned and maintained by the Gateway.fm maintainers.
+Maintainer responsibilities and governance are described in GOVERNANCE.md.
 
 ## Supported Versions
 
