@@ -81,6 +81,19 @@ pnpm-debug.log*
 pgdata/
 
 # -----------------------------------------------------------------------------
+# Internal audit reports and local planning docs (do not publish)
+# -----------------------------------------------------------------------------
+AUDIT_*.md
+*_AUDIT*.md
+OSS_AUDIT*.md
+security_and_coverage_report.md
+coverage_report.txt
+npm-audit*.json
+PLAN_*.md
+PROD_READINESS_AUDIT.md
+INJECTOR_PROVISIONER_SPEC.md
+
+# -----------------------------------------------------------------------------
 # Misc
 # -----------------------------------------------------------------------------
 .env
