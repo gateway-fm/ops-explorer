@@ -13,6 +13,11 @@ jobs:
   release-api:
     name: Release API Image
     runs-on: ubuntu-latest
+    # id-token: write enables cosign keyless signing via GitHub OIDC — no
+    # stored signing keys (org policy: no static credentials).
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
@@ -59,6 +64,7 @@ jobs:
           echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Build and push API image (standalone)
+        id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: backend/
@@ -71,6 +77,11 @@ jobs:
           target: standalone
           push: true
           platforms: linux/amd64,linux/arm64
+          # Supply-chain attestations (RD-1171 image-release HOLD list):
+          # a syft-generated SBOM plus max-detail SLSA build provenance,
+          # attached to the image as OCI attestation manifests.
+          sbom: true
+          provenance: mode=max
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
@@ -78,9 +89,24 @@ jobs:
             GIT_COMMIT=${{ steps.build_meta.outputs.short_sha }}
             BUILD_TIME=${{ steps.build_meta.outputs.build_time }}
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      # Keyless signature via the workflow's OIDC identity; verifiable with
+      # `cosign verify --certificate-identity-regexp 'github.com/gateway-fm/block-explorer'
+      #  --certificate-oidc-issuer https://token.actions.githubusercontent.com <image>@<digest>`.
+      # Signing by digest (not tag) so the signature is immune to tag moves.
+      - name: Sign image (keyless OIDC)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "gatewayfm/block-explorer-api@${DIGEST}"
+
   release-api-privacy:
     name: Release API Image (privacy build)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     # Privacy variant: built with -tags privacy so the
     # internal/api/indexerclient package (chain-indexer gRPC client) is
     # excluded at compile time. Used by privacy-mode deployments where
@@ -132,6 +158,7 @@ jobs:
           echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Build and push API image (privacy)
+        id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: backend/
@@ -139,6 +166,8 @@ jobs:
           target: privacy
           push: true
           platforms: linux/amd64,linux/arm64
+          sbom: true
+          provenance: mode=max
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
@@ -146,10 +175,21 @@ jobs:
             GIT_COMMIT=${{ steps.build_meta.outputs.short_sha }}
             BUILD_TIME=${{ steps.build_meta.outputs.build_time }}
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign image (keyless OIDC)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "gatewayfm/block-explorer-api-privacy@${DIGEST}"
+
 
   release-public-api:
     name: Release Public API Image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
@@ -194,12 +234,15 @@ jobs:
           echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Build and push Public API image
+        id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: backend/
           file: backend/Dockerfile.public-api
           push: true
           platforms: linux/amd64,linux/arm64
+          sbom: true
+          provenance: mode=max
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
@@ -207,9 +250,20 @@ jobs:
             GIT_COMMIT=${{ steps.build_meta.outputs.short_sha }}
             BUILD_TIME=${{ steps.build_meta.outputs.build_time }}
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign image (keyless OIDC)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "gatewayfm/block-explorer-public-api@${DIGEST}"
+
   release-frontend:
     name: Release Frontend Image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
@@ -247,11 +301,41 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Build and push Frontend image
+        id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: frontend/
           file: frontend/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
+          sbom: true
+          provenance: mode=max
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign image (keyless OIDC)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "gatewayfm/block-explorer-frontend@${DIGEST}"
+
+  # Source SBOM (SPDX JSON) attached to the GitHub Release — the
+  # source-artifact counterpart of the per-image SBOM attestations above.
+  # Skipped on workflow_dispatch, which has no release to attach to.
+  release-source-sbom:
+    name: Source SBOM (SPDX)
+    if: ${{ github.event_name == 'release' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # upload the SBOM as a release asset
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Generate and attach SPDX source SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          path: .
+          format: spdx-json
+          artifact-name: block-explorer-source-${{ github.ref_name }}.spdx.json
