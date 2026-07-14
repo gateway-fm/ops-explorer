@@ -309,23 +309,36 @@ func TestProvider_GetBlocks(t *testing.T) {
 }
 
 func TestProvider_GetTransactionsByAddress(t *testing.T) {
+	// RD-1149: the incoming opaque cursor must be forwarded verbatim to the
+	// indexer's PageRequest, and the indexer's next_cursor surfaced back.
 	p := setupProvider(t, &fakeIndexer{
 		listTxs: func(req *indexerv1.ListTransactionsRequest) (*indexerv1.ListTransactionsResponse, error) {
 			f := req.GetByAddress()
 			if f == nil || f.GetAddress() != "0xa" {
 				t.Errorf("address filter: %+v", f)
 			}
+			if got := req.GetPage().GetCursor(); got != "cur-in" {
+				t.Errorf("PageRequest.Cursor = %q, want %q", got, "cur-in")
+			}
+			// A cursor was supplied, so the legacy block-range bound must be absent.
+			if req.GetBlockRange() != nil {
+				t.Errorf("BlockRange must be nil when a cursor is set, got %+v", req.GetBlockRange())
+			}
 			return &indexerv1.ListTransactionsResponse{
 				Transactions: []*indexerv1.Transaction{{Hash: "0xtx1"}, {Hash: "0xtx2"}},
+				Page:         &indexerv1.PageResponse{NextCursor: "cur-out"},
 			}, nil
 		},
 	})
-	txs, err := p.GetTransactionsByAddress(context.Background(), "0xa", 25, nil)
+	txs, next, err := p.GetTransactionsByAddress(context.Background(), "0xa", 25, "cur-in", nil)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	if len(txs) != 2 {
 		t.Errorf("got %d, want 2", len(txs))
+	}
+	if next != "cur-out" {
+		t.Errorf("next cursor = %q, want %q", next, "cur-out")
 	}
 }
 

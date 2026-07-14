@@ -75,7 +75,8 @@ func buildPaths() map[string]any {
 			"get": endpoint("Get address transactions", "Returns transactions for an address.", []param{
 				pathParam("address", "string", "Ethereum address"),
 				queryParam("limit", "integer", "Number of results", false),
-				queryParam("before", "string", "Cursor", false),
+				queryParam("cursor", "string", "Opaque keyset cursor from a previous page's nextCursor; takes precedence over 'before' and pages without skipping rows at a block boundary", false),
+				queryParam("before", "string", "Legacy block-exclusive cursor (may skip rows at a block boundary; prefer 'cursor')", false),
 			}, ref("CursorPaginatedTransactions")),
 		},
 		"/addresses/{address}/transfers": map[string]any{

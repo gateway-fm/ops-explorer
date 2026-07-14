@@ -38,6 +38,32 @@ func TestPaginate_CursorIsLastBlockNumber(t *testing.T) {
 	}
 }
 
+// RD-1149 (api side): cursorPage wraps a keyset page. The provider returns the
+// authoritative opaque next-cursor, so HasMore == (nextCursor != "") and the
+// emitted NextCursor is that opaque value verbatim (not a block number).
+func TestCursorPage(t *testing.T) {
+	rows := []types.Transaction{{Hash: "0xa", BlockNumber: 200}, {Hash: "0xb", BlockNumber: 150}}
+
+	more := cursorPage(rows, "opaque-next")
+	if !more.HasMore {
+		t.Error("HasMore = false, want true when a next cursor is present")
+	}
+	if more.NextCursor == nil || *more.NextCursor != "opaque-next" {
+		t.Errorf("NextCursor = %v, want \"opaque-next\" (opaque provider value verbatim)", more.NextCursor)
+	}
+	if len(more.Data) != 2 {
+		t.Errorf("len(Data) = %d, want 2 (no over-fetch trimming)", len(more.Data))
+	}
+
+	last := cursorPage(rows, "")
+	if last.HasMore {
+		t.Error("HasMore = true, want false when the cursor is empty (exhausted)")
+	}
+	if last.NextCursor != nil {
+		t.Errorf("NextCursor = %v, want nil when exhausted", *last.NextCursor)
+	}
+}
+
 func ceilDiv(total int64, pageSize int) int {
 	// Reference implementation in int64; only the final quotient is narrowed.
 	ps := int64(pageSize)

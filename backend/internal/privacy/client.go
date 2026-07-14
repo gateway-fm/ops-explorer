@@ -376,9 +376,13 @@ func (c *Client) ResolveAddressID(ctx context.Context, grantID, addressID string
 // GetGrantTransactions fetches pseudonymized transactions for a disclosure grant
 // directly from the privacy proxy. The proxy handles all pseudonymization —
 // the explorer just forwards the response as raw JSON.
-func (c *Client) GetGrantTransactions(ctx context.Context, grantID, addressID string, limit int, beforeBlock *uint64) ([]byte, int, error) {
+func (c *Client) GetGrantTransactions(ctx context.Context, grantID, addressID string, limit int, cursor string, beforeBlock *uint64) ([]byte, int, error) {
 	endpoint := fmt.Sprintf("/api/v1/explorer/grant/%s/%s/transactions?limit=%d", grantID, addressID, limit)
-	if beforeBlock != nil {
+	// Opaque cursor (RD-1149) takes precedence over the legacy ?before= bound; the
+	// proxy returns next_cursor in the JSON body, which we forward as-is.
+	if cursor != "" {
+		endpoint += "&cursor=" + url.QueryEscape(cursor)
+	} else if beforeBlock != nil {
 		endpoint += fmt.Sprintf("&before=%d", *beforeBlock)
 	}
 
