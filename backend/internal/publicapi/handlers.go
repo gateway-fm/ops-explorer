@@ -48,6 +48,27 @@ func parseBeforeBlock(r *http.Request) *uint64 {
 	return nil
 }
 
+// parseCursor reads the opaque keyset cursor (RD-1149), passed through to the
+// provider verbatim. When set it takes precedence over ?before=.
+func parseCursor(r *http.Request) string {
+	return r.URL.Query().Get("cursor")
+}
+
+// cursorPage wraps a keyset-paginated page in the shared PaginatedResponse. The
+// provider returns the authoritative next-page cursor ("" == exhausted), so
+// HasMore is nextCursor != "" — no over-fetch sentinel needed.
+func cursorPage[T any](items []T, nextCursor string) types.PaginatedResponse[T] {
+	if items == nil {
+		items = []T{}
+	}
+	resp := types.PaginatedResponse[T]{Data: items, HasMore: nextCursor != ""}
+	if nextCursor != "" {
+		c := nextCursor
+		resp.NextCursor = &c
+	}
+	return resp
+}
+
 func parsePage(r *http.Request) int {
 	if p := r.URL.Query().Get("page"); p != "" {
 		if page, err := strconv.Atoi(p); err == nil && page > 0 {
@@ -378,17 +399,18 @@ func (s *Server) handleGetAddressTransactions(w http.ResponseWriter, r *http.Req
 	address = common.HexToAddress(address).Hex()
 
 	limit := parseLimit(r)
+	cursor := parseCursor(r)
 	beforeBlock := parseBeforeBlock(r)
 
-	txs, err := s.provider.GetTransactionsByAddress(r.Context(), address, limit+1, beforeBlock)
+	// Opaque cursor (RD-1149) is keyset-exact and takes precedence over the
+	// legacy ?before= block bound; the provider returns the next-page cursor.
+	txs, nextCursor, err := s.provider.GetTransactionsByAddress(r.Context(), address, limit, cursor, beforeBlock)
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	writeJSON(w, paginate(txs, limit, func(tx types.Transaction) string {
-		return strconv.FormatUint(tx.BlockNumber, 10)
-	}))
+	writeJSON(w, cursorPage(txs, nextCursor))
 }
 
 func (s *Server) handleGetAddressTransfers(w http.ResponseWriter, r *http.Request) {
@@ -405,12 +427,14 @@ func (s *Server) handleGetAddressTransfers(w http.ResponseWriter, r *http.Reques
 
 	// BUG-pub: the offset was previously computed and then discarded (`_ =
 	// offset`), so ?page=2 returned the same rows as ?page=1. GetTransfersByAddress
-	// only exposes cursor pagination, so to honor ?page= we over-fetch
-	// offset+pageSize+1 rows and skip the first `offset`. (The +1 sentinel still
-	// drives HasMore.) For deep offsets the ?before= cursor remains preferable;
-	// this keeps page/pageSize correct for the documented public-API contract.
+	// exposes cursor pagination, so to honor ?page= we over-fetch
+	// offset+pageSize+1 rows from the start (no cursor) and skip the first
+	// `offset`. (The +1 sentinel still drives HasMore.) For deep offsets the
+	// keyset cursor remains preferable; this keeps page/pageSize correct for the
+	// documented public-API offset contract. The provider next-cursor is not used
+	// here because this endpoint pages by ?page=, not by opaque cursor.
 	fetch := offset + pageSize + 1
-	transfers, err := s.provider.GetTransfersByAddress(r.Context(), address, fetch, nil)
+	transfers, _, err := s.provider.GetTransfersByAddress(r.Context(), address, fetch, "", nil)
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return

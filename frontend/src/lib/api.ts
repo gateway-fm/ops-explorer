@@ -404,6 +404,8 @@ export interface PseudonymizedTransactionsResponse {
   disclosure_level: string;
   address_labels: Record<string, string>;
   has_more: boolean;
+  // RD-1149: opaque keyset cursor for the next page ("" / absent = exhausted).
+  next_cursor?: string;
 }
 
 export interface ActivityLogEntry {
@@ -517,9 +519,12 @@ export const api = {
 
   getAddress: (address: string) => fetchAPI<AddressInfo>(`/addresses/${address}`),
 
-  getAddressTransactions: (address: string, limit = 25, before?: number) => {
+  // cursor (RD-1149) is the opaque keyset cursor from a previous page's
+  // nextCursor; when set it takes precedence over the legacy ?before= block bound.
+  getAddressTransactions: (address: string, limit = 25, before?: number, cursor?: string) => {
     const params = new URLSearchParams({ limit: String(limit) });
-    if (before) params.set('before', String(before));
+    if (cursor) params.set('cursor', cursor);
+    else if (before) params.set('before', String(before));
     return fetchAPI<PaginatedResponse<Transaction>>(`/addresses/${address}/transactions?${params}`);
   },
 
@@ -538,9 +543,10 @@ export const api = {
     return res.text();
   },
 
-  getAddressTransfers: (address: string, limit = 25, before?: number) => {
+  getAddressTransfers: (address: string, limit = 25, before?: number, cursor?: string) => {
     const params = new URLSearchParams({ limit: String(limit) });
-    if (before) params.set('before', String(before));
+    if (cursor) params.set('cursor', cursor);
+    else if (before) params.set('before', String(before));
     return fetchAPI<PaginatedResponse<TokenTransfer>>(`/addresses/${address}/transfers?${params}`);
   },
 
@@ -671,9 +677,10 @@ export const api = {
   getGrantedAddress: (grantId: string, addressId: string) =>
     fetchAPI<GrantedAddressResponse>(`/privacy/grant/${grantId}/${addressId}`),
 
-  getGrantedAddressTransactions: (grantId: string, addressId: string, limit = 25, before?: number) => {
+  getGrantedAddressTransactions: (grantId: string, addressId: string, limit = 25, before?: number, cursor?: string) => {
     const params = new URLSearchParams({ limit: String(limit) });
-    if (before) params.set('before', String(before));
+    if (cursor) params.set('cursor', cursor);
+    else if (before) params.set('before', String(before));
     return fetchAPI<PseudonymizedTransactionsResponse>(`/privacy/grant/${grantId}/${addressId}/transactions?${params}`);
   },
 

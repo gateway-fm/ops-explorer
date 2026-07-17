@@ -475,17 +475,16 @@ func (s *Server) handleGetAddressTransactions(w http.ResponseWriter, r *http.Req
 	address = common.HexToAddress(address).Hex()
 
 	limit := parseLimit(r)
+	cursor := parseCursor(r)
 	beforeBlock := parseBeforeBlock(r)
 
-	txs, err := s.provider.GetTransactionsByAddress(r.Context(), address, limit+1, beforeBlock)
+	txs, nextCursor, err := s.provider.GetTransactionsByAddress(r.Context(), address, limit, cursor, beforeBlock)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	writeJSON(w, paginate(txs, limit, func(tx types.Transaction) string {
-		return strconv.FormatUint(tx.BlockNumber, 10)
-	}))
+	writeJSON(w, cursorPage(txs, nextCursor))
 }
 
 func (s *Server) handleGetContract(w http.ResponseWriter, r *http.Request) {
@@ -553,17 +552,16 @@ func (s *Server) handleGetAddressTransfers(w http.ResponseWriter, r *http.Reques
 	address = common.HexToAddress(address).Hex()
 
 	limit := parseLimit(r)
+	cursor := parseCursor(r)
 	beforeBlock := parseBeforeBlock(r)
 
-	transfers, err := s.provider.GetTransfersByAddress(r.Context(), address, limit+1, beforeBlock)
+	transfers, nextCursor, err := s.provider.GetTransfersByAddress(r.Context(), address, limit, cursor, beforeBlock)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	writeJSON(w, paginate(transfers, limit, func(tt types.TokenTransfer) string {
-		return strconv.FormatUint(tt.BlockNumber, 10)
-	}))
+	writeJSON(w, cursorPage(transfers, nextCursor))
 }
 
 func (s *Server) handleGetTransactionTransfers(w http.ResponseWriter, r *http.Request) {
@@ -803,6 +801,32 @@ func parseBeforeBlock(r *http.Request) *uint64 {
 	return nil
 }
 
+// parseCursor reads the opaque keyset cursor (RD-1149). It is passed through to
+// the provider verbatim; the block-explorer BFF never interprets it. When set it
+// takes precedence over ?before= (the provider enforces the precedence).
+func parseCursor(r *http.Request) string {
+	return r.URL.Query().Get("cursor")
+}
+
+// cursorPage wraps a keyset-paginated page in the shared PaginatedResponse. The
+// provider already returns the authoritative next-page cursor ("" == exhausted),
+// so HasMore is simply nextCursor != "" — no over-fetch sentinel needed.
+//
+// A nil page is normalized to an empty slice so Data marshals as [] rather than
+// null (PaginatedResponse.Data has no omitempty and the frontend treats it as
+// T[]); this mirrors publicapi.cursorPage.
+func cursorPage[T any](items []T, nextCursor string) types.PaginatedResponse[T] {
+	if items == nil {
+		items = []T{}
+	}
+	resp := types.PaginatedResponse[T]{Data: items, HasMore: nextCursor != ""}
+	if nextCursor != "" {
+		c := nextCursor
+		resp.NextCursor = &c
+	}
+	return resp
+}
+
 // paginate trims an over-fetched (limit+1) slice and emits the next-page
 // cursor. BUG-7: the cursor was strconv.Itoa(len(items)) — the page length,
 // useless as a ?before= value (paging is by block number). cursorFn extracts
@@ -863,23 +887,33 @@ func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleReadinessCheck is the Kubernetes readiness probe. It reports whether
+// THIS pod can accept traffic, based only on the pod's own state — it does NOT
+// probe upstreams (chain-indexer gRPC in standalone mode, or the privacy-proxy
+// backend in privacy mode).
+//
+// RD-1181: it used to call s.provider.GetLatestBlockNumber and return 503 when
+// that failed. In privacy mode that call is an HTTP round-trip to the
+// privacy-proxy backend, so a transient proxy outage flipped every explorer pod
+// to NOT-READY — the classic cascading-readiness anti-pattern. A downstream
+// marking itself out of service because an upstream is down doesn't restore the
+// upstream; it just propagates the outage (observed: ~6 days of 503 flapping
+// tracking the proxy's restarts, plus an Argo deploy deadlock when both were
+// rolled together). Upstream reachability is an observability concern — see the
+// dependency-aware GET /health (handleHealthCheck) — never a readiness gate.
+//
+// The only thing that makes this pod not-ready is graceful shutdown: on SIGTERM
+// (draining), we report 503 so Kubernetes removes the pod from the Service
+// endpoints before in-flight requests are cut. That is the readiness signal
+// that liveness cannot express.
 func (s *Server) handleReadinessCheck(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	latestBlock, err := s.provider.GetLatestBlockNumber(ctx)
-	if err != nil {
+	if s.draining.Load() {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		writeJSON(w, map[string]any{"ready": false, "reason": "database unavailable"})
+		writeJSON(w, map[string]any{"ready": false, "reason": "shutting down"})
 		return
 	}
 
-	if latestBlock == 0 {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		writeJSON(w, map[string]any{"ready": false, "reason": "no blocks indexed yet"})
-		return
-	}
-
-	writeJSON(w, map[string]any{"ready": true, "lastIndexedBlock": latestBlock})
+	writeJSON(w, map[string]any{"ready": true})
 }
 
 func (s *Server) handleGetTokens(w http.ResponseWriter, r *http.Request) {

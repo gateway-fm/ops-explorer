@@ -50,7 +50,13 @@ type DataProvider interface {
 	GetTransactionsPaginatedWithCategories(ctx context.Context, page, pageSize int) ([]types.Transaction, int64, error)
 	GetTransactionWithCategories(ctx context.Context, hash string) (*types.Transaction, error)
 	GetTransaction(ctx context.Context, hash string) (*types.Transaction, error)
-	GetTransactionsByAddress(ctx context.Context, address string, limit int, beforeBlock *uint64) ([]types.Transaction, error)
+	// GetTransactionsByAddress returns a page of an address's transactions plus
+	// the opaque cursor for the next page ("" when the feed is exhausted). When
+	// cursor is non-empty it takes precedence over beforeBlock; beforeBlock is
+	// the legacy block-exclusive bound kept for backward compatibility. Paging by
+	// cursor is keyset-exact (RD-1149) and never skips rows at a block boundary,
+	// unlike the block-exclusive beforeBlock path.
+	GetTransactionsByAddress(ctx context.Context, address string, limit int, cursor string, beforeBlock *uint64) ([]types.Transaction, string, error)
 	GetInternalTransactionsByTx(ctx context.Context, txHash string) ([]types.InternalTransaction, error)
 	GetTransfersByTransaction(ctx context.Context, txHash string) ([]types.TokenTransfer, error)
 	GetLogsByTransaction(ctx context.Context, txHash string) ([]types.Log, error)
@@ -60,7 +66,11 @@ type DataProvider interface {
 	GetBalance(ctx context.Context, address string) (*types.JSONString, error)
 	GetCode(ctx context.Context, address string) ([]byte, error)
 	GetTokenBalances(ctx context.Context, address string) ([]types.Balance, error)
-	GetTransfersByAddress(ctx context.Context, address string, limit int, beforeBlock *uint64) ([]types.TokenTransfer, error)
+	// GetTransfersByAddress returns a page of an address's token transfers plus
+	// the opaque cursor for the next page ("" when the feed is exhausted). Same
+	// cursor/beforeBlock precedence and keyset-exactness as
+	// GetTransactionsByAddress (RD-1149).
+	GetTransfersByAddress(ctx context.Context, address string, limit int, cursor string, beforeBlock *uint64) ([]types.TokenTransfer, string, error)
 	GetInternalTransactionsByAddress(ctx context.Context, address string, limit int, offset int) ([]types.InternalTransaction, int64, error)
 	GetLogsByAddress(ctx context.Context, address string, limit int, offset int) ([]types.Log, int64, error)
 	GetLogs(ctx context.Context, address *string, topic0 *string, fromBlock *uint64, toBlock *uint64, limit int) ([]types.Log, error)
@@ -164,8 +174,8 @@ func (p *DirectDBProvider) GetTransactionWithCategories(ctx context.Context, has
 func (p *DirectDBProvider) GetTransaction(ctx context.Context, hash string) (*types.Transaction, error) {
 	return nil, ErrChainDataNotAvailable
 }
-func (p *DirectDBProvider) GetTransactionsByAddress(ctx context.Context, address string, limit int, beforeBlock *uint64) ([]types.Transaction, error) {
-	return nil, ErrChainDataNotAvailable
+func (p *DirectDBProvider) GetTransactionsByAddress(ctx context.Context, address string, limit int, cursor string, beforeBlock *uint64) ([]types.Transaction, string, error) {
+	return nil, "", ErrChainDataNotAvailable
 }
 func (p *DirectDBProvider) GetInternalTransactionsByTx(ctx context.Context, txHash string) ([]types.InternalTransaction, error) {
 	return nil, ErrChainDataNotAvailable
@@ -185,8 +195,8 @@ func (p *DirectDBProvider) GetAddressStats(ctx context.Context, address string) 
 func (p *DirectDBProvider) GetTokenBalances(ctx context.Context, address string) ([]types.Balance, error) {
 	return nil, ErrChainDataNotAvailable
 }
-func (p *DirectDBProvider) GetTransfersByAddress(ctx context.Context, address string, limit int, beforeBlock *uint64) ([]types.TokenTransfer, error) {
-	return nil, ErrChainDataNotAvailable
+func (p *DirectDBProvider) GetTransfersByAddress(ctx context.Context, address string, limit int, cursor string, beforeBlock *uint64) ([]types.TokenTransfer, string, error) {
+	return nil, "", ErrChainDataNotAvailable
 }
 func (p *DirectDBProvider) GetInternalTransactionsByAddress(ctx context.Context, address string, limit int, offset int) ([]types.InternalTransaction, int64, error) {
 	return nil, 0, ErrChainDataNotAvailable
@@ -364,6 +374,14 @@ func (p *ProxyDataProvider) CallerScoped() {}
 var _ CallerScopedProvider = (*ProxyDataProvider)(nil)
 
 func (p *ProxyDataProvider) doRequest(ctx context.Context, method, path string, body io.Reader, result any) error {
+	_, err := p.doRequestReturningHeader(ctx, method, path, body, result)
+	return err
+}
+
+// doRequestReturningHeader is doRequest that also surfaces the upstream response
+// headers so cursor-paginated callers can read X-Next-Cursor (RD-1149). It is
+// the single implementation; doRequest is a thin wrapper that discards headers.
+func (p *ProxyDataProvider) doRequestReturningHeader(ctx context.Context, method, path string, body io.Reader, result any) (http.Header, error) {
 	// If the caller is in "View as user" mode (RD-928), rewrite the outbound
 	// path under the admin-impersonation prefix so privacy-proxy applies the
 	// target user's visibility rules + audit-logs the access. The
@@ -373,27 +391,43 @@ func (p *ProxyDataProvider) doRequest(ctx context.Context, method, path string, 
 	url := p.baseURL + path
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if token, ok := ctx.Value(rpc.ContextKeyAuthToken).(string); ok && token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("resource not found")
+		return nil, fmt.Errorf("resource not found")
 	}
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("proxy request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+		return nil, fmt.Errorf("proxy request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 	if result == nil {
-		return nil
+		return resp.Header, nil
 	}
-	return json.NewDecoder(resp.Body).Decode(result)
+	if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
+		return resp.Header, err
+	}
+	return resp.Header, nil
+}
+
+// byAddressQuery builds the "?limit=…" query for a by-address feed, preferring
+// the opaque cursor over the legacy block-exclusive ?before= bound (they are
+// mutually exclusive; cursor wins to match the proxy's precedence, RD-1149).
+func byAddressQuery(limit int, cursor string, beforeBlock *uint64) string {
+	q := fmt.Sprintf("?limit=%d", limit)
+	if cursor != "" {
+		q += "&cursor=" + url.QueryEscape(cursor)
+	} else if beforeBlock != nil {
+		q += fmt.Sprintf("&before=%d", *beforeBlock)
+	}
+	return q
 }
 
 func (p *ProxyDataProvider) GetChainStats(ctx context.Context) (*types.ChainStats, error) {
@@ -525,14 +559,14 @@ func (p *ProxyDataProvider) GetTransaction(ctx context.Context, hash string) (*t
 	return &t, err
 }
 
-func (p *ProxyDataProvider) GetTransactionsByAddress(ctx context.Context, address string, limit int, beforeBlock *uint64) ([]types.Transaction, error) {
-	q := fmt.Sprintf("?limit=%d", limit)
-	if beforeBlock != nil {
-		q += fmt.Sprintf("&before=%d", *beforeBlock)
-	}
+func (p *ProxyDataProvider) GetTransactionsByAddress(ctx context.Context, address string, limit int, cursor string, beforeBlock *uint64) ([]types.Transaction, string, error) {
+	q := byAddressQuery(limit, cursor, beforeBlock)
 	var t []types.Transaction
-	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/addresses/%s/transactions", address)+q, nil, &t)
-	return t, err
+	hdr, err := p.doRequestReturningHeader(ctx, "GET", fmt.Sprintf("/api/v1/explorer/addresses/%s/transactions", address)+q, nil, &t)
+	if err != nil {
+		return nil, "", err
+	}
+	return t, hdr.Get("X-Next-Cursor"), nil
 }
 
 func (p *ProxyDataProvider) GetInternalTransactionsByTx(ctx context.Context, txHash string) ([]types.InternalTransaction, error) {
@@ -583,14 +617,14 @@ func (p *ProxyDataProvider) GetTokenBalances(ctx context.Context, address string
 	return b, err
 }
 
-func (p *ProxyDataProvider) GetTransfersByAddress(ctx context.Context, address string, limit int, beforeBlock *uint64) ([]types.TokenTransfer, error) {
-	q := fmt.Sprintf("?limit=%d", limit)
-	if beforeBlock != nil {
-		q += fmt.Sprintf("&before=%d", *beforeBlock)
-	}
+func (p *ProxyDataProvider) GetTransfersByAddress(ctx context.Context, address string, limit int, cursor string, beforeBlock *uint64) ([]types.TokenTransfer, string, error) {
+	q := byAddressQuery(limit, cursor, beforeBlock)
 	var t []types.TokenTransfer
-	err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/addresses/%s/transfers", address)+q, nil, &t)
-	return t, err
+	hdr, err := p.doRequestReturningHeader(ctx, "GET", fmt.Sprintf("/api/v1/explorer/addresses/%s/transfers", address)+q, nil, &t)
+	if err != nil {
+		return nil, "", err
+	}
+	return t, hdr.Get("X-Next-Cursor"), nil
 }
 
 func (p *ProxyDataProvider) GetInternalTransactionsByAddress(ctx context.Context, address string, limit int, offset int) ([]types.InternalTransaction, int64, error) {

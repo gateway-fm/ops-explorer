@@ -149,6 +149,17 @@ image, see [Deploying in privacy mode](../../privacy/deployment/).
 **Health checks** — the API exposes `/health`, `/health/live`, and `/health/ready`. Use
 `/health/ready` for Kubernetes readiness probes and `/health/live` for liveness.
 
+- `/health/live` — process liveness. Always `200` while the process is up; never touches
+  any dependency. A draining pod stays live (it is shutting down, not dead), so k8s must
+  not restart it.
+- `/health/ready` — pod readiness. Local-only: `200` normally, `503` only while the pod is
+  draining on `SIGTERM` (so k8s stops routing new traffic before in-flight requests are
+  cut). It deliberately does **not** probe upstreams — a chain-indexer (standalone) or
+  privacy-proxy (privacy) outage must not evict the explorer from its Service endpoints, or
+  a transient upstream blip cascades into an explorer outage and can deadlock rollouts.
+- `/health` — dependency-aware. Reports upstream data-source reachability; use it for
+  monitoring/alerting dashboards, **not** as a k8s readiness/liveness probe.
+
 **Database migrations** — run automatically on startup. If the database is unavailable at
 first boot the service exits and restarts (standard Kubernetes behaviour). No separate
 migration job is needed, but the database must be reachable before traffic is sent.

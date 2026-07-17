@@ -38,6 +38,7 @@ import { formatTokenValue } from '../lib/formatToken';
 import { useAuth } from '../lib/auth';
 import { features } from '../lib/features';
 import { StateMessage } from '../components/StateMessage';
+import { nextPageSearchParams } from './Address.pagination';
 
 const TABS = [
   'details',
@@ -70,6 +71,10 @@ export function Address() {
   const activeTab: Tab = tabFromParams(searchParams.get('tab'));
   const contractSubTab: ContractSubTab = contractSubTabFromParams(searchParams.get('sub'));
   const before = searchParams.get('before');
+  // RD-1149: opaque keyset cursor; when present it supersedes ?before= and pages
+  // without skipping rows at a block boundary. Older proxies omit nextCursor, so
+  // the ?before= path stays as a fallback.
+  const cursor = searchParams.get('cursor') ?? undefined;
   const page = parseInt(searchParams.get('page') || '1', 10);
 
   const setTab = (tab: Tab) => {
@@ -84,6 +89,16 @@ export function Address() {
     if (sub !== 'overview') params.set('sub', sub);
     setSearchParams(params);
   };
+
+  // Advance the active feed's pagination in place, keeping the current tab (and
+  // any other query param). See nextPageSearchParams.
+  const loadMore = useCallback(
+    (nextCursor: string | null | undefined, before: string | undefined) => {
+      if (!nextCursor && before === undefined) return;
+      setSearchParams((prev) => nextPageSearchParams(prev, nextCursor, before));
+    },
+    [setSearchParams],
+  );
 
   const { isAuthenticated } = useAuth();
 
@@ -123,14 +138,14 @@ export function Address() {
 
   // Tab-scoped fetches.
   const { data: txs, isLoading: txsLoading } = useQuery({
-    queryKey: ['addressTxs', address, before],
-    queryFn: () => api.getAddressTransactions(address!, PAGE_SIZE, before ? parseInt(before) : undefined),
+    queryKey: ['addressTxs', address, before, cursor],
+    queryFn: () => api.getAddressTransactions(address!, PAGE_SIZE, before ? parseInt(before) : undefined, cursor),
     enabled: !!address && activeTab === 'transactions',
     retry: false,
   });
   const { data: transfers, isLoading: transfersLoading } = useQuery({
-    queryKey: ['addressTransfers', address, before],
-    queryFn: () => api.getAddressTransfers(address!, PAGE_SIZE, before ? parseInt(before) : undefined),
+    queryKey: ['addressTransfers', address, before, cursor],
+    queryFn: () => api.getAddressTransfers(address!, PAGE_SIZE, before ? parseInt(before) : undefined, cursor),
     enabled: !!address && activeTab === 'transfers',
     retry: false,
   });
@@ -316,7 +331,7 @@ export function Address() {
             onShowTransfers={() => setTab('transfers')}
             onLoadMore={() => {
               const last = txs?.data?.[txs.data.length - 1];
-              if (last) setSearchParams({ before: String(last.blockNumber) });
+              loadMore(txs?.nextCursor, last ? String(last.blockNumber) : undefined);
             }}
           />
         )}
@@ -328,10 +343,7 @@ export function Address() {
             currentAddress={info.address}
             onLoadMore={() => {
               const last = transfers?.data?.[transfers.data.length - 1];
-              if (last) {
-                const p = new URLSearchParams({ tab: 'transfers', before: String(last.blockNumber) });
-                setSearchParams(p);
-              }
+              loadMore(transfers?.nextCursor, last ? String(last.blockNumber) : undefined);
             }}
           />
         )}
