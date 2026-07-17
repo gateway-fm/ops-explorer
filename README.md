@@ -188,3 +188,13 @@ make build   # compile backend + frontend
 | Explorer | [localhost:3001](http://localhost:3001) |
 | API | [localhost:8081](http://localhost:8081) |
 | Anvil RPC | [localhost:8546](http://localhost:8546) |
+
+## Contributing
+
+Contributions are accepted under Apache-2.0 with DCO sign-off (`git commit -s`);
+see [CONTRIBUTING.md](./CONTRIBUTING.md). Report security issues privately per
+[SECURITY.md](./SECURITY.md) — never in public issues.
+
+## License
+
+Apache-2.0. See [LICENSE](./LICENSE).
