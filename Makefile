@@ -38,7 +38,7 @@ export API_PORT FRONTEND_PORT POSTGRES_PORT ANVIL_PORT PUBLIC_API_PORT PROXY_NET
 # =============================================================================
 
 # The dev stack layers docker-compose.indexer.yml on top of the base
-# dev compose to bring up gateway-fm/chain-indexer locally. The
+# dev compose to bring up gateway-fm/ops-indexer locally. The
 # override references `gatewayfm/chain-indexer:latest` and pulls are
 # disabled — see README for the prerequisite build step in
 # ../chain-indexer (`make docker-build`).
@@ -141,7 +141,7 @@ dev-multi:
 	@echo "    Anvil RPC:  http://localhost:8556"
 	@echo ""
 	@echo "Open either frontend — the navbar 'Networks' dropdown switches between them."
-	@echo "Edit deploy/featured-networks.multi.json to rename / add networks (see https://gateway-fm.github.io/block-explorer/configuration/network-modes/)."
+	@echo "Edit deploy/featured-networks.multi.json to rename / add networks (see https://gateway-fm.github.io/ops-explorer/configuration/network-modes/)."
 	@echo ""
 
 dev-multi-stop:
@@ -207,7 +207,7 @@ run:
 	@echo ""
 
 run-privacy:
-	@echo "Starting Block Explorer with Privacy Proxy enabled..."
+	@echo "Starting Block Explorer with Open Privacy Suite enabled..."
 	@echo "  API  RPC: privacy-proxy-backend:8080 (proxy)"
 	@echo "  Indexer RPC: privacy-proxy-anvil:8545 (direct, for indexing)"
 	@echo ""

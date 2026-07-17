@@ -9,8 +9,8 @@ at without handing over their credentials.
 
 ## How it works
 
-When an operator views as a user, the explorer rewrites its calls to privacy-proxy's
-administrative impersonation path, naming the target user and organisation. Privacy-proxy
+When an operator views as a user, the explorer rewrites its calls to the Open Privacy Suite proxy's
+administrative impersonation path, naming the target user and organisation. The Open Privacy Suite proxy
 then applies **that user's** visibility rules to every response, so the operator sees the
 same redacted view the user would.
 
@@ -21,7 +21,7 @@ The feature is deliberately constrained:
 - **Identity-bound.** The operator's own verified identity is checked against the
   impersonation session on every request, so a leaked token cannot be replayed by someone
   else.
-- **Scoped server-side.** Privacy-proxy enforces that the operator is allowed to impersonate
+- **Scoped server-side.** The Open Privacy Suite proxy enforces that the operator is allowed to impersonate
   within that organisation; the explorer cannot grant itself access.
 
 ## Enabling it
@@ -34,11 +34,11 @@ cryptographically verified. Without JWKS verification the feature stays disabled
 So, to turn it on:
 
 1. Run in [privacy mode](../overview/) (`PRIVACY_PROXY_URL` set).
-2. Set `SSO_JWKS_URL` to privacy-proxy's JWKS endpoint (see
+2. Set `SSO_JWKS_URL` to the Open Privacy Suite proxy's JWKS endpoint (see
    [Authentication](../authentication/)).
-3. Configure the operator's impersonation permissions in privacy-proxy.
+3. Configure the operator's impersonation permissions in the Open Privacy Suite proxy.
 
-## Privacy-proxy side
+## The Open Privacy Suite side
 
-The impersonation permissions, organisation scoping, and audit trail live in privacy-proxy.
-See its [view as user documentation](https://gateway-fm.github.io/privacy-proxy/docs/security/view-as-user/).
+The impersonation permissions, organisation scoping, and audit trail live in the Open Privacy Suite proxy.
+See its [view as user documentation](https://gateway-fm.github.io/open-privacy-suite/docs/security/view-as-user/).

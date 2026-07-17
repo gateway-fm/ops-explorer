@@ -49,14 +49,14 @@ services:
       API_PORT: "8080"
       # Dev compose uses standalone mode — chain data comes direct from
       # chain-indexer over gRPC (RD-855 Phase 6). Clone
-      # gateway-fm/chain-indexer as a sibling and bring up its
+      # gateway-fm/ops-indexer as a sibling and bring up its
       # docker-compose alongside this one; that stack exposes a service
       # at chain-indexer:50051 reachable on this shared network.
       #
       # Do NOT also set PRIVACY_PROXY_URL here — the api rejects having
       # both INDEXER_URL and PRIVACY_PROXY_URL set. For privacy-mode dev,
       # unset INDEXER_URL and use the compose-override pattern to point
-      # PRIVACY_PROXY_URL at a running privacy-proxy instead.
+      # PRIVACY_PROXY_URL at a running Open Privacy Suite proxy instead.
       INDEXER_URL: ${INDEXER_URL:-chain-indexer:50051}
       ENABLE_GAS_PRICES: ${ENABLE_GAS_PRICES:-false}
     volumes:
@@ -69,7 +69,7 @@ services:
     restart: unless-stopped
 
   # Block-explorer's own indexer service was retired (RD-855 Phase 6).
-  # Chain data comes from gateway-fm/chain-indexer.
+  # Chain data comes from gateway-fm/ops-indexer.
 
   public-api:
     platform: linux/amd64
@@ -110,7 +110,7 @@ services:
       VITE_PUBLIC_API_URL: http://localhost:${PUBLIC_API_PORT:-8082}
       # Single-network mode: no network switcher. This is the default for every
       # deployment; flip to "true" (and provide featured-networks.json) only to
-      # run the multi-network switcher. See https://gateway-fm.github.io/block-explorer/configuration/network-modes/.
+      # run the multi-network switcher. See https://gateway-fm.github.io/ops-explorer/configuration/network-modes/.
       VITE_MULTI_NETWORK_ENABLED: "false"
     command: sh -c "npm install --legacy-peer-deps && npm run dev -- --host 0.0.0.0 --port 3001"
     depends_on:

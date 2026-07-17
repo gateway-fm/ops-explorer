@@ -9,7 +9,7 @@ scanner-backed SBOMs and update this file (see "Required Follow-Up").
 
 - `backend/proto/chain_indexer/v1` and `backend/gen/go/chain_indexer/v1` —
   protocol definitions and protoc-generated Go code for the chain-indexer gRPC
-  API. The source of truth is the gateway-fm/chain-indexer repository, expected
+  API. The source of truth is the gateway-fm/ops-indexer repository, expected
   to be published under Apache-2.0 as part of the same coordinated release.
 - `backend/pkg/eth` — original, minimal, API-compatible Ethereum utility
   packages written for this project (address/hash types, EIP-55 checksum,
@@ -75,11 +75,11 @@ releases, not for source publication:
 
 ## Gateway Repositories In The Coordinated Release
 
-- gateway-fm/block-explorer — this repository.
-- gateway-fm/chain-indexer — source of the vendored proto definitions;
+- gateway-fm/ops-explorer — this repository.
+- gateway-fm/ops-indexer — source of the vendored proto definitions;
   required by standalone mode; expected Apache-2.0.
-- gateway-fm/privacy-proxy — optional privacy-mode upstream; expected
-  Apache-2.0.
+- gateway-fm/open-privacy-suite — Open Privacy Suite, the optional
+  privacy-mode upstream; expected Apache-2.0.
 
 ## Required Follow-Up (before first official binary/image release)
 

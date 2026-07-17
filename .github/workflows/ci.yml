@@ -259,7 +259,7 @@ jobs:
     # Self-contained mock-based basic-UI suite (PLAN_UI_E2E_TESTS.md §1/§4):
     # serves the built frontend via `vite preview` and intercepts every /api
     # call in-browser (e2e/playwright/fixtures/api-mock.ts). No backend /
-    # privacy-proxy required, so it runs on every PR — distinct from the
+    # Open Privacy Suite proxy required, so it runs on every PR — distinct from the
     # real-stack `e2e-playwright` job below (workflow_dispatch only).
     runs-on: ubuntu-latest
     steps:
@@ -301,7 +301,7 @@ jobs:
 
   e2e-playwright:
     name: E2E (Playwright, privacy) — manual
-    # Per-PR e2e needs a privacy-proxy image, which is NOT in this repo. This
+    # Per-PR e2e needs an Open Privacy Suite proxy image, which is NOT in this repo. This
     # job is dispatch-only and is skipped unless PRIVACY_PROXY_IMAGE is set as
     # a repo variable AND the dispatch opt-in is selected. See the PR notes:
     # the proxy image + compose wiring must be provided before this runs green.

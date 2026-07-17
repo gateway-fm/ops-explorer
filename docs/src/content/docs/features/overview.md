@@ -55,6 +55,6 @@ search, and stats for programmatic access — with an interactive "Try it" docs 
 
 ## Privacy & access control
 
-When deployed behind privacy-proxy, the explorer supports **RBAC-based redaction**,
+When deployed behind the Open Privacy Suite proxy, the explorer supports **RBAC-based redaction**,
 **SSO/OAuth login**, and a **"View as user"** impersonation mode for operators. See
 [Deployment Modes](../../configuration/deployment-modes/).

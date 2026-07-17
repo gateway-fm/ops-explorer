@@ -15,8 +15,8 @@
 #                          consumers)
 #   - frontend            (React SPA served by nginx)
 #
-# Operators running block-explorer behind privacy-proxy do NOT use
-# this file — privacy-proxy's own compose stack provides chain-indexer.
+# Operators running block-explorer behind the Open Privacy Suite do NOT use
+# this file — the Open Privacy Suite's own compose stack provides chain-indexer.
 # Use the repo-root `docker-compose.yml` + `docker-compose.privacy.yml`
 # overlay instead (or `make run-privacy`).
 #
@@ -119,11 +119,11 @@ services:
       SOLC_PATH: /opt/solc                          # Path to solc binaries for contract verification
 
       # --- Privacy mode (optional) ---
-      # If you want to route chain reads through privacy-proxy for
+      # If you want to route chain reads through the Open Privacy Suite proxy for
       # RBAC redaction instead of going direct to chain-indexer:
       # 1. Comment out INDEXER_URL above (api rejects both being set).
       # 2. Set the values below. Block-explorer also has to be on
-      #    privacy-proxy's network — see docker-compose.privacy.yml in
+      #    the Open Privacy Suite network — see docker-compose.privacy.yml in
       #    the repo root for the canonical wiring.
       # PRIVACY_PROXY_URL: http://privacy-proxy-backend:8080
       # PRIVACY_PROXY_PUBLIC_URL: https://privacy.example.com

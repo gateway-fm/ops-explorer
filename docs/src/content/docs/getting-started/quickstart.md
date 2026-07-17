@@ -12,11 +12,11 @@ services, the frontend, and the chain-indexer — all via Docker Compose.
 - [Docker](https://docs.docker.com/get-docker/) & Docker Compose (v2.x or newer)
 - [Make](https://www.gnu.org/software/make/)
 - A locally built `gatewayfm/chain-indexer:latest` image. The indexer lives in a
-  [separate repo](https://github.com/gateway-fm/chain-indexer). Clone it as a sibling of
+  [separate repo](https://github.com/gateway-fm/ops-indexer). Clone it as a sibling of
   this checkout and build the image before running `make dev`:
 
   ```bash
-  git clone https://github.com/gateway-fm/chain-indexer.git ../chain-indexer
+  git clone https://github.com/gateway-fm/ops-indexer.git ../chain-indexer
   cd ../chain-indexer && make docker-build
   ```
 

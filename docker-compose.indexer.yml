@@ -1,4 +1,4 @@
-# Dev override bringing up gateway-fm/chain-indexer alongside the dev
+# Dev override bringing up gateway-fm/ops-indexer alongside the dev
 # stack. Uses pull_policy: never — the local image is a prerequisite
 # (`make docker-build` in ../chain-indexer). See README.
 

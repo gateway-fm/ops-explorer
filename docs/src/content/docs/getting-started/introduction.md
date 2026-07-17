@@ -25,10 +25,10 @@ The explorer is composed of a few small services, each independently deployable:
 | **API** | Go HTTP server that powers the explorer frontend — blocks, transactions, addresses, gas prices. |
 | **Public API** | A separate Go binary exposing a rate-limited, read-only REST API for programmatic access. |
 | **Frontend** | React + TypeScript SPA built with Vite and TailwindCSS. |
-| **chain-indexer** | A Go service (in a [separate repo](https://github.com/gateway-fm/chain-indexer)) that polls an RPC node and indexes chain data. |
+| **chain-indexer** | A Go service (in a [separate repo](https://github.com/gateway-fm/ops-indexer)) that polls an RPC node and indexes chain data. |
 
 Chain data reaches the explorer over gRPC from `chain-indexer`, either directly
-(**standalone mode**) or mediated by privacy-proxy (**privacy mode**). See
+(**standalone mode**) or mediated by the Open Privacy Suite proxy (**privacy mode**). See
 [Deployment Modes](../../configuration/deployment-modes/) for the difference.
 
 ## Where to go next
