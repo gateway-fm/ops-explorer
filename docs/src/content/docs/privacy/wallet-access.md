@@ -23,7 +23,7 @@ them. (The anonymous proxy `/rpc` endpoint only serves claim-free metadata such 
 
 The bridge is **[jwt-injector](https://github.com/gateway-fm/jwt-injector)**, a small helper
 the user runs locally. It holds the user's token and forwards their wallet's requests to
-the Open Privacy Suite proxy with the bearer token and org-scoped path attached. MetaMask is then pointed at
+the Open Privacy Suite with the bearer token and org-scoped path attached. MetaMask is then pointed at
 the helper's local port instead of at the chain.
 
 So the flow is:
@@ -35,14 +35,14 @@ So the flow is:
    `privacyProxyPublicUrl` (exposed by `GET /api/v1/chain-info`, the public proxy base URL
    with no `/rpc` suffix).
 4. The user points MetaMask at the local jwt-injector port. From then on, the wallet's
-   requests flow wallet → jwt-injector (adds JWT + org path) → Open Privacy Suite proxy (authenticates,
+   requests flow wallet → jwt-injector (adds JWT + org path) → Open Privacy Suite (authenticates,
    redacts) → chain.
 
 :::note[Two different "injectors"]
 This page is about the **jwt-injector helper** that gives a *wallet* access. That is separate
 from the explorer API's own [JWT injection](../authentication/#jwt-injection-forwarding-your-identity),
 which attaches the user's token to the explorer's *server-side* reads. Same idea (forward the
-user's identity to the Open Privacy Suite proxy), two different places it happens.
+user's identity to the Open Privacy Suite), two different places it happens.
 :::
 
 ## Related settings

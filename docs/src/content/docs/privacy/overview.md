@@ -1,6 +1,6 @@
 ---
 title: Privacy Mode
-description: Run the block explorer as a privacy-preserving, permissioned explorer behind the Open Privacy Suite proxy — RBAC-redacted data, SSO login, and per-user visibility.
+description: Run the block explorer as a privacy-preserving, permissioned explorer behind the Open Privacy Suite — RBAC-redacted data, SSO login, and per-user visibility.
 ---
 
 The explorer can run in one of two [deployment modes](../../configuration/deployment-modes/).
@@ -16,10 +16,10 @@ same address can see two different, individually redacted views.
 
 |  | Standalone | Privacy |
 |---|---|---|
-| Chain data source | chain-indexer over gRPC (`INDEXER_URL`) | Open Privacy Suite proxy REST (`PRIVACY_PROXY_URL`) |
+| Chain data source | chain-indexer over gRPC (`INDEXER_URL`) | Open Privacy Suite REST (`PRIVACY_PROXY_URL`) |
 | Data visibility | Raw and public; every visitor sees everything | RBAC-redacted, per authenticated user |
-| Authentication | None | SSO / OAuth, via the Open Privacy Suite proxy |
-| Who serves the frontend | The explorer's own frontend | Usually the Open Privacy Suite proxy itself |
+| Authentication | None | SSO / OAuth, via the Open Privacy Suite |
+| Who serves the frontend | The explorer's own frontend | Usually the Open Privacy Suite itself |
 | Use it for | Public explorers on open chains | Confidential or permissioned chains |
 
 ## The explorer and the Open Privacy Suite
@@ -29,16 +29,16 @@ Privacy mode is a partnership between two services:
 - **Open Privacy Suite** owns identity, access control, and redaction. It sits between clients and
   the chain, authenticates users, and filters every response according to their role and
   grants. This is where the privacy rules live.
-- **the block explorer** provides the UI and a thin API in front of the Open Privacy Suite proxy. It holds
-  no chain data of its own; it forwards each read to the Open Privacy Suite proxy with the user's session
-  attached, and renders whatever the Open Privacy Suite proxy returns.
+- **the block explorer** provides the UI and a thin API in front of the Open Privacy Suite. It holds
+  no chain data of its own; it forwards each read to the Open Privacy Suite with the user's session
+  attached, and renders whatever the Open Privacy Suite returns.
 
-Because the Open Privacy Suite proxy is the source of truth for visibility, you configure roles, grants, and
+Because the Open Privacy Suite is the source of truth for visibility, you configure roles, grants, and
 filtering in **its** documentation, not here. This section explains how the explorer plugs
 into it.
 
 :::tip[Set up the Open Privacy Suite first]
-Privacy mode does nothing without a running Open Privacy Suite proxy. Stand one up using its own docs,
+Privacy mode does nothing without a running Open Privacy Suite. Stand one up using its own docs,
 then point the explorer at it.
 
 - [Getting started](https://gateway-fm.github.io/open-privacy-suite/docs/getting-started/)

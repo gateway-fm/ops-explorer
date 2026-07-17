@@ -5,7 +5,7 @@
 #       --profile standalone up -d
 #     # Or, with dev-friendly defaults pre-set: make standalone
 #
-#   Privacy mode (chain data via the Open Privacy Suite proxy; that stack must be running):
+#   Privacy mode (chain data via the Open Privacy Suite; that stack must be running):
 #     docker compose -f docker-compose.yml -f docker-compose.privacy.yml \
 #       -f docker-compose.prod.yml up -d
 #     # Or: make run-privacy
@@ -42,7 +42,7 @@
 #   Standalone mode — chain-indexer direct, raw chain data:
 #     INDEXER_URL               chain-indexer:50051 (or external indexer)
 #
-#   Privacy mode — reads routed through the Open Privacy Suite proxy, redaction applied:
+#   Privacy mode — reads routed through the Open Privacy Suite, redaction applied:
 #     PRIVACY_PROXY_URL         http://privacy-proxy-backend:8080
 #     PRIVACY_PROXY_PUBLIC_URL  https://proxy.yourdomain.com
 #     SSO_REDIRECT_URI          https://explorer.yourdomain.com/api/auth/callback
@@ -64,7 +64,7 @@ services:
   # they prefer; but the default is a working stack).
   #
   # Privacy-mode deployments leave these off and point api at
-  # the Open Privacy Suite proxy via docker-compose.privacy.yml instead.
+  # the Open Privacy Suite via docker-compose.privacy.yml instead.
   anvil:
     image: ghcr.io/foundry-rs/foundry:latest
     profiles: [standalone]
@@ -182,7 +182,7 @@ services:
       # authoritative chainId comes from GET /chain-info; VITE_CHAIN_ID is a
       # fallback. VITE_RPC_URL is a standalone/node concern — the node's
       # browser-facing public RPC a wallet connects to directly. It is left to
-      # the operator (no default), and is NOT the Open Privacy Suite proxy: in privacy mode
+      # the operator (no default), and is NOT the Open Privacy Suite: in privacy mode
       # the wallet connects via a locally-run jwt-injector configured in the
       # in-app MetaMask setup dialog, so no proxy /rpc is ever fed to a wallet.
       VITE_RPC_URL: ${VITE_RPC_URL:-}

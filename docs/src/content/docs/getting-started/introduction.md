@@ -28,7 +28,7 @@ The explorer is composed of a few small services, each independently deployable:
 | **chain-indexer** | A Go service (in a [separate repo](https://github.com/gateway-fm/ops-indexer)) that polls an RPC node and indexes chain data. |
 
 Chain data reaches the explorer over gRPC from `chain-indexer`, either directly
-(**standalone mode**) or mediated by the Open Privacy Suite proxy (**privacy mode**). See
+(**standalone mode**) or mediated by the Open Privacy Suite (**privacy mode**). See
 [Deployment Modes](../../configuration/deployment-modes/) for the difference.
 
 ## Where to go next

@@ -56,7 +56,7 @@ services:
       # Do NOT also set PRIVACY_PROXY_URL here — the api rejects having
       # both INDEXER_URL and PRIVACY_PROXY_URL set. For privacy-mode dev,
       # unset INDEXER_URL and use the compose-override pattern to point
-      # PRIVACY_PROXY_URL at a running Open Privacy Suite proxy instead.
+      # PRIVACY_PROXY_URL at a running Open Privacy Suite instead.
       INDEXER_URL: ${INDEXER_URL:-chain-indexer:50051}
       ENABLE_GAS_PRICES: ${ENABLE_GAS_PRICES:-false}
     volumes:

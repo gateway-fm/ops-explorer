@@ -53,7 +53,7 @@ The explorer API reads chain data from chain-indexer over gRPC in one of two mod
 
 Exactly one source must be configured. See
 [Deployment Modes](../../configuration/deployment-modes/) for the full reasoning and
-configuration, including how the explorer integrates with the Open Privacy Suite proxy.
+configuration, including how the explorer integrates with the Open Privacy Suite.
 
 ## Why the public API is separate
 

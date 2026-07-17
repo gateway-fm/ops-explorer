@@ -119,7 +119,7 @@ services:
       SOLC_PATH: /opt/solc                          # Path to solc binaries for contract verification
 
       # --- Privacy mode (optional) ---
-      # If you want to route chain reads through the Open Privacy Suite proxy for
+      # If you want to route chain reads through the Open Privacy Suite for
       # RBAC redaction instead of going direct to chain-indexer:
       # 1. Comment out INDEXER_URL above (api rejects both being set).
       # 2. Set the values below. Block-explorer also has to be on

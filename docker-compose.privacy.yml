@@ -1,9 +1,9 @@
 # Privacy-mode overlay — layer on top of docker-compose.yml when this
-# block-explorer is reading chain data through the Open Privacy Suite proxy.
+# block-explorer is reading chain data through the Open Privacy Suite.
 #
 # Only attaches the api / public-api / postgres services to the
 # privacy-proxy_proxy-network so they can reach `privacy-proxy-backend`
-# and so the Open Privacy Suite proxy can reach `explorer-postgres` (postgres alias).
+# and so the Open Privacy Suite can reach `explorer-postgres` (postgres alias).
 # That network is created by the Open Privacy Suite compose stack — operators
 # MUST start the Open Privacy Suite stack first.
 #

@@ -1,17 +1,17 @@
 ---
 title: How Privacy Mode Works
-description: The end-to-end request, redaction, and auth flow when the block explorer runs behind the Open Privacy Suite proxy.
+description: The end-to-end request, redaction, and auth flow when the block explorer runs behind the Open Privacy Suite.
 ---
 
 In privacy mode the explorer's API is a **backend-for-frontend (BFF)**: it holds no chain
-data, and every read is proxied to the Open Privacy Suite proxy, which authenticates the caller and redacts
+data, and every read is proxied to the Open Privacy Suite, which authenticates the caller and redacts
 the response before it ever reaches the explorer.
 
 ## Architecture
 
 ```
                               ┌──────────────────────────┐
-chain-indexer (gRPC) ───────► │ Open Privacy Suite proxy │
+chain-indexer (gRPC) ───────► │ Open Privacy Suite │
                               │  auth · RBAC · redaction │
                               └──────────────┬───────────┘
                                              │ REST (token attached)
@@ -32,21 +32,21 @@ service in between. See [Deployment Modes](../../configuration/deployment-modes/
 
 1. A signed-in user opens an address or transaction in the explorer UI.
 2. The frontend calls the explorer API at `/api/v1/...`, sending the user's session cookie.
-3. The explorer API (the BFF) forwards that read to the Open Privacy Suite proxy's REST explorer API,
+3. The explorer API (the BFF) forwards that read to the Open Privacy Suite's REST explorer API,
    [injecting the user's token](../authentication/#jwt-injection-forwarding-your-identity) as
    an `Authorization: Bearer` header.
-4. **The Open Privacy Suite proxy authenticates the caller, resolves their role and grants, and redacts the
+4. **The Open Privacy Suite authenticates the caller, resolves their role and grants, and redacts the
    response.** The explorer only ever receives already-filtered data.
 5. The explorer renders the redacted result. Two different users can receive two different
    views of the same on-chain object.
 
-Because each response is scoped to one caller, the explorer **never caches** the Open Privacy Suite proxy
+Because each response is scoped to one caller, the explorer **never caches** the Open Privacy Suite
 data: a per-caller provider is structurally prevented from being cache-wrapped, so one user's
 redacted view can never leak into another's.
 
 ## Access control and redaction
 
-The rules that decide what each user sees are defined and enforced in the Open Privacy Suite proxy, not in
+The rules that decide what each user sees are defined and enforced in the Open Privacy Suite, not in
 the explorer:
 
 - **[RBAC](https://gateway-fm.github.io/open-privacy-suite/docs/rbac/)** — roles and the data
@@ -55,13 +55,13 @@ the explorer:
   — how fields and records are redacted before a response is returned.
 
 The explorer simply displays the filtered data. To change what a user can see, change their
-role or grants in the Open Privacy Suite proxy.
+role or grants in the Open Privacy Suite.
 
 :::note[Who serves the frontend?]
-In a typical privacy deployment, the Open Privacy Suite proxy serves the block-explorer frontend itself and
+In a typical privacy deployment, the Open Privacy Suite serves the block-explorer frontend itself and
 proxies `/api/*` straight to its own REST API, so the standalone block-explorer API is **not
 deployed at all**. The API binary still supports privacy mode for mixed deployments where you
-run the explorer's own API behind the Open Privacy Suite proxy.
+run the explorer's own API behind the Open Privacy Suite.
 :::
 
 ## Next
