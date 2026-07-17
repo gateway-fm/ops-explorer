@@ -176,9 +176,10 @@ func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *h
 	}
 
 	limit := parseLimit(r)
+	cursor := parseCursor(r)
 	beforeBlock := parseBeforeBlock(r)
 
-	body, statusCode, err := s.privacyClient.GetGrantTransactions(r.Context(), grantID, addressID, limit, beforeBlock)
+	body, statusCode, err := s.privacyClient.GetGrantTransactions(r.Context(), grantID, addressID, limit, cursor, beforeBlock)
 	if err != nil {
 		// P-3: grant_id / address_id are privacy-sensitive identifiers — omit them.
 		log.Warn("privacy: get grant transactions failed", "error", err)

@@ -112,7 +112,7 @@ type tcTransfersProvider struct {
 	rows []types.TokenTransfer
 }
 
-func (p *tcTransfersProvider) GetTransfersByAddress(_ context.Context, _ string, limit int, beforeBlock *uint64) ([]types.TokenTransfer, error) {
+func (p *tcTransfersProvider) GetTransfersByAddress(_ context.Context, _ string, limit int, _ string, beforeBlock *uint64) ([]types.TokenTransfer, string, error) {
 	start := 0
 	if beforeBlock != nil {
 		for i, r := range p.rows {
@@ -130,7 +130,7 @@ func (p *tcTransfersProvider) GetTransfersByAddress(_ context.Context, _ string,
 	if start > len(p.rows) {
 		start = len(p.rows)
 	}
-	return p.rows[start:end], nil
+	return p.rows[start:end], "", nil
 }
 
 func makeTransfers(n int) []types.TokenTransfer {

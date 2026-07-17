@@ -475,17 +475,16 @@ func (s *Server) handleGetAddressTransactions(w http.ResponseWriter, r *http.Req
 	address = common.HexToAddress(address).Hex()
 
 	limit := parseLimit(r)
+	cursor := parseCursor(r)
 	beforeBlock := parseBeforeBlock(r)
 
-	txs, err := s.provider.GetTransactionsByAddress(r.Context(), address, limit+1, beforeBlock)
+	txs, nextCursor, err := s.provider.GetTransactionsByAddress(r.Context(), address, limit, cursor, beforeBlock)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	writeJSON(w, paginate(txs, limit, func(tx types.Transaction) string {
-		return strconv.FormatUint(tx.BlockNumber, 10)
-	}))
+	writeJSON(w, cursorPage(txs, nextCursor))
 }
 
 func (s *Server) handleGetContract(w http.ResponseWriter, r *http.Request) {
@@ -553,17 +552,16 @@ func (s *Server) handleGetAddressTransfers(w http.ResponseWriter, r *http.Reques
 	address = common.HexToAddress(address).Hex()
 
 	limit := parseLimit(r)
+	cursor := parseCursor(r)
 	beforeBlock := parseBeforeBlock(r)
 
-	transfers, err := s.provider.GetTransfersByAddress(r.Context(), address, limit+1, beforeBlock)
+	transfers, nextCursor, err := s.provider.GetTransfersByAddress(r.Context(), address, limit, cursor, beforeBlock)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	writeJSON(w, paginate(transfers, limit, func(tt types.TokenTransfer) string {
-		return strconv.FormatUint(tt.BlockNumber, 10)
-	}))
+	writeJSON(w, cursorPage(transfers, nextCursor))
 }
 
 func (s *Server) handleGetTransactionTransfers(w http.ResponseWriter, r *http.Request) {
@@ -801,6 +799,32 @@ func parseBeforeBlock(r *http.Request) *uint64 {
 		}
 	}
 	return nil
+}
+
+// parseCursor reads the opaque keyset cursor (RD-1149). It is passed through to
+// the provider verbatim; the block-explorer BFF never interprets it. When set it
+// takes precedence over ?before= (the provider enforces the precedence).
+func parseCursor(r *http.Request) string {
+	return r.URL.Query().Get("cursor")
+}
+
+// cursorPage wraps a keyset-paginated page in the shared PaginatedResponse. The
+// provider already returns the authoritative next-page cursor ("" == exhausted),
+// so HasMore is simply nextCursor != "" — no over-fetch sentinel needed.
+//
+// A nil page is normalized to an empty slice so Data marshals as [] rather than
+// null (PaginatedResponse.Data has no omitempty and the frontend treats it as
+// T[]); this mirrors publicapi.cursorPage.
+func cursorPage[T any](items []T, nextCursor string) types.PaginatedResponse[T] {
+	if items == nil {
+		items = []T{}
+	}
+	resp := types.PaginatedResponse[T]{Data: items, HasMore: nextCursor != ""}
+	if nextCursor != "" {
+		c := nextCursor
+		resp.NextCursor = &c
+	}
+	return resp
 }
 
 // paginate trims an over-fetched (limit+1) slice and emits the next-page

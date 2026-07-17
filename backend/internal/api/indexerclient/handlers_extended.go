@@ -61,21 +61,23 @@ func offsetPage(offset, limit int) (page, normLimit int) {
 
 // ----- Transactions: by-address cursor feed -----
 
-func (p *Provider) GetTransactionsByAddress(ctx context.Context, address string, limit int, beforeBlock *uint64) ([]types.Transaction, error) {
+func (p *Provider) GetTransactionsByAddress(ctx context.Context, address string, limit int, cursor string, beforeBlock *uint64) ([]types.Transaction, string, error) {
+	// cursor (opaque keyset) takes precedence over the legacy block-exclusive
+	// beforeBlock bound; the indexer applies whichever is set (RD-1149).
 	req := &indexerv1.ListTransactionsRequest{
-		Page: &indexerv1.PageRequest{PageSize: int32(limit)},
+		Page: &indexerv1.PageRequest{PageSize: int32(limit), Cursor: cursor},
 		Filter: &indexerv1.ListTransactionsRequest_ByAddress{
 			ByAddress: &indexerv1.ListTransactionsRequest_AddressFilter{Address: address},
 		},
 	}
-	if beforeBlock != nil {
+	if cursor == "" && beforeBlock != nil {
 		req.BlockRange = &indexerv1.BlockRange{ToBlock: *beforeBlock}
 	}
 	resp, err := p.client.ListTransactions(ctx, req)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return mapTransactions(resp.GetTransactions()), nil
+	return mapTransactions(resp.GetTransactions()), resp.GetPage().GetNextCursor(), nil
 }
 
 // ----- Transactions: offset-paginated feeds -----
@@ -173,19 +175,21 @@ func (p *Provider) GetTransfersByTransaction(ctx context.Context, txHash string)
 	return mapTokenTransfers(resp.GetTransfers()), nil
 }
 
-func (p *Provider) GetTransfersByAddress(ctx context.Context, address string, limit int, beforeBlock *uint64) ([]types.TokenTransfer, error) {
+func (p *Provider) GetTransfersByAddress(ctx context.Context, address string, limit int, cursor string, beforeBlock *uint64) ([]types.TokenTransfer, string, error) {
+	// cursor (opaque keyset) takes precedence over the legacy block-exclusive
+	// beforeBlock bound; the indexer applies whichever is set (RD-1149).
 	req := &indexerv1.ListTokenTransfersRequest{
 		ByAddress: address,
-		Page:      &indexerv1.PageRequest{PageSize: int32(limit)},
+		Page:      &indexerv1.PageRequest{PageSize: int32(limit), Cursor: cursor},
 	}
-	if beforeBlock != nil {
+	if cursor == "" && beforeBlock != nil {
 		req.BlockRange = &indexerv1.BlockRange{ToBlock: *beforeBlock}
 	}
 	resp, err := p.client.ListTokenTransfers(ctx, req)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return mapTokenTransfers(resp.GetTransfers()), nil
+	return mapTokenTransfers(resp.GetTransfers()), resp.GetPage().GetNextCursor(), nil
 }
 
 func (p *Provider) GetTransfersByToken(ctx context.Context, tokenAddress string, limit int, offset int) ([]types.TokenTransfer, int64, error) {

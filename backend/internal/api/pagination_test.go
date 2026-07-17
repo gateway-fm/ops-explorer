@@ -12,8 +12,10 @@ package api
 // cumulative chart math against the spec, independent of upstream mapping.
 
 import (
+	"encoding/json"
 	"math"
 	"strconv"
+	"strings"
 	"testing"
 
 	"explorer/internal/types"
@@ -35,6 +37,46 @@ func TestPaginate_CursorIsLastBlockNumber(t *testing.T) {
 	}
 	if resp.NextCursor == nil || *resp.NextCursor != "150" {
 		t.Errorf("NextCursor = %v, want \"150\" (last returned row's block number)", resp.NextCursor)
+	}
+}
+
+// RD-1149 (api side): cursorPage wraps a keyset page. The provider returns the
+// authoritative opaque next-cursor, so HasMore == (nextCursor != "") and the
+// emitted NextCursor is that opaque value verbatim (not a block number).
+func TestCursorPage(t *testing.T) {
+	rows := []types.Transaction{{Hash: "0xa", BlockNumber: 200}, {Hash: "0xb", BlockNumber: 150}}
+
+	more := cursorPage(rows, "opaque-next")
+	if !more.HasMore {
+		t.Error("HasMore = false, want true when a next cursor is present")
+	}
+	if more.NextCursor == nil || *more.NextCursor != "opaque-next" {
+		t.Errorf("NextCursor = %v, want \"opaque-next\" (opaque provider value verbatim)", more.NextCursor)
+	}
+	if len(more.Data) != 2 {
+		t.Errorf("len(Data) = %d, want 2 (no over-fetch trimming)", len(more.Data))
+	}
+
+	last := cursorPage(rows, "")
+	if last.HasMore {
+		t.Error("HasMore = true, want false when the cursor is empty (exhausted)")
+	}
+	if last.NextCursor != nil {
+		t.Errorf("NextCursor = %v, want nil when exhausted", *last.NextCursor)
+	}
+
+	// A nil page must serialize as an empty JSON array, not null, so clients
+	// that treat Data as T[] don't break (Copilot review on #125).
+	empty := cursorPage[types.Transaction](nil, "")
+	if empty.Data == nil || len(empty.Data) != 0 {
+		t.Errorf("Data = %v, want a non-nil empty slice", empty.Data)
+	}
+	b, err := json.Marshal(empty)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(b), `"data":[]`) {
+		t.Errorf("marshaled = %s, want it to contain \"data\":[] (not null)", b)
 	}
 }
 
