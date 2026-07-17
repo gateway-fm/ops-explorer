@@ -10,9 +10,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/gateway-fm/block-explorer/actions/workflows/ci.yml"><img src="https://github.com/gateway-fm/block-explorer/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <a href="https://github.com/gateway-fm/block-explorer/actions/workflows/docker-build.yml"><img src="https://github.com/gateway-fm/block-explorer/actions/workflows/docker-build.yml/badge.svg" alt="Docker Build" /></a>
-  <a href="https://github.com/gateway-fm/block-explorer/actions/workflows/release.yml"><img src="https://github.com/gateway-fm/block-explorer/actions/workflows/release.yml/badge.svg" alt="Release" /></a>
+  <a href="https://github.com/gateway-fm/ops-explorer/actions/workflows/ci.yml"><img src="https://github.com/gateway-fm/ops-explorer/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/gateway-fm/ops-explorer/actions/workflows/docker-build.yml"><img src="https://github.com/gateway-fm/ops-explorer/actions/workflows/docker-build.yml/badge.svg" alt="Docker Build" /></a>
+  <a href="https://github.com/gateway-fm/ops-explorer/actions/workflows/release.yml"><img src="https://github.com/gateway-fm/ops-explorer/actions/workflows/release.yml/badge.svg" alt="Release" /></a>
 </p>
 
 ---
@@ -33,10 +33,10 @@ Spins up a local [Anvil](https://book.getfoundry.sh/reference/anvil/) testnet, P
 
 - [Docker](https://docs.docker.com/get-docker/) & Docker Compose
 - [Make](https://www.gnu.org/software/make/)
-- A locally built `gatewayfm/chain-indexer:latest` image. The indexer lives in a separate repo ([gateway-fm/chain-indexer](https://github.com/gateway-fm/chain-indexer)) and is no longer bundled here. Clone it as a sibling of this checkout and build the image before running `make dev`:
+- A locally built `gatewayfm/chain-indexer:latest` image. The indexer lives in a separate repo ([gateway-fm/ops-indexer](https://github.com/gateway-fm/ops-indexer)) and is no longer bundled here. Note: only the GitHub repo was renamed to `ops-indexer` — the Docker image (and the sibling directory used below) keep the `chain-indexer` name. Clone it as a sibling of this checkout and build the image before running `make dev`:
 
   ```bash
-  git clone https://github.com/gateway-fm/chain-indexer.git ../chain-indexer
+  git clone https://github.com/gateway-fm/ops-indexer.git ../chain-indexer
   cd ../chain-indexer && make docker-build
   ```
 
@@ -127,7 +127,7 @@ RPC_URL=https://rpc.example.com make run BRAND=examples/branding/docker-compose.
 
 Set any social or company link to `""` to hide it from the footer.
 
-See the [Branding & Whitelabel docs](https://gateway-fm.github.io/block-explorer/configuration/branding/) for the full reference.
+See the [Branding & Whitelabel docs](https://gateway-fm.github.io/ops-explorer/configuration/branding/) for the full reference.
 
 ## Public API
 
@@ -146,7 +146,7 @@ curl http://localhost:8082/api/v1/search/suggestions?q=0xf39
 | `RATE_LIMIT` | `100` | Requests per window |
 | `RATE_LIMIT_WINDOW` | `1m` | Rate limit window |
 
-Interactive API docs are available at `/api-docs` in the explorer UI. See the [Public REST API docs](https://gateway-fm.github.io/block-explorer/api/public-api/) for the full reference.
+Interactive API docs are available at `/api-docs` in the explorer UI. See the [Public REST API docs](https://gateway-fm.github.io/ops-explorer/api/public-api/) for the full reference.
 
 ## Docker Images
 

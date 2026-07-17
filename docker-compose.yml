@@ -47,8 +47,8 @@ services:
       #                      deployments of block-explorer.
       #
       #   PRIVACY_PROXY_URL  privacy mode: reads routed through
-      #                      privacy-proxy's REST explorer API.
-      #                      Privacy-proxy applies RBAC-based redaction
+      #                      the Open Privacy Suite's REST explorer API.
+      #                      It applies RBAC-based redaction
       #                      before returning data.
       #
       # The api process rejects both-set and neither-set at startup.
@@ -65,9 +65,9 @@ services:
     restart: unless-stopped
 
   # Block-explorer's own indexer was retired in RD-855 Phase 6. Chain
-  # data now comes from gateway-fm/chain-indexer. This compose expects
+  # data now comes from gateway-fm/ops-indexer. This compose expects
   # chain-indexer to be reachable at INDEXER_URL (default:
-  # chain-indexer:50051 on the shared privacy-proxy network). For a
+  # chain-indexer:50051 on the shared Open Privacy Suite network). For a
   # fully standalone local dev stack, clone chain-indexer as a sibling
   # and bring up its docker-compose alongside this one.
 
@@ -108,7 +108,7 @@ services:
       VITE_PUBLIC_API_URL: http://localhost:${PUBLIC_API_PORT:-8082}
       # MetaMask "Add Network" config (RD-1031). VITE_RPC_URL is a
       # standalone/node concern: it is the node's browser-facing public RPC
-      # that a wallet connects to directly when there is no privacy-proxy.
+      # that a wallet connects to directly when there is no Open Privacy Suite.
       # In privacy mode the wallet does NOT use this — it connects via a
       # locally-run jwt-injector configured client-side in the in-app MetaMask
       # setup dialog — so we never default it to the proxy /rpc endpoint here.

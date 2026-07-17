@@ -93,7 +93,7 @@ jobs:
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       # Keyless signature via the workflow's OIDC identity; verifiable with
-      # `cosign verify --certificate-identity-regexp 'github.com/gateway-fm/block-explorer'
+      # `cosign verify --certificate-identity-regexp 'github.com/gateway-fm/ops-explorer'
       #  --certificate-oidc-issuer https://token.actions.githubusercontent.com <image>@<digest>`.
       # Signing by digest (not tag) so the signature is immune to tag moves.
       - name: Sign image (keyless OIDC)
@@ -110,7 +110,7 @@ jobs:
     # Privacy variant: built with -tags privacy so the
     # internal/api/indexerclient package (chain-indexer gRPC client) is
     # excluded at compile time. Used by privacy-mode deployments where
-    # direct chain-indexer access would bypass privacy-proxy redaction.
+    # direct chain-indexer access would bypass Open Privacy Suite redaction.
     # Published as a separately-named image (RD-922) so the privacy
     # compose can pin by image name rather than depending on the
     # standalone repo to never link the gRPC client.

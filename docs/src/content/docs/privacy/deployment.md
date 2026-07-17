@@ -1,6 +1,6 @@
 ---
 title: Deploying in Privacy Mode
-description: The fail-closed configuration, security hardening, and rollout steps for running the block explorer behind privacy-proxy.
+description: The fail-closed configuration, security hardening, and rollout steps for running the block explorer behind the Open Privacy Suite.
 ---
 
 Privacy mode is **fail-closed**: where standalone mode leans permissive for convenience,
@@ -46,7 +46,9 @@ export CORS_ALLOWED_ORIGINS="https://explorer.yourdomain.com"
 export SSO_JWKS_URL="http://privacy-proxy-backend:8080/.well-known/jwks.json"
 # Do NOT set INDEXER_URL. Prefer the `-tags privacy` image.
 
-# The external privacy-proxy network must exist before starting
+# The external Open Privacy Suite network must exist before starting.
+# (The network keeps its original privacy-proxy_* name — only the GitHub
+# repo was renamed.)
 docker network create privacy-proxy_proxy-network 2>/dev/null || true
 
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
@@ -59,21 +61,21 @@ volume mappings, which legacy `docker-compose` v1 does not support.
 
 ## Operational notes
 
-- **Privacy-proxy is a hard dependency.** If it is unreachable, authenticated endpoints
+- **The Open Privacy Suite is a hard dependency.** If it is unreachable, authenticated endpoints
   return errors. Co-deploy it, or bring it up and confirm it is healthy before the explorer.
 - **Client id alignment.** `SSO_CLIENT_ID` (default `explorer`) must match the client
-  registered in privacy-proxy, or sign-in fails. See [Authentication](../authentication/).
+  registered in the Open Privacy Suite, or sign-in fails. See [Authentication](../authentication/).
 - **Database role.** The explorer's own Postgres is used for contract-verification metadata
-  only in mixed deployments; all chain data comes from privacy-proxy.
+  only in mixed deployments; all chain data comes from the Open Privacy Suite.
 
-## Privacy-proxy documentation
+## Open Privacy Suite documentation
 
-The redaction, identity, and access-control rules live in privacy-proxy:
+The redaction, identity, and access-control rules live in the Open Privacy Suite:
 
-- [Getting started](https://gateway-fm.github.io/privacy-proxy/docs/getting-started/)
-- [Architecture](https://gateway-fm.github.io/privacy-proxy/docs/architecture/)
-- [Block explorer integration](https://gateway-fm.github.io/privacy-proxy/docs/explorer/)
-- [Authentication](https://gateway-fm.github.io/privacy-proxy/docs/authentication/)
-- [RBAC](https://gateway-fm.github.io/privacy-proxy/docs/rbac/)
-- [Response filtering](https://gateway-fm.github.io/privacy-proxy/docs/security/response-filtering/)
-- [View as user](https://gateway-fm.github.io/privacy-proxy/docs/security/view-as-user/)
+- [Getting started](https://gateway-fm.github.io/open-privacy-suite/docs/getting-started/)
+- [Architecture](https://gateway-fm.github.io/open-privacy-suite/docs/architecture/)
+- [Block explorer integration](https://gateway-fm.github.io/open-privacy-suite/docs/explorer/)
+- [Authentication](https://gateway-fm.github.io/open-privacy-suite/docs/authentication/)
+- [RBAC](https://gateway-fm.github.io/open-privacy-suite/docs/rbac/)
+- [Response filtering](https://gateway-fm.github.io/open-privacy-suite/docs/security/response-filtering/)
+- [View as user](https://gateway-fm.github.io/open-privacy-suite/docs/security/view-as-user/)

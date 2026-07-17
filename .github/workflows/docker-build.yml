@@ -42,7 +42,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   # build-indexer removed — block-explorer no longer ships its own
-  # indexer binary. Chain data comes from gateway-fm/chain-indexer
+  # indexer binary. Chain data comes from gateway-fm/ops-indexer
   # (RD-855 Phase 6).
 
   build-public-api:

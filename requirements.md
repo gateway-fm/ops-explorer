@@ -43,19 +43,19 @@ This document outlines the core functional requirements of the Block Explorer an
   - Status: [x] Implemented
 
 ## 5. Security & Privacy
-- **REQ-5.1: Privacy Proxy**
+- **REQ-5.1: Open Privacy Suite (privacy proxy)**
   - Access control and address visibility logic (Pseudonymization, Redaction).
   - Status: [x] Implemented
 - **REQ-5.2: Auth/SSO**
   - JWT-based authentication and OIDC/SSO integration.
   - Status: [x] Implemented
 - **REQ-5.3: Session Token Refresh**
-  - Access tokens are intentionally short-lived (5 minutes, set on privacy-proxy). This
+  - Access tokens are intentionally short-lived (5 minutes, set on the Open Privacy Suite). This
     creates a bounded enforcement window: when a user is banned in the admin panel, they
     remain active at most until their current access token expires, at which point the
     refresh attempt is rejected server-side and the session is terminated.
   - The block explorer performs a silent token refresh via `POST /api/v1/refresh` when
-    the access token has ≤ 5 minutes remaining. Privacy-proxy rotates the refresh token
+    the access token has ≤ 5 minutes remaining. The Open Privacy Suite rotates the refresh token
     on every call (old token is revoked, new token is issued). Both the access and refresh
     tokens are stored as `HttpOnly` cookies.
   - Because rotation is single-use, concurrent refreshes for one session (a page load
@@ -79,7 +79,7 @@ This document outlines the core functional requirements of the Block Explorer an
     in their own transactions, even if the counterparty is otherwise private.
   - The visibility override is per-transaction only — the counterparty address remains
     hidden in transactions where the viewer is not a participant.
-  - Implemented in privacy-proxy's RedactionEngine (not the block-explorer).
+  - Implemented in the Open Privacy Suite's RedactionEngine (not the block-explorer).
   - Status: [x] Implemented
 
 - **REQ-5.5: Address Visibility Labels**

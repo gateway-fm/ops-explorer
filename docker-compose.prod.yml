@@ -5,7 +5,7 @@
 #       --profile standalone up -d
 #     # Or, with dev-friendly defaults pre-set: make standalone
 #
-#   Privacy mode (chain data via privacy-proxy; that stack must be running):
+#   Privacy mode (chain data via the Open Privacy Suite; that stack must be running):
 #     docker compose -f docker-compose.yml -f docker-compose.privacy.yml \
 #       -f docker-compose.prod.yml up -d
 #     # Or: make run-privacy
@@ -34,7 +34,7 @@
 # local dev defaults.
 #
 # Chain-data source — pick EXACTLY ONE. Setting both is rejected at
-# startup (privacy footgun: chain data would bypass privacy-proxy's
+# startup (privacy footgun: chain data would bypass the Open Privacy Suite's
 # redaction). Standalone deployments set INDEXER_URL; privacy mode sets
 # PRIVACY_PROXY_URL via docker-compose.privacy.yml's env or the operator's
 # env file.
@@ -42,13 +42,13 @@
 #   Standalone mode — chain-indexer direct, raw chain data:
 #     INDEXER_URL               chain-indexer:50051 (or external indexer)
 #
-#   Privacy mode — reads routed through privacy-proxy, redaction applied:
+#   Privacy mode — reads routed through the Open Privacy Suite, redaction applied:
 #     PRIVACY_PROXY_URL         http://privacy-proxy-backend:8080
 #     PRIVACY_PROXY_PUBLIC_URL  https://proxy.yourdomain.com
 #     SSO_REDIRECT_URI          https://explorer.yourdomain.com/api/auth/callback
 #
-# Operators running block-explorer alongside privacy-proxy SHOULD NOT
-# enable the standalone profile — chain-indexer comes from privacy-proxy's
+# Operators running block-explorer alongside the Open Privacy Suite SHOULD NOT
+# enable the standalone profile — chain-indexer comes from the Open Privacy Suite's
 # compose network in that mode, and running a second copy would split
 # the indexed state.
 
@@ -64,7 +64,7 @@ services:
   # they prefer; but the default is a working stack).
   #
   # Privacy-mode deployments leave these off and point api at
-  # privacy-proxy via docker-compose.privacy.yml instead.
+  # the Open Privacy Suite via docker-compose.privacy.yml instead.
   anvil:
     image: ghcr.io/foundry-rs/foundry:latest
     profiles: [standalone]
@@ -153,7 +153,7 @@ services:
       INDEXER_URL: ${INDEXER_URL:-}
     # See `api` above for the port-mapping rationale.
 
-  # indexer service removed — chain data comes from gateway-fm/chain-indexer
+  # indexer service removed — chain data comes from gateway-fm/ops-indexer
   # (RD-855 Phase 6). Set INDEXER_URL on the api service to point at it.
   # The standalone profile above brings up a chain-indexer alongside this
   # stack for self-contained deployments.
@@ -182,7 +182,7 @@ services:
       # authoritative chainId comes from GET /chain-info; VITE_CHAIN_ID is a
       # fallback. VITE_RPC_URL is a standalone/node concern — the node's
       # browser-facing public RPC a wallet connects to directly. It is left to
-      # the operator (no default), and is NOT the privacy-proxy: in privacy mode
+      # the operator (no default), and is NOT the Open Privacy Suite: in privacy mode
       # the wallet connects via a locally-run jwt-injector configured in the
       # in-app MetaMask setup dialog, so no proxy /rpc is ever fed to a wallet.
       VITE_RPC_URL: ${VITE_RPC_URL:-}
@@ -190,7 +190,7 @@ services:
       VITE_NETWORK_NAME: ${VITE_NETWORK_NAME:-${NETWORK_NAME:-}}
       # Network switcher is off by default (single-network deployment). To run
       # the multi-network switcher, set this to "true" AND serve a
-      # featured-networks.json listing >= 2 networks. See https://gateway-fm.github.io/block-explorer/configuration/network-modes/.
+      # featured-networks.json listing >= 2 networks. See https://gateway-fm.github.io/ops-explorer/configuration/network-modes/.
       VITE_MULTI_NETWORK_ENABLED: "false"
 
 volumes:

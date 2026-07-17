@@ -1,11 +1,13 @@
 # Privacy-mode overlay — layer on top of docker-compose.yml when this
-# block-explorer is reading chain data through privacy-proxy.
+# block-explorer is reading chain data through the Open Privacy Suite.
 #
 # Only attaches the api / public-api / postgres services to the
 # privacy-proxy_proxy-network so they can reach `privacy-proxy-backend`
-# and so privacy-proxy can reach `explorer-postgres` (postgres alias).
-# That network is created by privacy-proxy's compose stack — operators
-# MUST start privacy-proxy first.
+# and so the Open Privacy Suite can reach `explorer-postgres` (postgres alias).
+# That network is created by the Open Privacy Suite compose stack — operators
+# MUST start the Open Privacy Suite stack first. (The privacy-proxy_* runtime
+# names are the suite's original compose identifiers, unchanged by the GitHub
+# repo rename to open-privacy-suite.)
 #
 # Standalone deploys (Makefile `standalone` / `run` / `dev` targets)
 # never load this file and therefore don't need the
@@ -14,7 +16,7 @@
 # `network privacy-proxy_proxy-network declared as external, but
 # could not be found`.
 #
-# Override `PROXY_NETWORK` in the environment if your privacy-proxy
+# Override `PROXY_NETWORK` in the environment if your Open Privacy Suite
 # stack uses a different external network name (rare).
 services:
   postgres:

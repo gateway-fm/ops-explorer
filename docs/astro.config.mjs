@@ -29,9 +29,9 @@ export default defineConfig({
       'import.meta.env.PUBLIC_DOCS_VERSION': JSON.stringify(DOCS_VERSION),
     },
   },
-  // GitHub Pages project site: https://gateway-fm.github.io/block-explorer/
+  // GitHub Pages project site: https://gateway-fm.github.io/ops-explorer/
   site: 'https://gateway-fm.github.io',
-  base: '/block-explorer',
+  base: '/ops-explorer',
   integrations: [
     starlight({
       title: 'Block Explorer',
@@ -68,11 +68,11 @@ export default defineConfig({
         {
           icon: 'github',
           label: 'GitHub',
-          href: 'https://github.com/gateway-fm/block-explorer',
+          href: 'https://github.com/gateway-fm/ops-explorer',
         },
       ],
       editLink: {
-        baseUrl: 'https://github.com/gateway-fm/block-explorer/edit/main/docs/',
+        baseUrl: 'https://github.com/gateway-fm/ops-explorer/edit/main/docs/',
       },
       customCss: ['./src/styles/custom.css'],
       components: {

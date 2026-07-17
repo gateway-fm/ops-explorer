@@ -4,12 +4,12 @@ description: Standalone vs. privacy mode — how chain data reaches the explorer
 ---
 
 Block-explorer does not run its own indexer. Chain data comes from
-[`gateway-fm/chain-indexer`](https://github.com/gateway-fm/chain-indexer) over gRPC, either
-directly (**standalone mode**) or mediated by privacy-proxy (**privacy mode**).
+[`gateway-fm/ops-indexer`](https://github.com/gateway-fm/ops-indexer) over gRPC, either
+directly (**standalone mode**) or mediated by the Open Privacy Suite (**privacy mode**).
 
 :::danger[Pick exactly one source]
 The API process **rejects having both `INDEXER_URL` and `PRIVACY_PROXY_URL` set** at
-startup. The combination would silently route chain data around privacy-proxy's redaction
+startup. The combination would silently route chain data around the Open Privacy Suite's redaction
 while still wiring SSO through it — a privacy footgun.
 :::
 
@@ -17,21 +17,21 @@ while still wiring SSO through it — a privacy footgun.
 
 |  | Standalone | Privacy |
 |---|---|---|
-| Chain data source | chain-indexer over gRPC (`INDEXER_URL`) | privacy-proxy REST (`PRIVACY_PROXY_URL`) |
+| Chain data source | chain-indexer over gRPC (`INDEXER_URL`) | Open Privacy Suite REST (`PRIVACY_PROXY_URL`) |
 | Data visibility | Raw and public; every visitor sees everything | RBAC-redacted, per authenticated user |
-| Authentication | None | SSO / OAuth, via privacy-proxy |
-| Who serves the frontend | The explorer's own frontend | Usually privacy-proxy itself |
+| Authentication | None | SSO / OAuth, via the Open Privacy Suite |
+| Who serves the frontend | The explorer's own frontend | Usually the Open Privacy Suite itself |
 | Use it for | Public explorers on open chains | Confidential or permissioned chains |
 
 In **standalone mode** the explorer is self-contained: its API reads chain data straight
 from chain-indexer and serves it to anyone. In **privacy mode** the explorer becomes a thin
-layer in front of [privacy-proxy](https://gateway-fm.github.io/privacy-proxy/docs/getting-started/),
+layer in front of [Open Privacy Suite](https://gateway-fm.github.io/open-privacy-suite/docs/getting-started/),
 which owns identity, access control, and redaction. The explorer forwards every read to
-privacy-proxy with the caller's auth token attached, and privacy-proxy decides what that
+the Open Privacy Suite with the caller's auth token attached, and the Open Privacy Suite decides what that
 user is allowed to see.
 
 :::tip[Privacy mode has a dedicated section]
-Privacy mode depends on a separate privacy-proxy service and has its own setup. See the
+Privacy mode depends on a separate Open Privacy Suite service and has its own setup. See the
 **[Privacy](../../privacy/overview/)** section for how it works, sign-in, "View as user", and
 fail-closed deployment.
 :::
@@ -50,14 +50,14 @@ chain-indexer (gRPC :50051) ──► block-explorer api ──► frontend
 
 ## Privacy mode — `PRIVACY_PROXY_URL`
 
-Block-explorer api is a thin frontend over privacy-proxy's REST explorer API. Privacy-proxy
+Block-explorer api is a thin frontend over the Open Privacy Suite's REST explorer API. The Open Privacy Suite
 applies RBAC-based redaction before data reaches block-explorer. Auth/SSO flows through
-privacy-proxy too.
+the Open Privacy Suite too.
 
 ```
-chain-indexer (gRPC) ──► privacy-proxy ──► block-explorer api ──► frontend
-                          (redaction,              │
-                           auth, RBAC)             └─ postgres (verification only)
+chain-indexer (gRPC) ──► Open Privacy Suite ──► block-explorer api ──► frontend
+                         (redaction, auth, RBAC)              │
+                                                              └─ postgres (verification only)
 ```
 
 Privacy mode has its own section covering the request and redaction flow, sign-in,
@@ -80,12 +80,12 @@ Privacy mode has its own section covering the request and redaction flow, sign-i
 | `API_PORT` | No | Default: `8080`. |
 | **Chain data — pick one:** | | |
 | `INDEXER_URL` | One required | Standalone mode. `host:port` of a chain-indexer gRPC endpoint, e.g. `chain-indexer:50051`. |
-| `PRIVACY_PROXY_URL` | One required | Privacy mode. Internal URL of privacy-proxy backend, e.g. `http://privacy-proxy-backend:8080`. |
-| `PRIVACY_PROXY_PUBLIC_URL` | Privacy mode | Browser-facing URL of privacy-proxy, e.g. `https://proxy.yourdomain.com`. |
+| `PRIVACY_PROXY_URL` | One required | Privacy mode. Internal URL of the Open Privacy Suite backend, e.g. `http://privacy-proxy-backend:8080`. |
+| `PRIVACY_PROXY_PUBLIC_URL` | Privacy mode | Browser-facing URL of the Open Privacy Suite, e.g. `https://proxy.yourdomain.com`. |
 | `SSO_REDIRECT_URI` | Privacy mode | OAuth callback URI, e.g. `https://explorer.yourdomain.com/api/auth/callback`. |
-| `SSO_CLIENT_ID` | No | Default: `explorer` — must match the client ID registered in privacy-proxy. |
-| `SSO_CLIENT_SECRET` | Privacy mode (OAuth) | Client secret sent to privacy-proxy `/oauth/token` via HTTP Basic. **Secret — source from a secrets manager, never plaintext.** |
-| `SSO_JWKS_URL` | Privacy mode | privacy-proxy JWKS endpoint. When set, the auth-cookie JWT is signature-verified in-process (alg-confusion-safe; RS256/ES256 only; `exp` mandatory; 30s leeway) before its DID is trusted. **Required to enable "View as user" impersonation.** |
+| `SSO_CLIENT_ID` | No | Default: `explorer` — must match the client ID registered in the Open Privacy Suite. |
+| `SSO_CLIENT_SECRET` | Privacy mode (OAuth) | Client secret sent to the Open Privacy Suite `/oauth/token` via HTTP Basic. **Secret — source from a secrets manager, never plaintext.** |
+| `SSO_JWKS_URL` | Privacy mode | The Open Privacy Suite JWKS endpoint. When set, the auth-cookie JWT is signature-verified in-process (alg-confusion-safe; RS256/ES256 only; `exp` mandatory; 30s leeway) before its DID is trusted. **Required to enable "View as user" impersonation.** |
 | `SSO_ISSUER` | No | If set, the JWT `iss` claim must equal it (only checked when `SSO_JWKS_URL` is set). |
 | `SSO_AUDIENCE` | No | If set, the JWT `aud` claim must include it (only checked when `SSO_JWKS_URL` is set). |
 | `CORS_ALLOWED_ORIGINS` | **Privacy: yes** / Standalone: no | Comma-separated allowlist of browser origins permitted to make credentialed cross-origin requests (also reused for CSRF Origin/Referer checks). **Required in privacy mode** (fail-closed). In standalone, empty = reflect any Origin (permissive, with a startup warning). |
@@ -93,6 +93,16 @@ Privacy mode has its own section covering the request and redaction flow, sign-i
 | `ENABLE_PRICE` | No | Gates the CoinGecko price refresher + `/price` data source. **Default: `false` in privacy mode** (no third-party egress), `true` in standalone. |
 | `PRICE_COIN_ID` | No | Default: `ethereum`. CoinGecko coin id to price (set per chain). |
 | `PRICE_CURRENCY` | No | Default: `usd`. Fiat currency for the price quote. |
+
+:::note[Naming note — repo renames vs runtime identifiers]
+Only the GitHub repositories were renamed (`ops-explorer`, `ops-indexer`,
+`open-privacy-suite`). Runtime identifiers deliberately keep their original
+names: Docker images (`gatewayfm/block-explorer-*`, `gatewayfm/chain-indexer`),
+compose service/network names (`privacy-proxy-backend`,
+`privacy-proxy_proxy-network`, `chain-indexer:50051`), and environment
+variables (`PRIVACY_PROXY_*`, `INDEXER_*`). Examples in this table are correct
+as written.
+:::
 
 ### Validation rules
 
@@ -168,15 +178,15 @@ migration job is needed, but the database must be reachable before traffic is se
 local dev convenience. The prod overlay requires `DATABASE_URL` as an env var — set it with
 `sslmode=require` for managed Postgres (RDS, Cloud SQL, etc.).
 
-**Privacy proxy availability** — in privacy mode the API has a runtime dependency on the
-privacy proxy. If the proxy is unreachable, authenticated endpoints return errors. Plan for
+**Open Privacy Suite availability** — in privacy mode the API has a runtime dependency on the
+Open Privacy Suite. If the proxy is unreachable, authenticated endpoints return errors. Plan for
 co-deployment or ensure the proxy is stable before the explorer is brought up.
 
 **`SSO_CLIENT_ID` alignment** — the `SSO_CLIENT_ID` env var (default: `explorer`) must match
-the client identifier registered on the privacy-proxy side. Keep these in sync.
+the client identifier registered on the Open Privacy Suite side. Keep these in sync.
 
 ## Next
 
 Running in privacy mode? The **[Privacy](../../privacy/overview/)** section covers how it
 works, authentication, "View as user", and the fail-closed deployment in depth, with links
-into the privacy-proxy documentation.
+into the Open Privacy Suite documentation.
