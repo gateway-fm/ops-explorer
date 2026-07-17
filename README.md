@@ -33,7 +33,7 @@ Spins up a local [Anvil](https://book.getfoundry.sh/reference/anvil/) testnet, P
 
 - [Docker](https://docs.docker.com/get-docker/) & Docker Compose
 - [Make](https://www.gnu.org/software/make/)
-- A locally built `gatewayfm/chain-indexer:latest` image. The indexer lives in a separate repo ([gateway-fm/ops-indexer](https://github.com/gateway-fm/ops-indexer)) and is no longer bundled here. Clone it as a sibling of this checkout and build the image before running `make dev`:
+- A locally built `gatewayfm/chain-indexer:latest` image. The indexer lives in a separate repo ([gateway-fm/ops-indexer](https://github.com/gateway-fm/ops-indexer)) and is no longer bundled here. Note: only the GitHub repo was renamed to `ops-indexer` — the Docker image (and the sibling directory used below) keep the `chain-indexer` name. Clone it as a sibling of this checkout and build the image before running `make dev`:
 
   ```bash
   git clone https://github.com/gateway-fm/ops-indexer.git ../chain-indexer

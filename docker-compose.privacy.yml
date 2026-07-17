@@ -5,7 +5,9 @@
 # privacy-proxy_proxy-network so they can reach `privacy-proxy-backend`
 # and so the Open Privacy Suite can reach `explorer-postgres` (postgres alias).
 # That network is created by the Open Privacy Suite compose stack — operators
-# MUST start the Open Privacy Suite stack first.
+# MUST start the Open Privacy Suite stack first. (The privacy-proxy_* runtime
+# names are the suite's original compose identifiers, unchanged by the GitHub
+# repo rename to open-privacy-suite.)
 #
 # Standalone deploys (Makefile `standalone` / `run` / `dev` targets)
 # never load this file and therefore don't need the

@@ -210,6 +210,7 @@ run-privacy:
 	@echo "Starting Block Explorer with Open Privacy Suite enabled..."
 	@echo "  API  RPC: privacy-proxy-backend:8080 (proxy)"
 	@echo "  Indexer RPC: privacy-proxy-anvil:8545 (direct, for indexing)"
+	@echo "  (service names keep the suite's original privacy-proxy-* compose identifiers)"
 	@echo ""
 	docker compose -f docker-compose.yml -f docker-compose.privacy.yml $(BRAND_FLAG) build
 	START_BLOCK=$(START_BLOCK) docker compose -f docker-compose.yml -f docker-compose.privacy.yml $(BRAND_FLAG) up -d

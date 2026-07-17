@@ -46,7 +46,9 @@ export CORS_ALLOWED_ORIGINS="https://explorer.yourdomain.com"
 export SSO_JWKS_URL="http://privacy-proxy-backend:8080/.well-known/jwks.json"
 # Do NOT set INDEXER_URL. Prefer the `-tags privacy` image.
 
-# The external Open Privacy Suite network must exist before starting
+# The external Open Privacy Suite network must exist before starting.
+# (The network keeps its original privacy-proxy_* name — only the GitHub
+# repo was renamed.)
 docker network create privacy-proxy_proxy-network 2>/dev/null || true
 
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build

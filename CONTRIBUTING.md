@@ -52,6 +52,6 @@ npm --prefix frontend run build
 
 Some checks require optional services such as Postgres, Anvil, a running
 chain-indexer, or the Open Privacy Suite sibling repository
-(gateway-fm/open-privacy-suite). The privacy-mode e2e
+([gateway-fm/open-privacy-suite](https://github.com/gateway-fm/open-privacy-suite)). The privacy-mode e2e
 job in CI is maintainer-gated (manual dispatch + a repository variable) and is
 expected to be skipped on public forks.

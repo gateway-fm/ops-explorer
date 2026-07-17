@@ -94,6 +94,16 @@ Privacy mode has its own section covering the request and redaction flow, sign-i
 | `PRICE_COIN_ID` | No | Default: `ethereum`. CoinGecko coin id to price (set per chain). |
 | `PRICE_CURRENCY` | No | Default: `usd`. Fiat currency for the price quote. |
 
+:::note[Naming note — repo renames vs runtime identifiers]
+Only the GitHub repositories were renamed (`ops-explorer`, `ops-indexer`,
+`open-privacy-suite`). Runtime identifiers deliberately keep their original
+names: Docker images (`gatewayfm/block-explorer-*`, `gatewayfm/chain-indexer`),
+compose service/network names (`privacy-proxy-backend`,
+`privacy-proxy_proxy-network`, `chain-indexer:50051`), and environment
+variables (`PRIVACY_PROXY_*`, `INDEXER_*`). Examples in this table are correct
+as written.
+:::
+
 ### Validation rules
 
 Enforced at startup (`internal/config` `Validate()` + `cmd/api/main.go`):
