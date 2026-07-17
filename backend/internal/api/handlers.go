@@ -811,7 +811,14 @@ func parseCursor(r *http.Request) string {
 // cursorPage wraps a keyset-paginated page in the shared PaginatedResponse. The
 // provider already returns the authoritative next-page cursor ("" == exhausted),
 // so HasMore is simply nextCursor != "" — no over-fetch sentinel needed.
+//
+// A nil page is normalized to an empty slice so Data marshals as [] rather than
+// null (PaginatedResponse.Data has no omitempty and the frontend treats it as
+// T[]); this mirrors publicapi.cursorPage.
 func cursorPage[T any](items []T, nextCursor string) types.PaginatedResponse[T] {
+	if items == nil {
+		items = []T{}
+	}
 	resp := types.PaginatedResponse[T]{Data: items, HasMore: nextCursor != ""}
 	if nextCursor != "" {
 		c := nextCursor

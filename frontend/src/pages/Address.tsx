@@ -38,6 +38,7 @@ import { formatTokenValue } from '../lib/formatToken';
 import { useAuth } from '../lib/auth';
 import { features } from '../lib/features';
 import { StateMessage } from '../components/StateMessage';
+import { nextPageSearchParams } from './Address.pagination';
 
 const TABS = [
   'details',
@@ -88,6 +89,16 @@ export function Address() {
     if (sub !== 'overview') params.set('sub', sub);
     setSearchParams(params);
   };
+
+  // Advance the active feed's pagination in place, keeping the current tab (and
+  // any other query param). See nextPageSearchParams.
+  const loadMore = useCallback(
+    (nextCursor: string | null | undefined, before: string | undefined) => {
+      if (!nextCursor && before === undefined) return;
+      setSearchParams((prev) => nextPageSearchParams(prev, nextCursor, before));
+    },
+    [setSearchParams],
+  );
 
   const { isAuthenticated } = useAuth();
 
@@ -319,14 +330,8 @@ export function Address() {
             tokenTransferCount={info.tokenTransferCount}
             onShowTransfers={() => setTab('transfers')}
             onLoadMore={() => {
-              // Prefer the opaque keyset cursor (RD-1149); fall back to the
-              // last row's block number for older proxies without nextCursor.
-              if (txs?.nextCursor) {
-                setSearchParams({ cursor: txs.nextCursor });
-                return;
-              }
               const last = txs?.data?.[txs.data.length - 1];
-              if (last) setSearchParams({ before: String(last.blockNumber) });
+              loadMore(txs?.nextCursor, last ? String(last.blockNumber) : undefined);
             }}
           />
         )}
@@ -337,17 +342,8 @@ export function Address() {
             isLoading={transfersLoading}
             currentAddress={info.address}
             onLoadMore={() => {
-              // Prefer the opaque keyset cursor (RD-1149); fall back to the
-              // last row's block number for older proxies without nextCursor.
-              if (transfers?.nextCursor) {
-                setSearchParams({ tab: 'transfers', cursor: transfers.nextCursor });
-                return;
-              }
               const last = transfers?.data?.[transfers.data.length - 1];
-              if (last) {
-                const p = new URLSearchParams({ tab: 'transfers', before: String(last.blockNumber) });
-                setSearchParams(p);
-              }
+              loadMore(transfers?.nextCursor, last ? String(last.blockNumber) : undefined);
             }}
           />
         )}

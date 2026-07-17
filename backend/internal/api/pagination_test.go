@@ -12,8 +12,10 @@ package api
 // cumulative chart math against the spec, independent of upstream mapping.
 
 import (
+	"encoding/json"
 	"math"
 	"strconv"
+	"strings"
 	"testing"
 
 	"explorer/internal/types"
@@ -61,6 +63,20 @@ func TestCursorPage(t *testing.T) {
 	}
 	if last.NextCursor != nil {
 		t.Errorf("NextCursor = %v, want nil when exhausted", *last.NextCursor)
+	}
+
+	// A nil page must serialize as an empty JSON array, not null, so clients
+	// that treat Data as T[] don't break (Copilot review on #125).
+	empty := cursorPage[types.Transaction](nil, "")
+	if empty.Data == nil || len(empty.Data) != 0 {
+		t.Errorf("Data = %v, want a non-nil empty slice", empty.Data)
+	}
+	b, err := json.Marshal(empty)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(b), `"data":[]`) {
+		t.Errorf("marshaled = %s, want it to contain \"data\":[] (not null)", b)
 	}
 }
 
