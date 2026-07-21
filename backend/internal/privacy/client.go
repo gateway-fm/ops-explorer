@@ -70,11 +70,11 @@ const (
 type VisibilityReason string
 
 const (
-	ReasonOwnAddress       VisibilityReason = "own_address"
-	ReasonDisclosureGrant  VisibilityReason = "disclosure_grant"
-	ReasonPublicAddress    VisibilityReason = "public_address"
-	ReasonNoAccess         VisibilityReason = "no_access"
-	ReasonRBACGroupMember  VisibilityReason = "rbac_group_member"
+	ReasonOwnAddress      VisibilityReason = "own_address"
+	ReasonDisclosureGrant VisibilityReason = "disclosure_grant"
+	ReasonPublicAddress   VisibilityReason = "public_address"
+	ReasonNoAccess        VisibilityReason = "no_access"
+	ReasonRBACGroupMember VisibilityReason = "rbac_group_member"
 )
 
 type AddressVisibility struct {
@@ -338,7 +338,7 @@ type ResolveAddressResponse struct {
 // ResolveAddressID resolves an opaque address_id back to real address information.
 // This is for explorer backend internal use only - the real address should NOT be sent to frontend.
 // SECURITY: The caller must apply appropriate redaction before sending data to the frontend.
-func (c *Client) ResolveAddressID(ctx context.Context, grantID, addressID string) (*ResolveAddressResponse, error) {
+func (c *Client) ResolveAddressID(ctx context.Context, grantID, addressID, token string) (*ResolveAddressResponse, error) {
 	endpoint := fmt.Sprintf("/api/v1/explorer/grant/%s/resolve/%s", grantID, addressID)
 	u, err := url.Parse(c.baseURL + endpoint)
 	if err != nil {
@@ -348,6 +348,9 @@ func (c *Client) ResolveAddressID(ctx context.Context, grantID, addressID string
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -376,7 +379,7 @@ func (c *Client) ResolveAddressID(ctx context.Context, grantID, addressID string
 // GetGrantTransactions fetches pseudonymized transactions for a disclosure grant
 // directly from the privacy proxy. The proxy handles all pseudonymization —
 // the explorer just forwards the response as raw JSON.
-func (c *Client) GetGrantTransactions(ctx context.Context, grantID, addressID string, limit int, cursor string, beforeBlock *uint64) ([]byte, int, error) {
+func (c *Client) GetGrantTransactions(ctx context.Context, grantID, addressID, token string, limit int, cursor string, beforeBlock *uint64) ([]byte, int, error) {
 	endpoint := fmt.Sprintf("/api/v1/explorer/grant/%s/%s/transactions?limit=%d", grantID, addressID, limit)
 	// Opaque cursor (RD-1149) takes precedence over the legacy ?before= bound; the
 	// proxy returns next_cursor in the JSON body, which we forward as-is.
@@ -394,6 +397,9 @@ func (c *Client) GetGrantTransactions(ctx context.Context, grantID, addressID st
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to create request: %w", err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	resp, err := c.httpClient.Do(req)

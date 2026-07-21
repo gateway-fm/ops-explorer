@@ -47,7 +47,6 @@ func (s *Server) handleGetViewableAddresses(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, result)
 }
 
-
 // SECURITY: Addresses are redacted based on disclosure_level before being sent to the frontend.
 type GrantedAddressResponse struct {
 	DisplayAddress  string   `json:"display_address"`
@@ -82,7 +81,7 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	resolved, err := s.privacyClient.ResolveAddressID(r.Context(), grantID, addressID)
+	resolved, err := s.privacyClient.ResolveAddressID(r.Context(), grantID, addressID, viewer.JWTToken)
 	if err != nil {
 		if errors.Is(err, privacy.ErrNotFound) {
 			http.Error(w, "grant or address not found", http.StatusNotFound)
@@ -117,10 +116,10 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 			displayAddress = "Address-Unknown"
 		}
 	case "redacted":
-		displayAddress = "[REDACTED]"
+		displayAddress = "[PRIVATE]"
 	default:
 		// SECURITY: Fail-safe - treat unknown disclosure levels as redacted
-		displayAddress = "[REDACTED]"
+		displayAddress = "[PRIVATE]"
 	}
 
 	var txCount int64
@@ -179,7 +178,9 @@ func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *h
 	cursor := parseCursor(r)
 	beforeBlock := parseBeforeBlock(r)
 
-	body, statusCode, err := s.privacyClient.GetGrantTransactions(r.Context(), grantID, addressID, limit, cursor, beforeBlock)
+	body, statusCode, err := s.privacyClient.GetGrantTransactions(
+		r.Context(), grantID, addressID, viewer.JWTToken, limit, cursor, beforeBlock,
+	)
 	if err != nil {
 		// P-3: grant_id / address_id are privacy-sensitive identifiers — omit them.
 		log.Warn("privacy: get grant transactions failed", "error", err)
