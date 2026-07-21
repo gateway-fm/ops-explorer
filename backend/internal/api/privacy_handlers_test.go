@@ -248,14 +248,14 @@ func TestHandleGetGrantedAddress_FullDisclosure_HappyPath(t *testing.T) {
 func TestHandleGetGrantedAddress_RedactedNeverExposesRealAddress(t *testing.T) {
 	// SECURITY contract (privacy_handlers.go:106-121): for a non-full disclosure
 	// the real address must NEVER appear in the response. "redacted" -> the
-	// literal "[REDACTED]"; an UNKNOWN level fails safe to "[REDACTED]" too.
+	// literal "[PRIVATE]"; an UNKNOWN level fails safe to "[PRIVATE]" too.
 	const realAddr = "0x407d73d8a49eeb85d32cf465507dd71d507100c1"
 	cases := []struct {
 		level string
 		want  string
 	}{
-		{"redacted", "[REDACTED]"},
-		{"totally-unknown-level", "[REDACTED]"}, // fail-safe default
+		{"redacted", "[PRIVATE]"},
+		{"totally-unknown-level", "[PRIVATE]"}, // fail-safe default
 	}
 	for _, tc := range cases {
 		t.Run(tc.level, func(t *testing.T) {

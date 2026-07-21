@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -389,8 +390,20 @@ func (s *Server) handleGetTransaction(w http.ResponseWriter, r *http.Request) {
 
 	tx, err := s.provider.GetTransactionWithCategories(ctx, hash)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		if errors.Is(err, errProviderNotFound) {
+			// In privacy mode a 404 is deliberately ambiguous: the transaction
+			// may exist but be outside the caller's visibility. Do not probe the
+			// node or trigger reindexing, which would turn that opaque denial into
+			// an existence/timing oracle.
+			if _, callerScoped := s.provider.(CallerScopedProvider); callerScoped {
+				http.Error(w, "transaction not found", http.StatusNotFound)
+				return
+			}
+			tx = nil
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	if tx == nil {
@@ -1900,13 +1913,13 @@ func (s *Server) handleGetChartCounters(w http.ResponseWriter, r *http.Request) 
 	}
 
 	counters := map[string]any{
-		"totalTransactions":      int64(0),
-		"totalAddresses":         int64(0),
-		"totalContracts":         int64(0),
-		"todayTransactions":      0,
-		"todayBlocks":            0,
-		"todayTokenTransfers":    0,
-		"averageBlockTime":       0.0,
+		"totalTransactions":   int64(0),
+		"totalAddresses":      int64(0),
+		"totalContracts":      int64(0),
+		"todayTransactions":   0,
+		"todayBlocks":         0,
+		"todayTokenTransfers": 0,
+		"averageBlockTime":    0.0,
 	}
 
 	for _, s := range stats {

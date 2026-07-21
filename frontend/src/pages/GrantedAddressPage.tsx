@@ -15,7 +15,7 @@ import { Fingerprint, Unlock, ShieldAlert, EyeOff, ArrowDownLeft, ArrowUpRight, 
  * the frontend for pseudonymous/redacted disclosures.
  *
  * SECURITY: This page receives already-redacted data from the backend.
- * The display_address field contains the pseudonym or "[REDACTED]" for
+ * The display_address field contains the pseudonym or "[PRIVATE]" for
  * non-full disclosures - the real address is never sent.
  *
  * Scope-aware tabs:
@@ -30,14 +30,11 @@ type TabId = 'transactions' | 'activity_logs';
 /** Determines which tabs are available based on scope methods. */
 function getAvailableTabs(data: GrantedAddressResponse): TabId[] {
   const methods = data.scope_methods ?? [];
-  const isRedacted = data.disclosure_level === 'redacted';
 
   // If no scope methods specified, default to showing transactions
   // (backwards-compatible with grants created before scope methods were added).
   if (methods.length === 0) {
-    const tabs: TabId[] = [];
-    if (!isRedacted) tabs.push('transactions');
-    return tabs;
+    return ['transactions'];
   }
 
   const hasFullDisclosure = methods.includes('full_disclosure');
@@ -46,7 +43,7 @@ function getAvailableTabs(data: GrantedAddressResponse): TabId[] {
 
   const tabs: TabId[] = [];
 
-  if ((hasFullDisclosure || hasTransactionHistory) && !isRedacted) {
+  if (hasFullDisclosure || hasTransactionHistory) {
     tabs.push('transactions');
   }
 
@@ -277,7 +274,7 @@ export function GrantedAddressPage() {
             label="Address"
             value={
               isRedacted ? (
-                <span className="text-neutral-400 italic">[REDACTED]</span>
+                <span className="text-neutral-400 italic">[PRIVATE]</span>
               ) : isPseudonymous ? (
                 <div>
                   <span className="font-mono text-sm break-all text-neutral-900">{data.display_address}</span>
@@ -346,13 +343,18 @@ export function GrantedAddressPage() {
       )}
 
       {/* Transactions Tab Content */}
-      {currentTab === 'transactions' && !isRedacted && (
+      {currentTab === 'transactions' && (
         <div className="card">
           <div className="px-4 py-3 border-b border-neutral-100">
             <h3 className="font-medium text-neutral-900">Transactions</h3>
             {isPseudonymous && (
               <p className="text-xs text-neutral-500 mt-1">
                 Addresses are shown as pseudonyms. Transaction hashes are hidden to prevent lookup.
+              </p>
+            )}
+            {isRedacted && (
+              <p className="text-xs text-neutral-500 mt-1">
+                Addresses are private and transaction hashes and values are hidden.
               </p>
             )}
           </div>
@@ -561,7 +563,7 @@ function TransactionRow({
         )}
       </td>
       <td className="text-right font-mono text-sm">
-        {tx.value === '' || tx.value == null
+        {tx.value === '' || tx.value === 'hidden' || tx.value == null
           ? <span className="text-neutral-400 italic">hidden</span>
           : `${formatWei(String(tx.value))} ${getNetworkCurrency()}`}
       </td>
