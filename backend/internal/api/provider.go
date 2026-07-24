@@ -22,14 +22,14 @@ import (
 // DataProvider is the read surface the api handlers depend on. Implementations:
 //
 //   - *DirectDBProvider  — minimal SQL-backed provider that only answers
-//                          the block-explorer-local concerns (contract
-//                          verification write paths, node-RPC helpers).
-//                          Chain-data reads return ErrChainDataNotAvailable.
-//                          NEVER use this alone in production; pair with
-//                          indexerclient.Provider or use ProxyDataProvider.
+//     the block-explorer-local concerns (contract
+//     verification write paths, node-RPC helpers).
+//     Chain-data reads return ErrChainDataNotAvailable.
+//     NEVER use this alone in production; pair with
+//     indexerclient.Provider or use ProxyDataProvider.
 //   - *ProxyDataProvider — proxies to privacy-proxy's REST API.
 //   - *indexerclient.Provider — gRPC to chain-indexer for reads, embeds
-//                               *DirectDBProvider for writes + verification.
+//     *DirectDBProvider for writes + verification.
 type DataProvider interface {
 	GetChainStats(ctx context.Context) (*types.ChainStats, error)
 	GetChainID(ctx context.Context) (uint64, error)
@@ -366,6 +366,8 @@ type CallerScopedProvider interface {
 	CallerScoped()
 }
 
+var errProviderNotFound = errors.New("provider resource not found")
+
 // CallerScoped marks ProxyDataProvider as caller-scoped. It sets a per-caller
 // Authorization bearer from request context (see doRequest), so its responses
 // are RBAC-redacted per caller and must never be shared via a cache.
@@ -400,9 +402,17 @@ func (p *ProxyDataProvider) doRequestReturningHeader(ctx context.Context, method
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	// Drain any unread remainder before closing so the underlying connection can
+	// be reused (keep-alive). Close alone does not consume trailing bytes, and
+	// the 404 / result==nil paths below never read the body — leaving it
+	// undrained would pin a fresh connection per call (frequent under 404s in
+	// privacy mode).
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("resource not found")
+		return nil, errProviderNotFound
 	}
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
@@ -799,13 +809,13 @@ func (p *ProxyDataProvider) GetDailyStats(ctx context.Context, from, to time.Tim
 func (p *ProxyDataProvider) BackfillDailyStats(ctx context.Context) error {
 	return p.doRequest(ctx, "POST", "/api/v1/explorer/charts/backfill", nil, nil)
 }
+
 // Compile-time assertions.
 var (
 	_ DataProvider = (*DirectDBProvider)(nil)
 	_ DataProvider = (*ProxyDataProvider)(nil)
-	_ = bytes.Buffer{}
+	_              = bytes.Buffer{}
 )
-
 
 // GetGasPrices: privacy-proxy does not expose a gas-prices endpoint on
 // its REST explorer surface, so the BFF cannot forward it. Returning

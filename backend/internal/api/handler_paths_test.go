@@ -50,6 +50,13 @@ type hpStub struct {
 	contract  *types.Contract
 }
 
+type hpRestrictedTxStub struct{ DataProvider }
+
+func (s *hpRestrictedTxStub) CallerScoped() {}
+func (s *hpRestrictedTxStub) GetTransactionWithCategories(context.Context, string) (*types.Transaction, error) {
+	return nil, errProviderNotFound
+}
+
 func (s *hpStub) GetChainStats(context.Context) (*types.ChainStats, error) {
 	return s.chainStats, s.chainStatErr
 }
@@ -99,15 +106,15 @@ func TestParseLimit_Contract(t *testing.T) {
 	// Contract (handlers.go:778): valid 1..100 honored; 0/neg/>100/garbage ->
 	// defaultLimit (25). The >100 -> 25 (not clamp-to-100) is surprising; pin it.
 	cases := map[string]int{
-		"":        defaultLimit,
-		"1":       1,
-		"100":     100,
-		"0":       defaultLimit,
-		"-5":      defaultLimit,
-		"101":     defaultLimit, // NOT 100
-		"99999":   defaultLimit,
-		"abc":     defaultLimit,
-		"10.5":    defaultLimit,
+		"":      defaultLimit,
+		"1":     1,
+		"100":   100,
+		"0":     defaultLimit,
+		"-5":    defaultLimit,
+		"101":   defaultLimit, // NOT 100
+		"99999": defaultLimit,
+		"abc":   defaultLimit,
+		"10.5":  defaultLimit,
 	}
 	for q, want := range cases {
 		r := httptest.NewRequest(http.MethodGet, "/x?limit="+q, nil)
@@ -233,6 +240,19 @@ func TestHandleGetBlock_Success(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &env)
 	if env.Block == nil || env.Block.Number != 7 || len(env.Transactions) != 1 {
 		t.Errorf("envelope = %+v", env)
+	}
+}
+
+func TestHandleGetTransaction_CallerScopedNotFoundReturnsOpaque404WithoutReindex(t *testing.T) {
+	s := &Server{provider: &hpRestrictedTxStub{}}
+	w := httptest.NewRecorder()
+	s.handleGetTransaction(w, hpChiReq(
+		http.MethodGet,
+		"/api/transactions/0xabc",
+		map[string]string{"hash": "0xabc"},
+	))
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status %d, want privacy-preserving 404 (body=%s)", w.Code, w.Body.String())
 	}
 }
 

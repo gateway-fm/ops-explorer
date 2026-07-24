@@ -1189,6 +1189,8 @@ function InternalPanel({
           <tbody>
             {data.map((it) => {
               const isOut = it.from.toLowerCase() === currentAddress.toLowerCase();
+              const fromReason = it.addressMetadata?.[it.from?.toLowerCase()];
+              const toReason = it.to ? it.addressMetadata?.[it.to.toLowerCase()] : undefined;
               return (
                 <tr key={it.id} className="border-b border-neutral-200/60 transition-colors last:border-b-0 hover:bg-primary-50/40 dark:hover:bg-primary-900/10">
                   <td className="px-4 py-4 align-middle">
@@ -1204,9 +1206,9 @@ function InternalPanel({
                   </td>
                   <td className="px-4 py-4 align-middle">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <SelfOrLink address={it.from} currentAddress={currentAddress} />
+                      <SelfOrLink address={it.from} currentAddress={currentAddress} reason={fromReason} />
                       <DirectionPill outgoing={isOut} />
-                      {it.to ? <SelfOrLink address={it.to} currentAddress={currentAddress} /> : <span className="text-xs italic text-primary">Creation</span>}
+                      {it.to ? <SelfOrLink address={it.to} currentAddress={currentAddress} reason={toReason} /> : <span className="text-xs italic text-primary">Creation</span>}
                     </div>
                   </td>
                   <td className="px-4 py-4 text-right align-middle font-mono text-sm tabular-nums text-neutral-800">
