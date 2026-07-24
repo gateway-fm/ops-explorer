@@ -397,7 +397,14 @@ func (p *ProxyDataProvider) doRequest(ctx context.Context, method, path string, 
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	// Drain any unread remainder before closing so the underlying connection
+	// can be reused (keep-alive). Close alone does not consume trailing bytes,
+	// and the result==nil callers (POST/action endpoints) never read the body
+	// at all — leaving it undrained would pin a fresh connection per call.
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode == http.StatusNotFound {
 		return fmt.Errorf("resource not found")
 	}
