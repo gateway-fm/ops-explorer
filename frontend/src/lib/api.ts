@@ -403,8 +403,9 @@ export interface PseudonymizedTransactionsResponse {
   transactions: PseudonymizedTransaction[];
   disclosure_level: string;
   address_labels: Record<string, string>;
-  has_more: boolean;
-  // RD-1149: opaque keyset cursor for the next page ("" / absent = exhausted).
+  // RD-1149: opaque keyset cursor for the next page — present ⇒ more pages,
+  // absent ⇒ exhausted. This is the sole pagination signal (token-only); there
+  // is no has_more (it would only ever be `next_cursor != null`).
   next_cursor?: string;
 }
 
