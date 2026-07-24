@@ -373,15 +373,12 @@ func (p *ProxyDataProvider) CallerScoped() {}
 
 var _ CallerScopedProvider = (*ProxyDataProvider)(nil)
 
+// doRequest issues a GET/POST to privacy-proxy and decodes the JSON body into
+// result (pass nil to ignore the body). RD-1149: the by-address feeds now carry
+// their pagination cursor in the response body (next_cursor), so there is no
+// longer any need to surface response headers — the previous
+// doRequestReturningHeader/X-Next-Cursor plumbing was removed.
 func (p *ProxyDataProvider) doRequest(ctx context.Context, method, path string, body io.Reader, result any) error {
-	_, err := p.doRequestReturningHeader(ctx, method, path, body, result)
-	return err
-}
-
-// doRequestReturningHeader is doRequest that also surfaces the upstream response
-// headers so cursor-paginated callers can read X-Next-Cursor (RD-1149). It is
-// the single implementation; doRequest is a thin wrapper that discards headers.
-func (p *ProxyDataProvider) doRequestReturningHeader(ctx context.Context, method, path string, body io.Reader, result any) (http.Header, error) {
 	// If the caller is in "View as user" mode (RD-928), rewrite the outbound
 	// path under the admin-impersonation prefix so privacy-proxy applies the
 	// target user's visibility rules + audit-logs the access. The
@@ -391,30 +388,27 @@ func (p *ProxyDataProvider) doRequestReturningHeader(ctx context.Context, method
 	url := p.baseURL + path
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if token, ok := ctx.Value(rpc.ContextKeyAuthToken).(string); ok && token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("resource not found")
+		return fmt.Errorf("resource not found")
 	}
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("proxy request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+		return fmt.Errorf("proxy request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 	if result == nil {
-		return resp.Header, nil
+		return nil
 	}
-	if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
-		return resp.Header, err
-	}
-	return resp.Header, nil
+	return json.NewDecoder(resp.Body).Decode(result)
 }
 
 // byAddressQuery builds the "?limit=…" query for a by-address feed, preferring
@@ -561,12 +555,17 @@ func (p *ProxyDataProvider) GetTransaction(ctx context.Context, hash string) (*t
 
 func (p *ProxyDataProvider) GetTransactionsByAddress(ctx context.Context, address string, limit int, cursor string, beforeBlock *uint64) ([]types.Transaction, string, error) {
 	q := byAddressQuery(limit, cursor, beforeBlock)
-	var t []types.Transaction
-	hdr, err := p.doRequestReturningHeader(ctx, "GET", fmt.Sprintf("/api/v1/explorer/addresses/%s/transactions", address)+q, nil, &t)
-	if err != nil {
+	// RD-1149: the proxy returns { "transactions": [...], "next_cursor": "..." };
+	// next_cursor is omitted when the feed is exhausted (its presence is the
+	// only "more pages" signal — no X-Next-Cursor header, no has_more).
+	var res struct {
+		Transactions []types.Transaction `json:"transactions"`
+		NextCursor   string              `json:"next_cursor"`
+	}
+	if err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/addresses/%s/transactions", address)+q, nil, &res); err != nil {
 		return nil, "", err
 	}
-	return t, hdr.Get("X-Next-Cursor"), nil
+	return res.Transactions, res.NextCursor, nil
 }
 
 func (p *ProxyDataProvider) GetInternalTransactionsByTx(ctx context.Context, txHash string) ([]types.InternalTransaction, error) {
@@ -619,12 +618,17 @@ func (p *ProxyDataProvider) GetTokenBalances(ctx context.Context, address string
 
 func (p *ProxyDataProvider) GetTransfersByAddress(ctx context.Context, address string, limit int, cursor string, beforeBlock *uint64) ([]types.TokenTransfer, string, error) {
 	q := byAddressQuery(limit, cursor, beforeBlock)
-	var t []types.TokenTransfer
-	hdr, err := p.doRequestReturningHeader(ctx, "GET", fmt.Sprintf("/api/v1/explorer/addresses/%s/transfers", address)+q, nil, &t)
-	if err != nil {
+	// RD-1149: the proxy returns { "transfers": [...], "next_cursor": "..." };
+	// next_cursor is omitted when the feed is exhausted (its presence is the
+	// only "more pages" signal — no X-Next-Cursor header, no has_more).
+	var res struct {
+		Transfers  []types.TokenTransfer `json:"transfers"`
+		NextCursor string                `json:"next_cursor"`
+	}
+	if err := p.doRequest(ctx, "GET", fmt.Sprintf("/api/v1/explorer/addresses/%s/transfers", address)+q, nil, &res); err != nil {
 		return nil, "", err
 	}
-	return t, hdr.Get("X-Next-Cursor"), nil
+	return res.Transfers, res.NextCursor, nil
 }
 
 func (p *ProxyDataProvider) GetInternalTransactionsByAddress(ctx context.Context, address string, limit int, offset int) ([]types.InternalTransaction, int64, error) {
