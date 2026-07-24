@@ -402,7 +402,15 @@ func (p *ProxyDataProvider) doRequestReturningHeader(ctx context.Context, method
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	// Drain any unread remainder before closing so the underlying connection can
+	// be reused (keep-alive). Close alone does not consume trailing bytes, and
+	// the 404 / result==nil paths below never read the body — leaving it
+	// undrained would pin a fresh connection per call (frequent under 404s in
+	// privacy mode).
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, errProviderNotFound
 	}

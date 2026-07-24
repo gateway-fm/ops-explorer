@@ -359,13 +359,16 @@ func (c *Client) ResolveAddressID(ctx context.Context, grantID, addressID, token
 	}
 	defer resp.Body.Close()
 
+	// Do NOT embed grantID/addressID in returned errors: callers log these, so
+	// the opaque grant/address identifiers would leak into logs/SIEM. Callers
+	// hold both IDs in scope and can attach them as structured fields if needed.
 	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
 		_, _ = io.Copy(io.Discard, resp.Body)
-		return nil, fmt.Errorf("grant=%s address=%s: %w", grantID, addressID, ErrNotFound)
+		return nil, ErrNotFound
 	}
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body)
-		return nil, fmt.Errorf("grant=%s address=%s: privacy proxy status %d", grantID, addressID, resp.StatusCode)
+		return nil, fmt.Errorf("privacy proxy status %d", resp.StatusCode)
 	}
 
 	var result ResolveAddressResponse
