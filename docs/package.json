@@ -16,6 +16,7 @@
     "astro": "^6.4.5"
   },
   "overrides": {
-    "sharp": "npm:@favware/skip-dependency@latest"
+    "sharp": "npm:@favware/skip-dependency@latest",
+    "inline-style-parser": "0.2.9"
   }
 }
