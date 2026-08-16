@@ -2,7 +2,7 @@ module explorer
 
 go 1.25.0
 
-toolchain go1.26.4
+toolchain go1.26.6
 
 require (
 	github.com/go-chi/chi/v5 v5.2.3
