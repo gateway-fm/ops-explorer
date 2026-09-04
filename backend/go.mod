@@ -1,6 +1,6 @@
 module explorer
 
-go 1.25.0
+go 1.26.0
 
 toolchain go1.26.4
 
@@ -15,7 +15,7 @@ require (
 	github.com/rs/cors v1.11.1
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.56.0
 	golang.org/x/sync v0.22.0
 	golang.org/x/time v0.9.0
 	google.golang.org/grpc v1.82.1
