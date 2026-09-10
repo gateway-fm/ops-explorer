@@ -39,12 +39,23 @@ export function NftCard({ item, collection }: { item: NFTItem; collection: strin
         <div className="truncate text-sm font-semibold text-neutral-900" title={title}>
           {title}
         </div>
-        <div className="flex items-center gap-1.5 text-xs text-neutral-500">
-          <span className="shrink-0">Owner</span>
-          <span className="truncate font-mono text-neutral-600" title={item.owner}>
-            {shortAddr(item.owner)}
-          </span>
-        </div>
+        {item.quantity !== undefined ? (
+          // ERC-1155: an id is shared across many owners, so show its live
+          // supply and holder count rather than a single owner.
+          <div className="flex items-center justify-between text-xs text-neutral-500">
+            <span title="Total live supply of this id">×{item.quantity}</span>
+            <span className="text-neutral-400">
+              {item.holders} holder{item.holders === 1 ? '' : 's'}
+            </span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 text-xs text-neutral-500">
+            <span className="shrink-0">Owner</span>
+            <span className="truncate font-mono text-neutral-600" title={item.owner}>
+              {shortAddr(item.owner)}
+            </span>
+          </div>
+        )}
       </div>
     </Link>
   );
