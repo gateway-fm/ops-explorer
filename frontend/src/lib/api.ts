@@ -259,6 +259,10 @@ export interface NFTItem {
   tokenId: string;
   owner: string;
   tokenUri?: string;
+  // ERC-1155 only: total live supply of this id, and the number of distinct
+  // owners holding it. Absent for ERC-721 (where each id has a single owner).
+  quantity?: string;
+  holders?: number;
 }
 
 export interface ChainInfo {

@@ -282,11 +282,16 @@ type TokenHolder struct {
 	AddressMetadata map[string]string `json:"addressMetadata,omitempty"`
 }
 
-// TokenInventoryItem is one NFT in an ERC721 collection's inventory.
+// TokenInventoryItem is one entry in a collection's inventory. For ERC721 it is
+// a single token id with its current owner. For ERC1155 the same id is held by
+// many owners, so Owner is empty and Quantity (total live supply of the id) and
+// Holders (distinct owners with a positive balance) are populated instead.
 type TokenInventoryItem struct {
 	TokenID  string  `json:"tokenId"`
 	Owner    string  `json:"owner"`
 	TokenURI *string `json:"tokenUri,omitempty"`
+	Quantity *string `json:"quantity,omitempty"`
+	Holders  *int64  `json:"holders,omitempty"`
 }
 
 const (
