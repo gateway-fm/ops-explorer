@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"explorer/internal/privacy"
-	"explorer/internal/types"
 	"explorer/pkg/log"
 
 	"github.com/go-chi/chi/v5"
@@ -19,6 +18,12 @@ func (s *Server) getViewerIdentity(r *http.Request) privacy.ViewerIdentity {
 }
 
 func (s *Server) handleGetViewableAddresses(w http.ResponseWriter, r *http.Request) {
+	// Privacy routes do not use the chain-data impersonation middleware. Never
+	// resolve an admin's own grant list while a View-as header is present.
+	if r.Header.Get(ImpersonateHeader) != "" {
+		http.NotFound(w, r)
+		return
+	}
 	viewer := s.getViewerIdentity(r)
 
 	if viewer.DID == "" {
@@ -52,15 +57,16 @@ type GrantedAddressResponse struct {
 	DisplayAddress  string   `json:"display_address"`
 	DisclosureLevel string   `json:"disclosure_level"`
 	GrantID         string   `json:"grant_id"`
-	Balance         string   `json:"balance"`
-	TxCount         int64    `json:"tx_count"`
-	IsContract      bool     `json:"is_contract"`
 	ScopeMethods    []string `json:"scope_methods,omitempty"` // Grant scope methods (e.g. "transaction_history", "activity_logs")
 }
 
 // SECURITY: This endpoint uses opaque address_id - the real address is never exposed to the frontend
 // for pseudonymous/redacted disclosures.
 func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get(ImpersonateHeader) != "" {
+		http.NotFound(w, r)
+		return
+	}
 	grantID := chi.URLParam(r, "grantId")
 	addressID := chi.URLParam(r, "addressId")
 
@@ -93,17 +99,8 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	ctx := r.Context()
-
-	// Stats/balance/code may not exist for EOAs or pseudonymous/redacted addresses — that's OK
-	var stats *types.AddressStats
-	var balance *types.JSONString
-	var code []byte
-	if resolved.RealAddress != "" {
-		stats, _ = s.provider.GetAddressStats(ctx, resolved.RealAddress)
-		balance, _ = s.provider.GetBalance(ctx, resolved.RealAddress)
-		code, _ = s.provider.GetCode(ctx, resolved.RealAddress)
-	}
+	// Grant authority is scoped to grant APIs. Ordinary address statistics,
+	// balance and code are unavailable here; do not enrich from regular reads.
 
 	// SECURITY: Never expose real address for non-full disclosures
 	var displayAddress string
@@ -122,22 +119,10 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 		displayAddress = "[PRIVATE]"
 	}
 
-	var txCount int64
-	if stats != nil {
-		txCount = int64(stats.TxCount)
-	}
-	var balanceStr string
-	if balance != nil {
-		balanceStr = string(*balance)
-	}
-
 	response := GrantedAddressResponse{
 		DisplayAddress:  displayAddress,
 		DisclosureLevel: resolved.DisclosureLevel,
 		GrantID:         resolved.GrantID,
-		Balance:         balanceStr,
-		TxCount:         txCount,
-		IsContract:      len(code) > 0,
 		ScopeMethods:    resolved.ScopeMethods,
 	}
 
@@ -145,7 +130,8 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 }
 
 // SECURITY: All addresses are replaced with pseudonyms - the real addresses are never exposed.
-// TxHash is hidden for non-full disclosures to prevent lookup on other explorers.
+// TxHash is hidden for non-full disclosures. Public block/index positions may
+// still correlate these rows with a raw chain.
 // PseudonymizedTransactionsResponse is now generated entirely by the privacy proxy.
 // The explorer just forwards the proxy's JSON response as-is.
 
@@ -153,6 +139,10 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 // grant transactions endpoint. The proxy handles all pseudonymization — the
 // explorer never sees real addresses for non-full disclosures.
 func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get(ImpersonateHeader) != "" {
+		http.NotFound(w, r)
+		return
+	}
 	grantID := chi.URLParam(r, "grantId")
 	addressID := chi.URLParam(r, "addressId")
 
@@ -193,9 +183,43 @@ func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *h
 	w.Write(body)
 }
 
+func (s *Server) handleGetGrantedTransaction(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get(ImpersonateHeader) != "" {
+		http.NotFound(w, r)
+		return
+	}
+	grantID, addressID, hash := chi.URLParam(r, "grantId"), chi.URLParam(r, "addressId"), chi.URLParam(r, "hash")
+	if grantID == "" || addressID == "" || hash == "" {
+		http.Error(w, "grant_id, address_id and hash are required", http.StatusBadRequest)
+		return
+	}
+	viewer := s.getViewerIdentity(r)
+	if viewer.DID == "" {
+		http.Error(w, "authentication required", http.StatusUnauthorized)
+		return
+	}
+	if !s.privacyClient.IsEnabled() {
+		http.Error(w, "privacy service not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	body, status, err := s.privacyClient.GetGrantTransaction(r.Context(), grantID, addressID, hash, viewer.JWTToken)
+	if err != nil {
+		log.Warn("privacy: get grant transaction failed", "error", err)
+		http.Error(w, "failed to get transaction", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	w.Write(body)
+}
+
 // handleGetGrantActivityLogs proxies grant activity log requests to the privacy proxy.
 // The viewer's JWT is forwarded so the proxy can verify grant holder identity.
 func (s *Server) handleGetGrantActivityLogs(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get(ImpersonateHeader) != "" {
+		http.NotFound(w, r)
+		return
+	}
 	grantID := chi.URLParam(r, "grantId")
 	if grantID == "" {
 		http.Error(w, "grant_id is required", http.StatusBadRequest)

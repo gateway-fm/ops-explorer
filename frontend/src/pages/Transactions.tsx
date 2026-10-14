@@ -10,18 +10,47 @@ import { AddressLink } from '../components/AddressLink';
 import { AddressLabel } from '../components/AddressLabel';
 import { NewItemsNotice } from '../components/NewItemsNotice';
 import { StateMessage } from '../components/StateMessage';
+import { useAuth } from '../lib/auth';
+import { useImpersonation } from '../hooks/useImpersonation';
+import { useDisclosedTransactions } from '../hooks/useDisclosedTransactions';
+import { grantLink, grantWindow, mergeTransactions } from './Transactions.disclosure';
+import type { DisclosedRow } from './Transactions.disclosure';
 
 export function Transactions() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const page = parseInt(searchParams.get('page') || '1', 10);
+  const requestedPage = Number(searchParams.get('page') || '1');
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   const pageSize = 25;
   const queryClient = useQueryClient();
+  const { isAuthenticated, auth } = useAuth();
+  const { isActive: viewingAs, token } = useImpersonation();
+  const viewer = isAuthenticated ? auth.did : null;
+  const compose = isAuthenticated && !viewingAs && !searchParams.has('as');
 
   // Main transactions query — no auto-refetch
   const { data, isLoading, error } = useQuery({
-    queryKey: ['transactions', page, pageSize],
+    queryKey: ['transactions', page, pageSize, viewer, token],
     queryFn: () => api.getTransactionsPaginated(page, pageSize),
   });
+
+  const lastPage = data ? Math.max(1, data.totalPages) : undefined;
+  useEffect(() => {
+    if (lastPage !== undefined && page > lastPage) {
+      setSearchParams((current) => { const next = new URLSearchParams(current); next.set('page', String(lastPage)); return next; }, { replace: true });
+    }
+  }, [lastPage, page, setSearchParams]);
+
+  const previous = useQuery({
+    queryKey: ['transactions', page - 1, pageSize, viewer, token],
+    queryFn: () => api.getTransactionsPaginated(page - 1, pageSize),
+    enabled: compose && page > 1,
+  });
+  const window = data && page <= lastPage! && (page === 1 || previous.data)
+    ? grantWindow(data.data ?? [], previous.data?.data?.at(-1), page === lastPage)
+    : undefined;
+  const disclosed = useDisclosedTransactions(compose, viewer, page, window);
+  const rows = mergeTransactions(data?.data ?? [], disclosed.rows);
+  const disclosedCount = rows.filter((row) => row.kind === 'disclosed').length;
 
   // Separate lightweight poll of page 1 to detect new transactions.
   // We can't share the main query key (we want the table to stay static
@@ -32,7 +61,7 @@ export function Transactions() {
   // indexer provider (where /transactions.total is page-local), since
   // it only relies on the ordered list itself.
   const { data: livePage } = useQuery({
-    queryKey: ['transactions-live', pageSize],
+    queryKey: ['transactions-live', pageSize, viewer, token],
     queryFn: () => api.getTransactionsPaginated(1, pageSize),
     refetchInterval: page === 1 ? 3000 : false,
     enabled: page === 1,
@@ -62,11 +91,12 @@ export function Transactions() {
   const handleLoadNew = useCallback(() => {
     setSnapshotTopHash(null);
     queryClient.invalidateQueries({ queryKey: ['transactions', page, pageSize] });
-  }, [queryClient, page, pageSize]);
+    queryClient.invalidateQueries({ queryKey: ['disclosed-transactions', viewer, page] });
+  }, [queryClient, page, pageSize, viewer]);
 
   const goToPage = (newPage: number) => {
     setSnapshotTopHash(null);
-    setSearchParams({ page: String(newPage) });
+    setSearchParams((previous) => { const next = new URLSearchParams(previous); next.set('page', String(newPage)); return next; });
   };
 
   if (error) return <StateMessage variant="error" title="Error loading transactions" />;
@@ -76,9 +106,10 @@ export function Transactions() {
       <PageHeader title="Transactions">
         {data && (
           <span className="text-sm text-neutral-500" data-testid="tx-total-count">
-            {data.total.toLocaleString()} transactions
+            {data.total.toLocaleString()} {compose ? 'regular transactions' : 'transactions'}
           </span>
         )}
+        {compose && <span className="text-sm text-neutral-500" data-testid="disclosed-count">{disclosedCount} disclosed shown{disclosed.hasMore ? ' · more available' : ''}</span>}
       </PageHeader>
 
       <div className="card overflow-hidden">
@@ -105,16 +136,26 @@ export function Transactions() {
               </tr>
             </thead>
             <tbody>
-              {data?.data?.map((tx) => (
-                <TxTableRow key={tx.hash} tx={tx} />
+              {rows.map((row) => (
+                row.kind === 'regular'
+                  ? <TxTableRow key={row.key} tx={row.tx} />
+                  : <DisclosedTableRow key={row.key} source={row.source} tx={row.tx} />
               ))}
             </tbody>
           </table>
         </div>
 
         {isLoading && <StateMessage variant="loading" />}
+        {disclosed.loading && <p className="px-4 py-3 text-sm text-neutral-500">Loading disclosures…</p>}
+        {(disclosed.error || (compose && previous.error)) && (
+          <div className="px-4 py-3 text-sm text-amber-700" role="alert">
+            Some disclosed transactions could not be loaded.{' '}
+            <button className="underline" onClick={() => { disclosed.retry(); if (previous.error) void previous.refetch(); }}>Retry</button>
+          </div>
+        )}
+        {disclosed.hasMore && <div className="p-4"><button className="btn-primary" disabled={disclosed.loadingMore} onClick={() => void disclosed.loadMore()}>{disclosed.loadingMore ? 'Loading disclosures…' : 'Load more disclosed transactions'}</button></div>}
 
-        {!isLoading && !data?.data?.length && (
+        {!isLoading && !disclosed.loading && !disclosed.hasMore && !disclosed.error && !rows.length && (
           <StateMessage variant="empty" title="No transactions yet" />
         )}
 
@@ -218,6 +259,27 @@ function TxTypeCell({ categories, tokenTransferCount }: { categories?: TxCategor
         <span className="text-xs text-neutral-500">×{tokenTransferCount}</span>
       )}
     </div>
+  );
+}
+
+function DisclosedTableRow({ source, tx }: DisclosedRow) {
+  return (
+    <tr data-testid="tx-row">
+      <td>
+        <Link to={grantLink(source, tx)} className="font-mono text-sm text-primary hover:text-primary-600">
+          {source.level === 'full' && tx.tx_hash ? formatHash(tx.tx_hash, 8) : 'Hidden transaction'}
+        </Link>
+        <span className="ml-2 inline-block text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800">Disclosed</span>
+      </td>
+      <td className="text-neutral-400">-</td>
+      <td>{tx.block_number}</td>
+      <td className="font-mono text-sm">{tx.from}</td>
+      <td className="font-mono text-sm">{tx.to || 'Contract'}</td>
+      <td className="text-sm text-neutral-700">{tx.value === 'hidden' || tx.value === '' || tx.value == null
+        ? <span className="text-neutral-400 italic">hidden</span>
+        : `${formatWei(tx.value)} ${getNetworkCurrency()}`}</td>
+      <td><span className={`badge ${tx.status === 1 ? 'badge-success' : 'badge-error'}`}>{tx.status === 1 ? 'Success' : 'Failed'}</span></td>
+    </tr>
   );
 }
 

@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { PseudonymizedTransaction, GrantedAddressResponse } from '../lib/api';
 import { formatWei, formatTimestamp, getNetworkCurrency } from '../lib/utils';
 import { useAuth } from '../lib/auth';
+import { useImpersonation } from '../hooks/useImpersonation';
+import { grantLink } from './Transactions.disclosure';
 import { redirectToLogin } from '../lib/login';
 import { PageHeader } from '../components/PageHeader';
+import { StateMessage } from '../components/StateMessage';
 import { Fingerprint, Unlock, ShieldAlert, EyeOff, ArrowDownLeft, ArrowUpRight, RotateCcw, FileText, Activity, ChevronLeft, ChevronRight } from 'lucide-react';
 
 /**
@@ -56,41 +59,46 @@ function getAvailableTabs(data: GrantedAddressResponse): TabId[] {
 
 export function GrantedAddressPage() {
   const { grantId, addressId } = useParams<{ grantId: string; addressId: string }>();
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, auth } = useAuth();
+  const { isActive } = useImpersonation();
+  const [searchParams] = useSearchParams();
+  const viewingAs = isActive || searchParams.has('as');
   const [activeTab, setActiveTab] = useState<TabId | null>(null);
   const [activityOffset, setActivityOffset] = useState(0);
   const activityLimit = 25;
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['grantedAddress', grantId, addressId],
+  const { data, isLoading, error, dataUpdatedAt: grantCheckedAt } = useQuery({
+    queryKey: ['grantedAddress', auth.did, grantId, addressId],
     queryFn: () => api.getGrantedAddress(grantId!, addressId!),
-    enabled: !!grantId && !!addressId && isAuthenticated,
+    enabled: !!grantId && !!addressId && isAuthenticated && !viewingAs,
     retry: false,
   });
 
   // Compute available tabs from the data
   const availableTabs = data ? getAvailableTabs(data) : [];
-  const currentTab = activeTab ?? availableTabs[0] ?? null;
+  const currentTab = activeTab && availableTabs.includes(activeTab) ? activeTab : availableTabs[0] ?? null;
   const showTransactionsTab = availableTabs.includes('transactions');
   const showActivityLogsTab = availableTabs.includes('activity_logs');
 
   // Fetch transactions only when the transactions tab is available and selected
   const shouldFetchTransactions = showTransactionsTab && currentTab === 'transactions';
-  const { data: txData, isLoading: txLoading } = useQuery({
-    queryKey: ['grantedAddressTransactions', grantId, addressId],
+  const { data: txData, isLoading: txLoading, error: txError, refetch: refetchTransactions } = useQuery({
+    queryKey: ['grantedAddressTransactions', auth.did, grantId, addressId, grantCheckedAt],
     queryFn: () => api.getGrantedAddressTransactions(grantId!, addressId!),
-    enabled: !!grantId && !!addressId && isAuthenticated && shouldFetchTransactions,
+    enabled: !!grantId && !!addressId && isAuthenticated && !viewingAs && shouldFetchTransactions,
     retry: false,
   });
 
   // Fetch activity logs when the activity_logs tab is available and selected
   const shouldFetchActivityLogs = showActivityLogsTab && currentTab === 'activity_logs';
-  const { data: activityData, isLoading: activityLoading } = useQuery({
-    queryKey: ['grantActivityLogs', grantId, activityLimit, activityOffset],
+  const { data: activityData, isLoading: activityLoading, error: activityError, refetch: refetchActivity } = useQuery({
+    queryKey: ['grantActivityLogs', auth.did, grantId, activityLimit, activityOffset, grantCheckedAt],
     queryFn: () => api.getGrantActivityLogs(grantId!, activityLimit, activityOffset),
-    enabled: !!grantId && isAuthenticated && shouldFetchActivityLogs,
+    enabled: !!grantId && isAuthenticated && !viewingAs && shouldFetchActivityLogs,
     retry: false,
   });
+
+  if (viewingAs) return <div className="text-neutral-500">Disclosures are not available during View-as</div>;
 
   // Show authentication prompt if not logged in
   if (!isAuthenticated && !authLoading) {
@@ -252,7 +260,7 @@ export function GrantedAddressPage() {
             }`}>
               {isPseudonymous && 'You can view this address with a consistent pseudonym. The real address is hidden.'}
               {isRedacted && 'Address details are redacted. You can only view limited information.'}
-              {isFull && 'You have full access to view this address.'}
+              {isFull && 'You can view transactions covered by this disclosure grant.'}
             </p>
             <p className={`text-xs mt-1 font-mono ${
               isPseudonymous
@@ -285,9 +293,9 @@ export function GrantedAddressPage() {
               )
             }
           />
-          <InfoRow label="Type" value={data.is_contract ? 'Contract' : 'EOA (Externally Owned Account)'} />
-          <InfoRow label="Balance" value={`${formatWei(data.balance)} ${getNetworkCurrency()}`} />
-          <InfoRow label="Transactions" value={data.tx_count.toLocaleString()} />
+          <InfoRow label="Type" value={data.is_contract == null ? 'Not available' : data.is_contract ? 'Contract' : 'EOA (Externally Owned Account)'} />
+          <InfoRow label="Balance" value={data.balance == null ? 'Not available' : `${formatWei(data.balance)} ${getNetworkCurrency()}`} />
+          <InfoRow label="Transactions" value={data.tx_count == null ? 'Not available' : data.tx_count.toLocaleString()} />
           <InfoRow label="Disclosure Level" value={
             <span className={`badge capitalize ${
               isPseudonymous
@@ -349,7 +357,7 @@ export function GrantedAddressPage() {
             <h3 className="font-medium text-neutral-900">Transactions</h3>
             {isPseudonymous && (
               <p className="text-xs text-neutral-500 mt-1">
-                Addresses are shown as pseudonyms. Transaction hashes are hidden to prevent lookup.
+                Addresses are shown as pseudonyms. Transaction hashes are hidden.
               </p>
             )}
             {isRedacted && (
@@ -358,7 +366,11 @@ export function GrantedAddressPage() {
               </p>
             )}
           </div>
-          {txLoading ? (
+          {txError ? (
+            <StateMessage variant="error" title="Disclosed transactions are not available"
+              detail="The grant may have expired or changed. Retry to check access."
+              action={<button className="btn-primary" onClick={() => void refetchTransactions()}>Retry transactions</button>} />
+          ) : txLoading ? (
             <div className="p-8 text-center text-neutral-400">Loading transactions...</div>
           ) : txData?.transactions.length === 0 ? (
             <div className="p-8 text-center text-neutral-400">No transactions found</div>
@@ -383,6 +395,7 @@ export function GrantedAddressPage() {
                       key={tx.tx_hash || `${tx.block_number}-${index}`}
                       tx={tx}
                       isFull={isFull}
+                      detailLink={grantLink({ grantId: grantId!, addressId: addressId!, level: data.disclosure_level }, tx)}
                       addressLabels={txData.address_labels}
                     />
                   ))}
@@ -402,7 +415,11 @@ export function GrantedAddressPage() {
               RPC method calls made by the disclosed address during the grant period.
             </p>
           </div>
-          {activityLoading ? (
+          {activityError ? (
+            <StateMessage variant="error" title="Disclosed activity logs are not available"
+              detail="The grant may have expired or changed. Retry to check access."
+              action={<button className="btn-primary" onClick={() => void refetchActivity()}>Retry activity logs</button>} />
+          ) : activityLoading ? (
             <div className="p-8 text-center text-neutral-400">Loading activity logs...</div>
           ) : activityData?.logs.length === 0 ? (
             <div className="p-8 text-center text-neutral-400">No activity logs found</div>
@@ -479,7 +496,7 @@ export function GrantedAddressPage() {
             Transaction details are not available for redacted disclosures.
           </p>
           <p className="text-xs text-neutral-400 mt-1">
-            Only aggregate statistics (transaction count, balance) are shown.
+            No transaction or activity-log access is included in this grant.
           </p>
         </div>
       )}
@@ -501,10 +518,12 @@ function TransactionRow({
   tx,
   isFull,
   addressLabels,
+  detailLink,
 }: {
   tx: PseudonymizedTransaction;
   isFull: boolean;
   addressLabels: Record<string, string>;
+  detailLink: string;
 }) {
   const DirectionIcon = tx.direction === 'in' ? ArrowDownLeft :
                         tx.direction === 'out' ? ArrowUpRight : RotateCcw;
@@ -518,7 +537,7 @@ function TransactionRow({
       {isFull && (
         <td>
           <Link
-            to={`/tx/${tx.tx_hash}`}
+            to={detailLink}
             className="font-mono text-xs text-primary hover:text-primary-600 transition-colors"
           >
             {tx.tx_hash?.slice(0, 10)}...
