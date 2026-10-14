@@ -35,6 +35,10 @@ export async function loadGrantWindow(
     if (cursor) seen.add(cursor);
     const response = await fetch(source.grantId, source.addressId, 100, window.upper ? window.upper.block + 1 : undefined, cursor);
     const level = response.disclosure_level ?? source.level;
+    // A response can observe a grant change after metadata was loaded. Do not
+    // append it to earlier pages authorized at another level, even if empty.
+    // The query's error state hides every cached page until metadata is retried.
+    if (level !== source.level) throw new Error('Disclosure level changed');
     for (const tx of response.transactions) {
       if (inGrantWindow(tx, window)) rows.push({ source: { ...source, level }, tx });
     }

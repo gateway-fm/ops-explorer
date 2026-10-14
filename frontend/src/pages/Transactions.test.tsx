@@ -138,6 +138,43 @@ describe('Transactions disclosure composition', () => {
     expect(screen.queryByRole('button', { name: 'Load more disclosed transactions' })).not.toBeInTheDocument();
   });
 
+  it.each([false, true])('hides all Full pages after a downgrade, including an empty continuation (%s), and revalidates before retrying', async (empty) => {
+    let calls = 0;
+    let level = 'full';
+    const events: string[] = [];
+    server.use(
+      http.get(`${API}/transactions`, () => HttpResponse.json({ data: [], total: 0, totalPages: 0, page: 1 })),
+      http.get(`${API}/privacy/grant/g1/a1`, () => {
+        events.push('resolve');
+        return HttpResponse.json({ grant_id: 'g1', disclosure_level: level, scope_methods: ['transaction_history'] });
+      }),
+      http.get(`${API}/privacy/grant/g1/a1/transactions`, ({ request }) => {
+        events.push('feed');
+        calls++;
+        if (level === 'full') {
+          return HttpResponse.json({ transactions: calls === 1 ? [{ ...grantTx, from: 'Full-address', value: '1234' }] : [], disclosure_level: level, next_cursor: `cursor-${calls}` });
+        }
+        const continuing = new URL(request.url).searchParams.has('cursor');
+        return HttpResponse.json({ transactions: empty && continuing ? [] : [{ ...grantTx, tx_hash: undefined }], disclosure_level: level });
+      }),
+    );
+    renderWithProviders(<Transactions />);
+    await screen.findByRole('link', { name: /0xaaaa/ });
+    level = 'pseudonymous';
+    await userEvent.click(screen.getByRole('button', { name: 'Load more disclosed transactions' }));
+    await screen.findByRole('alert');
+    expect(screen.queryByRole('link', { name: /0xaaaa/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('Full-address')).not.toBeInTheDocument();
+    expect(screen.queryByText('Disclosed')).not.toBeInTheDocument();
+    events.length = 0;
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await screen.findByRole('link', { name: 'Hidden transaction' });
+    expect(events).toEqual(['resolve', 'feed']);
+    expect(screen.queryByRole('link', { name: /0xaaaa/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('Full-address')).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('tx-row')).toHaveLength(1);
+  });
+
   it('removes stale grant rows when continued access is denied and shows a recoverable error', async () => {
     let calls = 0;
     server.use(http.get(`${API}/privacy/grant/g1/a1/transactions`, () => {

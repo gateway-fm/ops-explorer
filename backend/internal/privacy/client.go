@@ -461,7 +461,7 @@ type ActivityLogEntry struct {
 // GetGrantActivityLogs fetches activity logs for a disclosure grant from the privacy proxy.
 // The caller's JWT is forwarded so the proxy can verify grant holder identity.
 func (c *Client) GetGrantActivityLogs(ctx context.Context, grantID string, token string, limit, offset int) ([]byte, int, error) {
-	endpoint := fmt.Sprintf("/api/v1/explorer/grant/%s/activity?limit=%d&offset=%d", grantID, limit, offset)
+	endpoint := fmt.Sprintf("/api/v1/explorer/grant/%s/activity?limit=%d&offset=%d", url.PathEscape(grantID), limit, offset)
 
 	u, err := url.Parse(c.baseURL + endpoint)
 	if err != nil {

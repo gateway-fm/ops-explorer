@@ -55,6 +55,8 @@ export function useDisclosedTransactions(enabled: boolean, viewer: string | null
     hasMore: canShow && !!feed.hasNextPage,
     loadingMore: feed.isFetchingNextPage,
     loadMore: () => feed.fetchNextPage(),
-    retry: () => { void sources.refetch(); if (window && initial.length) void feed.refetch(); },
+    // A successful metadata refresh creates a new feed key. Never restart the
+    // old feed in parallel: its cached Full pages may predate a downgrade.
+    retry: () => { void sources.refetch(); },
   };
 }

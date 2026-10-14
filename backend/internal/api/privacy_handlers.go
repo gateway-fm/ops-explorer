@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"net/url"
 
 	"explorer/internal/privacy"
 	"explorer/pkg/log"
@@ -60,6 +61,24 @@ type GrantedAddressResponse struct {
 	ScopeMethods    []string `json:"scope_methods,omitempty"` // Grant scope methods (e.g. "transaction_history", "activity_logs")
 }
 
+// chi routes against RawPath when present. Otherwise its params already come
+// from decoded Path, so unescaping again would corrupt literal percent signs.
+func grantRouteParams(r *http.Request, names ...string) ([]string, error) {
+	values := make([]string, len(names))
+	for i, name := range names {
+		value := chi.URLParam(r, name)
+		if r.URL.RawPath != "" {
+			var err error
+			value, err = url.PathUnescape(value)
+			if err != nil {
+				return nil, err
+			}
+		}
+		values[i] = value
+	}
+	return values, nil
+}
+
 // SECURITY: This endpoint uses opaque address_id - the real address is never exposed to the frontend
 // for pseudonymous/redacted disclosures.
 func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request) {
@@ -67,8 +86,12 @@ func (s *Server) handleGetGrantedAddress(w http.ResponseWriter, r *http.Request)
 		http.NotFound(w, r)
 		return
 	}
-	grantID := chi.URLParam(r, "grantId")
-	addressID := chi.URLParam(r, "addressId")
+	params, err := grantRouteParams(r, "grantId", "addressId")
+	if err != nil {
+		http.Error(w, "invalid grant route parameter", http.StatusBadRequest)
+		return
+	}
+	grantID, addressID := params[0], params[1]
 
 	if grantID == "" || addressID == "" {
 		http.Error(w, "grant_id and address_id are required", http.StatusBadRequest)
@@ -143,8 +166,12 @@ func (s *Server) handleGetGrantedAddressTransactions(w http.ResponseWriter, r *h
 		http.NotFound(w, r)
 		return
 	}
-	grantID := chi.URLParam(r, "grantId")
-	addressID := chi.URLParam(r, "addressId")
+	params, err := grantRouteParams(r, "grantId", "addressId")
+	if err != nil {
+		http.Error(w, "invalid grant route parameter", http.StatusBadRequest)
+		return
+	}
+	grantID, addressID := params[0], params[1]
 
 	if grantID == "" || addressID == "" {
 		http.Error(w, "grant_id and address_id are required", http.StatusBadRequest)
@@ -188,7 +215,12 @@ func (s *Server) handleGetGrantedTransaction(w http.ResponseWriter, r *http.Requ
 		http.NotFound(w, r)
 		return
 	}
-	grantID, addressID, hash := chi.URLParam(r, "grantId"), chi.URLParam(r, "addressId"), chi.URLParam(r, "hash")
+	params, err := grantRouteParams(r, "grantId", "addressId", "hash")
+	if err != nil {
+		http.Error(w, "invalid grant route parameter", http.StatusBadRequest)
+		return
+	}
+	grantID, addressID, hash := params[0], params[1], params[2]
 	if grantID == "" || addressID == "" || hash == "" {
 		http.Error(w, "grant_id, address_id and hash are required", http.StatusBadRequest)
 		return
@@ -220,7 +252,12 @@ func (s *Server) handleGetGrantActivityLogs(w http.ResponseWriter, r *http.Reque
 		http.NotFound(w, r)
 		return
 	}
-	grantID := chi.URLParam(r, "grantId")
+	params, err := grantRouteParams(r, "grantId")
+	if err != nil {
+		http.Error(w, "invalid grant route parameter", http.StatusBadRequest)
+		return
+	}
+	grantID := params[0]
 	if grantID == "" {
 		http.Error(w, "grant_id is required", http.StatusBadRequest)
 		return

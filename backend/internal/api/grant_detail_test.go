@@ -5,7 +5,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func TestGrantAddressDoesNotReadRegularProvider(t *testing.T) {
@@ -79,6 +82,64 @@ func TestGrantReadsRejectViewAs(t *testing.T) {
 			handler(w, r)
 			if w.Code != http.StatusNotFound {
 				t.Errorf("status = %d, want 404", w.Code)
+			}
+		})
+	}
+}
+
+// Exercise real chi routing: encoded path segments may come from RawPath, while
+// percent signs and spaces can already be decoded in Path when RawPath is empty.
+func TestGrantRoutesPreserveOpaqueIDs(t *testing.T) {
+	for _, ids := range []struct{ name, grant, address, hash string }{
+		{"reserved", "g%2F1", "a%3F2", "h%23x"},
+		{"literal-percent", "g%251", "a%252F2", "h%253Fx"},
+		{"spaces", "g%201", "a%202", "h%20x"},
+		{"mixed-encoding", "g%251", "a%2F2", "h%252Fx"},
+	} {
+		t.Run(ids.name, func(t *testing.T) {
+			for _, route := range []struct {
+				name, pattern, path, upstream string
+				handler                       func(*Server) http.HandlerFunc
+			}{
+				{"resolve", "/grant/{grantId}/{addressId}", "/grant/" + ids.grant + "/" + ids.address, "/api/v1/explorer/grant/" + ids.grant + "/resolve/" + ids.address, func(s *Server) http.HandlerFunc { return s.handleGetGrantedAddress }},
+				{"feed", "/grant/{grantId}/{addressId}/transactions", "/grant/" + ids.grant + "/" + ids.address + "/transactions", "/api/v1/explorer/grant/" + ids.grant + "/" + ids.address + "/transactions", func(s *Server) http.HandlerFunc { return s.handleGetGrantedAddressTransactions }},
+				{"detail", "/grant/{grantId}/{addressId}/transactions/{hash}", "/grant/" + ids.grant + "/" + ids.address + "/transactions/" + ids.hash, "/api/v1/explorer/grant/" + ids.grant + "/" + ids.address + "/transactions/" + ids.hash, func(s *Server) http.HandlerFunc { return s.handleGetGrantedTransaction }},
+				{"activity", "/grant/{grantId}/activity", "/grant/" + ids.grant + "/activity", "/api/v1/explorer/grant/" + ids.grant + "/activity", func(s *Server) http.HandlerFunc { return s.handleGetGrantActivityLogs }},
+			} {
+				t.Run(route.name, func(t *testing.T) {
+					var called atomic.Bool
+					s := tcServerWithProxy(t, func(w http.ResponseWriter, r *http.Request) {
+						called.Store(true)
+						if r.URL.EscapedPath() != route.upstream {
+							t.Errorf("upstream path = %q, want %q", r.URL.EscapedPath(), route.upstream)
+						}
+						w.Write([]byte(`{"disclosure_level":"full"}`))
+					}, nil)
+					router := chi.NewRouter()
+					router.Route("/api/privacy", func(r chi.Router) { r.Get(route.pattern, route.handler(s)) })
+					w := httptest.NewRecorder()
+					router.ServeHTTP(w, tcWithViewer(httptest.NewRequest(http.MethodGet, "/api/privacy"+route.path, nil), "did:viewer"))
+					if w.Code != http.StatusOK || !called.Load() {
+						t.Errorf("status %d, upstream called %v: %s", w.Code, called.Load(), w.Body.String())
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestGrantRouteRejectsMalformedEscapes(t *testing.T) {
+	s := tcServerWithProxy(t, func(w http.ResponseWriter, r *http.Request) { t.Error("upstream called for malformed escape") }, nil)
+	router := chi.NewRouter()
+	router.Get("/grant/{grantId}/{addressId}/transactions/{hash}", s.handleGetGrantedTransaction)
+	for _, path := range []string{"/grant/g%ZZ/a/transactions/h", "/grant/g/a%ZZ/transactions/h", "/grant/g/a/transactions/h%ZZ"} {
+		t.Run(path, func(t *testing.T) {
+			r := tcWithViewer(httptest.NewRequest(http.MethodGet, "/grant/g/a/transactions/h", nil), "did:viewer")
+			r.URL.RawPath = path
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, r)
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("status = %d, want 400", w.Code)
 			}
 		})
 	}

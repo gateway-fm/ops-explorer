@@ -57,6 +57,13 @@ describe('disclosed transaction composition', () => {
     expect(fetch.mock.calls[2][4]).toBe('c2');
   });
 
+  it('rejects a level change within a batch before returning any earlier Full rows', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce({ transactions: [disclosed(4, 0, 'full-hash')], disclosure_level: 'full', next_cursor: 'c1' })
+      .mockResolvedValueOnce({ transactions: [], disclosure_level: 'redacted' });
+    await expect(loadGrantWindow({ ...source, level: 'full' }, {}, fetch)).rejects.toThrow('Disclosure level changed');
+  });
+
   it('uses a Full grant to reveal a duplicate masked regular row while preserving visible own rows', () => {
     const masked = { ...regular(20, 0, 'shared'), from: '[PRIVATE]', to: '0xmine', value: '' };
     const full = { source: { ...source, level: 'full' }, tx: { ...disclosed(20, 0, 'shared'), from: '0xsubject', to: '0xmine', value: '5' } };
