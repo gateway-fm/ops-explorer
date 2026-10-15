@@ -22,10 +22,10 @@ export function Transactions() {
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   const pageSize = 25;
   const queryClient = useQueryClient();
-  const { isAuthenticated, auth } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, auth } = useAuth();
   const { isActive: viewingAs, token } = useImpersonation();
   const viewer = isAuthenticated ? auth.did : null;
-  const compose = isAuthenticated && !viewingAs && !searchParams.has('as');
+  const compose = !authLoading && isAuthenticated && !viewingAs && !searchParams.has('as');
 
   // Main transactions query — no auto-refetch
   const { data, isLoading, error } = useQuery({
@@ -68,13 +68,17 @@ export function Transactions() {
   });
 
   // Snapshot the top tx hash at the moment the table first shows results.
-  const [snapshotTopHash, setSnapshotTopHash] = useState<string | null>(null);
+  const scope = JSON.stringify([viewer, token]);
+  const [snapshot, setSnapshot] = useState<{ scope: string; hash: string } | null>(null);
+  // A new account or View-as session needs its own baseline immediately,
+  // before the effect runs, so its existing rows are not counted as new.
+  const snapshotTopHash = snapshot?.scope === scope ? snapshot.hash : null;
   useEffect(() => {
     if (page === 1 && data?.data?.length && snapshotTopHash === null) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time snapshot on initial data load
-      setSnapshotTopHash(data.data[0].hash);
+      setSnapshot({ scope, hash: data.data[0].hash });
     }
-  }, [page, data, snapshotTopHash]);
+  }, [page, data, snapshotTopHash, scope]);
 
   // Count entries in the live window above the snapshot. If the snapshot
   // has fallen off the visible page, we know there are at least pageSize
@@ -89,13 +93,13 @@ export function Transactions() {
   })();
 
   const handleLoadNew = useCallback(() => {
-    setSnapshotTopHash(null);
+    setSnapshot(null);
     queryClient.invalidateQueries({ queryKey: ['transactions', page, pageSize] });
     queryClient.invalidateQueries({ queryKey: ['disclosed-transactions', viewer, page] });
   }, [queryClient, page, pageSize, viewer]);
 
   const goToPage = (newPage: number) => {
-    setSnapshotTopHash(null);
+    setSnapshot(null);
     setSearchParams((previous) => { const next = new URLSearchParams(previous); next.set('page', String(newPage)); return next; });
   };
 

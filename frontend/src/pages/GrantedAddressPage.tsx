@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
+import { disclosureQueryOptions, isDisclosureReady } from '../lib/disclosureQuery';
 import type { PseudonymizedTransaction, GrantedAddressResponse } from '../lib/api';
 import { formatWei, formatTimestamp, getNetworkCurrency } from '../lib/utils';
 import { useAuth } from '../lib/auth';
@@ -67,12 +68,16 @@ export function GrantedAddressPage() {
   const [activityOffset, setActivityOffset] = useState(0);
   const activityLimit = 25;
 
-  const { data, isLoading, error, dataUpdatedAt: grantCheckedAt } = useQuery({
-    queryKey: ['grantedAddress', auth.did, grantId, addressId],
-    queryFn: () => api.getGrantedAddress(grantId!, addressId!),
-    enabled: !!grantId && !!addressId && isAuthenticated && !viewingAs,
-    retry: false,
+  const enabled = !!grantId && !!addressId && !authLoading && isAuthenticated && !viewingAs;
+  const grant = useQuery({
+    ...disclosureQueryOptions,
+    queryKey: ['grantedAddress', auth.did, grantId, addressId, enabled],
+    queryFn: ({ signal }) => api.getGrantedAddress(grantId!, addressId!, signal),
+    enabled,
   });
+  const { error, dataUpdatedAt: grantCheckedAt } = grant;
+  const data = enabled && isDisclosureReady(grant) ? grant.data : undefined;
+  const isLoading = enabled && (grant.isPending || grant.fetchStatus !== 'idle');
 
   // Compute available tabs from the data
   const availableTabs = data ? getAvailableTabs(data) : [];
@@ -81,22 +86,33 @@ export function GrantedAddressPage() {
   const showActivityLogsTab = availableTabs.includes('activity_logs');
 
   // Fetch transactions only when the transactions tab is available and selected
-  const shouldFetchTransactions = showTransactionsTab && currentTab === 'transactions';
-  const { data: txData, isLoading: txLoading, error: txError, refetch: refetchTransactions } = useQuery({
-    queryKey: ['grantedAddressTransactions', auth.did, grantId, addressId, grantCheckedAt],
-    queryFn: () => api.getGrantedAddressTransactions(grantId!, addressId!),
-    enabled: !!grantId && !!addressId && isAuthenticated && !viewingAs && shouldFetchTransactions,
-    retry: false,
+  const shouldFetchTransactions = !!data && showTransactionsTab && currentTab === 'transactions';
+  const transactions = useQuery({
+    ...disclosureQueryOptions,
+    queryKey: ['grantedAddressTransactions', auth.did, grantId, addressId, grantCheckedAt, shouldFetchTransactions],
+    queryFn: async ({ signal }) => {
+      const result = await api.getGrantedAddressTransactions(grantId!, addressId!, 25, undefined, undefined, signal);
+      signal.throwIfAborted();
+      if (result.disclosure_level && result.disclosure_level !== data!.disclosure_level) throw new Error('Disclosure level changed');
+      return result;
+    },
+    enabled: shouldFetchTransactions,
   });
+  const txData = shouldFetchTransactions && isDisclosureReady(transactions) ? transactions.data : undefined;
+  const txLoading = shouldFetchTransactions && (transactions.isPending || transactions.fetchStatus !== 'idle');
+  const txError = transactions.error;
 
   // Fetch activity logs when the activity_logs tab is available and selected
-  const shouldFetchActivityLogs = showActivityLogsTab && currentTab === 'activity_logs';
-  const { data: activityData, isLoading: activityLoading, error: activityError, refetch: refetchActivity } = useQuery({
-    queryKey: ['grantActivityLogs', auth.did, grantId, activityLimit, activityOffset, grantCheckedAt],
-    queryFn: () => api.getGrantActivityLogs(grantId!, activityLimit, activityOffset),
-    enabled: !!grantId && isAuthenticated && !viewingAs && shouldFetchActivityLogs,
-    retry: false,
+  const shouldFetchActivityLogs = !!data && showActivityLogsTab && currentTab === 'activity_logs';
+  const activity = useQuery({
+    ...disclosureQueryOptions,
+    queryKey: ['grantActivityLogs', auth.did, grantId, addressId, activityLimit, activityOffset, grantCheckedAt, shouldFetchActivityLogs],
+    queryFn: ({ signal }) => api.getGrantActivityLogs(grantId!, activityLimit, activityOffset, signal),
+    enabled: shouldFetchActivityLogs,
   });
+  const activityData = shouldFetchActivityLogs && isDisclosureReady(activity) ? activity.data : undefined;
+  const activityLoading = shouldFetchActivityLogs && (activity.isPending || activity.fetchStatus !== 'idle');
+  const activityError = activity.error;
 
   if (viewingAs) return <div className="text-neutral-500">Disclosures are not available during View-as</div>;
 
@@ -189,6 +205,15 @@ export function GrantedAddressPage() {
   if (!data) {
     return <div className="text-error-600">Address not found</div>;
   }
+
+  // A denied feed can be the first evidence that a grant changed. Do not keep
+  // the earlier Full address visible; retry metadata before loading a new feed.
+  const failedTab = txError ? 'transactions' : activityError ? 'activity logs' : null;
+  if (failedTab) return (
+    <StateMessage variant="error" title={`Disclosed ${failedTab} are not available`}
+      detail="The grant may have expired or changed. Retry to check access."
+      action={<button className="btn-primary" onClick={() => void grant.refetch()}>Retry {failedTab}</button>} />
+  );
 
   const isPseudonymous = data.disclosure_level === 'pseudonymous';
   const isRedacted = data.disclosure_level === 'redacted';
@@ -366,11 +391,7 @@ export function GrantedAddressPage() {
               </p>
             )}
           </div>
-          {txError ? (
-            <StateMessage variant="error" title="Disclosed transactions are not available"
-              detail="The grant may have expired or changed. Retry to check access."
-              action={<button className="btn-primary" onClick={() => void refetchTransactions()}>Retry transactions</button>} />
-          ) : txLoading ? (
+          {txLoading ? (
             <div className="p-8 text-center text-neutral-400">Loading transactions...</div>
           ) : txData?.transactions.length === 0 ? (
             <div className="p-8 text-center text-neutral-400">No transactions found</div>
@@ -415,11 +436,7 @@ export function GrantedAddressPage() {
               RPC method calls made by the disclosed address during the grant period.
             </p>
           </div>
-          {activityError ? (
-            <StateMessage variant="error" title="Disclosed activity logs are not available"
-              detail="The grant may have expired or changed. Retry to check access."
-              action={<button className="btn-primary" onClick={() => void refetchActivity()}>Retry activity logs</button>} />
-          ) : activityLoading ? (
+          {activityLoading ? (
             <div className="p-8 text-center text-neutral-400">Loading activity logs...</div>
           ) : activityData?.logs.length === 0 ? (
             <div className="p-8 text-center text-neutral-400">No activity logs found</div>

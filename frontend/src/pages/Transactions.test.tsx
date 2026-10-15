@@ -6,8 +6,8 @@ import { renderWithProviders } from '../test/render';
 import { API, http, HttpResponse, makeTx, server } from '../test/msw';
 import { Transactions } from './Transactions';
 
-const session = vi.hoisted(() => ({ isActive: false, token: null as string | null }));
-vi.mock('../lib/auth', () => ({ useAuth: () => ({ isAuthenticated: true, auth: { did: 'did:viewer' } }) }));
+const session = vi.hoisted(() => ({ isActive: false, token: null as string | null, did: 'did:viewer' }));
+vi.mock('../lib/auth', () => ({ useAuth: () => ({ isAuthenticated: true, auth: { did: session.did } }) }));
 vi.mock('../hooks/useImpersonation', () => ({ useImpersonation: () => session, getImpersonationTokenHeader: () => session.token }));
 
 const hash = '0x' + 'a'.repeat(64);
@@ -25,7 +25,32 @@ describe('Transactions disclosure composition', () => {
   beforeEach(() => {
     session.isActive = false;
     session.token = null;
+    session.did = 'did:viewer';
     server.use(...grantHandlers(), http.get(`${API}/addresses/:address/contract`, () => HttpResponse.json({ isVerified: false })));
+  });
+
+  it.each(['account', 'View-as'])('resets the new-transaction snapshot after changing %s', async (change) => {
+    server.use(
+      http.get(`${API}/privacy/viewable-addresses`, () => HttpResponse.json({ disclosed_addresses: [] })),
+      http.get(`${API}/transactions`, () => HttpResponse.json({ data: [makeTx(session.token || session.did === 'did:other' ? 2 : 1)], total: 1, totalPages: 1, page: 1 })),
+    );
+    function SwitchScope() {
+      const [, render] = useState(0);
+      return <>
+        <button onClick={() => {
+          if (change === 'account') session.did = 'did:other';
+          else { session.isActive = true; session.token = 'view-as'; }
+          render(1);
+        }}>Switch scope</button>
+        <Transactions />
+      </>;
+    }
+    renderWithProviders(<SwitchScope />);
+    await screen.findByRole('link', { name: /0xeeee/ });
+    await userEvent.click(screen.getByRole('button', { name: 'Switch scope' }));
+    await waitFor(() => expect(screen.getAllByTestId('tx-row')).toHaveLength(1));
+    await waitFor(() => expect(screen.getByRole('link', { name: /0xeeee/ })).toHaveAttribute('href', `/tx/${makeTx(2).hash}`));
+    expect(screen.queryByTestId('new-items-notice')).not.toBeInTheDocument();
   });
 
   it('shows grant-only transactions with a disclosure badge and grant detail route', async () => {

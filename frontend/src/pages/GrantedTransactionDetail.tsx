@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
+import { disclosureQueryOptions } from '../lib/disclosureQuery';
 import { useAuth } from '../lib/auth';
 import { useImpersonation } from '../hooks/useImpersonation';
 import { PageHeader } from '../components/PageHeader';
@@ -16,21 +17,16 @@ export function GrantedTransactionDetail() {
   const viewingAs = isActive || searchParams.has('as');
   const grantPath = `/grant/${encodeURIComponent(grantId ?? '')}/${encodeURIComponent(addressId ?? '')}`;
   const enabled = !authLoading && isAuthenticated && !viewingAs && !!grantId && !!addressId && !!hash;
-  const { data, fetchStatus, isFetchedAfterMount, error } = useQuery({
-    queryKey: ['grantedTransaction', auth.did, grantId, addressId, hash, viewingAs],
+  const { data, fetchStatus, isPending, error } = useQuery({
+    ...disclosureQueryOptions,
+    queryKey: ['grantedTransaction', auth.did, grantId, addressId, hash, enabled],
     queryFn: ({ signal }) => api.getGrantedTransaction(grantId!, addressId!, hash!, signal),
     enabled,
-    retry: false,
-    // Full detail authorization can change while visiting another page. Keep
-    // no inactive detail cache and require a fresh access check on every visit.
-    gcTime: 0,
-    staleTime: 0,
-    refetchOnMount: 'always',
   });
 
   // A background or offline-paused check must not expose the previous Full
   // response. View-as changes the key so leaving it cannot reuse an old request.
-  if (authLoading || (enabled && (fetchStatus !== 'idle' || (!isFetchedAfterMount && !error)))) return <StateMessage variant="loading" />;
+  if (authLoading || (enabled && (fetchStatus !== 'idle' || isPending))) return <StateMessage variant="loading" />;
   if (!isAuthenticated) return (
     <div className="space-y-4">
       <StateMessage variant="empty" title="Sign in to view disclosed transaction details" />

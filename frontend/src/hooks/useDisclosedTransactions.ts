@@ -1,5 +1,6 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
+import { disclosureQueryOptions, isDisclosureReady } from '../lib/disclosureQuery';
 import type { GrantSource, GrantWindow } from '../pages/Transactions.disclosure';
 import { loadGrantWindow } from '../pages/Transactions.disclosure';
 
@@ -7,18 +8,21 @@ interface Continuation { source: GrantSource; cursor?: string }
 
 export function useDisclosedTransactions(enabled: boolean, viewer: string | null, page: number, window: GrantWindow | undefined) {
   const sources = useQuery({
-    queryKey: ['disclosed-transaction-sources', viewer],
+    ...disclosureQueryOptions,
+    queryKey: ['disclosed-transaction-sources', viewer, enabled],
     enabled,
-    retry: false,
-    queryFn: async () => {
-      const addresses = await api.getViewableAddresses();
+    queryFn: async ({ signal }) => {
+      const addresses = await api.getViewableAddresses(signal);
+      signal.throwIfAborted();
       const unique = new Map((addresses.disclosed_addresses ?? []).map((address) => [`${address.grant_id}:${address.address_id}`, address]));
       const resolved = await Promise.allSettled([...unique.values()].map(async (address) => {
-        const grant = await api.getGrantedAddress(address.grant_id, address.address_id);
+        const grant = await api.getGrantedAddress(address.grant_id, address.address_id, signal);
+        signal.throwIfAborted();
         const methods = grant.scope_methods ?? [];
         if (methods.length && !methods.includes('transaction_history') && !methods.includes('full_disclosure')) return null;
         return { grantId: address.grant_id, addressId: address.address_id, level: grant.disclosure_level };
       }));
+      signal.throwIfAborted();
       return {
         sources: resolved.flatMap((result) => result.status === 'fulfilled' && result.value ? [result.value] : []),
         incomplete: resolved.some((result) => result.status === 'rejected'),
@@ -26,37 +30,52 @@ export function useDisclosedTransactions(enabled: boolean, viewer: string | null
     },
   });
 
-  const initial: Continuation[] = (sources.data?.sources ?? []).map((source) => ({ source }));
+  const sourcesReady = enabled && isDisclosureReady(sources);
+  const initial: Continuation[] = (sourcesReady ? sources.data?.sources ?? [] : []).map((source) => ({ source }));
+  const feedEnabled = sourcesReady && !!window && initial.length > 0;
   const feed = useInfiniteQuery({
-    queryKey: ['disclosed-transactions', viewer, page, window, sources.data?.sources, sources.dataUpdatedAt],
-    enabled: enabled && !!window && initial.length > 0,
+    ...disclosureQueryOptions,
+    queryKey: ['disclosed-transactions', viewer, page, window, sources.data?.sources, sources.dataUpdatedAt, feedEnabled],
+    enabled: feedEnabled,
     initialPageParam: initial,
-    retry: false,
-    queryFn: async ({ pageParam }) => {
-      const results = await Promise.all(pageParam.map(async ({ source, cursor }) => ({
-        source, ...await loadGrantWindow(source, window!, api.getGrantedAddressTransactions, cursor),
-      })));
-      return {
-        rows: results.flatMap((result) => result.rows),
-        continuation: results.flatMap((result) => result.nextCursor ? [{ source: result.source, cursor: result.nextCursor }] : []),
-      };
+    queryFn: async ({ pageParam, signal }) => {
+      // Promise.all rejects immediately, but leaves sibling requests running.
+      // Cancel the whole batch on failure as well as on a query scope change.
+      const batch = new AbortController();
+      const cancel = () => batch.abort(signal.reason);
+      signal.addEventListener('abort', cancel, { once: true });
+      if (signal.aborted) cancel();
+      try {
+        const results = await Promise.all(pageParam.map(async ({ source, cursor }) => ({
+          source, ...await loadGrantWindow(source, window!, api.getGrantedAddressTransactions, cursor, 5, batch.signal),
+        })));
+        signal.throwIfAborted();
+        return {
+          rows: results.flatMap((result) => result.rows),
+          continuation: results.flatMap((result) => result.nextCursor ? [{ source: result.source, cursor: result.nextCursor }] : []),
+        };
+      } catch (error) {
+        batch.abort(error);
+        throw error;
+      } finally {
+        signal.removeEventListener('abort', cancel);
+      }
     },
     getNextPageParam: (last) => last.continuation.length ? last.continuation : undefined,
   });
 
-  // Disabled React Query observers retain cached data. Gate the render result
-  // as well, so activating View-as or signing out removes grant rows immediately.
-  // A denied refresh/continuation must not keep formerly authorized rows visible.
-  const canShow = enabled && !sources.error && !feed.error && !sources.isFetching && !feed.isRefetching;
+  // Keep current rows during online pagination, but never during a refresh,
+  // paused access check, or after a denied continuation.
+  const canShow = feedEnabled && feed.isSuccess && !feed.isRefetching && !feed.isPaused;
   return {
     rows: canShow ? feed.data?.pages.flatMap((batch) => batch.rows) ?? [] : [],
-    loading: enabled && (sources.isFetching || (!!window && initial.length > 0 && (feed.isLoading || feed.isRefetching))),
+    loading: enabled && (sources.isPending || sources.fetchStatus !== 'idle' || (feedEnabled && (feed.isPending || feed.isRefetching || feed.isPaused))),
     error: enabled && (sources.error || sources.data?.incomplete || feed.error),
     hasMore: canShow && !!feed.hasNextPage,
     loadingMore: feed.isFetchingNextPage,
-    loadMore: () => feed.fetchNextPage(),
+    loadMore: () => { if (canShow && feed.hasNextPage) return feed.fetchNextPage(); },
     // A successful metadata refresh creates a new feed key. Never restart the
     // old feed in parallel: its cached Full pages may predate a downgrade.
-    retry: () => { void sources.refetch(); },
+    retry: () => { if (enabled) void sources.refetch(); },
   };
 }

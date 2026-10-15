@@ -82,7 +82,7 @@ describe('disclosed transaction composition', () => {
       next_cursor: 'older',
     });
     const result = await loadGrantWindow(source, { upper: { block: 50, index: 5 }, lower: { block: 40, index: 0 } }, fetch);
-    expect(fetch).toHaveBeenCalledWith('g', 'a', 100, 51, undefined);
+    expect(fetch).toHaveBeenCalledWith('g', 'a', 100, 51, undefined, undefined);
     expect(result.rows.map((row) => row.tx.block_number)).toEqual([50, 40]);
     expect(result.nextCursor).toBeUndefined();
   });

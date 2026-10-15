@@ -687,24 +687,24 @@ export const api = {
   },
 
   // Privacy endpoints
-  getViewableAddresses: () =>
-    fetchAPI<ViewableAddressesResponse>('/privacy/viewable-addresses'),
+  getViewableAddresses: (signal?: AbortSignal) =>
+    fetchAPI<ViewableAddressesResponse>('/privacy/viewable-addresses', { signal }),
 
-  getGrantedAddress: (grantId: string, addressId: string) =>
-    fetchAPI<GrantedAddressResponse>(`/privacy/grant/${encodeURIComponent(grantId)}/${encodeURIComponent(addressId)}`),
+  getGrantedAddress: (grantId: string, addressId: string, signal?: AbortSignal) =>
+    fetchAPI<GrantedAddressResponse>(`/privacy/grant/${encodeURIComponent(grantId)}/${encodeURIComponent(addressId)}`, { signal }),
 
-  getGrantedAddressTransactions: (grantId: string, addressId: string, limit = 25, before?: number, cursor?: string) => {
+  getGrantedAddressTransactions: (grantId: string, addressId: string, limit = 25, before?: number, cursor?: string, signal?: AbortSignal) => {
     const params = new URLSearchParams({ limit: String(limit) });
     if (cursor) params.set('cursor', cursor);
     else if (before) params.set('before', String(before));
-    return fetchAPI<PseudonymizedTransactionsResponse>(`/privacy/grant/${encodeURIComponent(grantId)}/${encodeURIComponent(addressId)}/transactions?${params}`);
+    return fetchAPI<PseudonymizedTransactionsResponse>(`/privacy/grant/${encodeURIComponent(grantId)}/${encodeURIComponent(addressId)}/transactions?${params}`, { signal });
   },
 
   getGrantedTransaction: (grantId: string, addressId: string, hash: string, signal?: AbortSignal) =>
     fetchAPI<GrantedTransactionDetail>(`/privacy/grant/${encodeURIComponent(grantId)}/${encodeURIComponent(addressId)}/transactions/${encodeURIComponent(hash)}`, { signal }),
 
-  getGrantActivityLogs: (grantId: string, limit = 25, offset = 0) =>
-    fetchAPI<ActivityLogsResponse>(`/privacy/grant/${grantId}/activity?limit=${limit}&offset=${offset}`),
+  getGrantActivityLogs: (grantId: string, limit = 25, offset = 0, signal?: AbortSignal) =>
+    fetchAPI<ActivityLogsResponse>(`/privacy/grant/${encodeURIComponent(grantId)}/activity?limit=${limit}&offset=${offset}`, { signal }),
 
   // ETH address linking endpoints (proxied through backend to privacy-proxy)
   eth: {

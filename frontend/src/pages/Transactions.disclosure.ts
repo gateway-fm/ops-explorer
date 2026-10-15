@@ -24,16 +24,18 @@ export function inGrantWindow(tx: PseudonymizedTransaction, window: GrantWindow)
     && (!window.lower || compare(tx, window.lower) >= 0);
 }
 
-type FetchGrant = (grantId: string, addressId: string, limit: number, before?: number, cursor?: string) => Promise<PseudonymizedTransactionsResponse>;
+type FetchGrant = (grantId: string, addressId: string, limit: number, before?: number, cursor?: string, signal?: AbortSignal) => Promise<PseudonymizedTransactionsResponse>;
 
 export async function loadGrantWindow(
-  source: GrantSource, window: GrantWindow, fetch: FetchGrant, cursor?: string, maxBatches = 5,
+  source: GrantSource, window: GrantWindow, fetch: FetchGrant, cursor?: string, maxBatches = 5, signal?: AbortSignal,
 ): Promise<{ rows: DisclosedRow[]; nextCursor?: string }> {
   const rows: DisclosedRow[] = [];
   const seen = new Set<string>();
   for (let batch = 0; batch < maxBatches; batch++) {
+    signal?.throwIfAborted();
     if (cursor) seen.add(cursor);
-    const response = await fetch(source.grantId, source.addressId, 100, window.upper ? window.upper.block + 1 : undefined, cursor);
+    const response = await fetch(source.grantId, source.addressId, 100, window.upper ? window.upper.block + 1 : undefined, cursor, signal);
+    signal?.throwIfAborted();
     const level = response.disclosure_level ?? source.level;
     // A response can observe a grant change after metadata was loaded. Do not
     // append it to earlier pages authorized at another level, even if empty.

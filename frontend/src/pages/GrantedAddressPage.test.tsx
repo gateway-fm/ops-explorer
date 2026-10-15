@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { screen } from '@testing-library/react';
+import { useState } from 'react';
+import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useQueryClient } from '@tanstack/react-query';
+import { onlineManager, useQueryClient } from '@tanstack/react-query';
+import { deferred } from '../test/deferred';
 import { renderWithProviders } from '../test/render';
 import { API, http, HttpResponse, server } from '../test/msw';
 import { GrantedAddressPage } from './GrantedAddressPage';
@@ -17,8 +19,96 @@ function Refresh({ queryKey }: { queryKey: string }) {
   return <button onClick={() => void queryClient.invalidateQueries({ queryKey: [queryKey] })}>Refresh access</button>;
 }
 
+function SwitchViewer() {
+  const [, render] = useState(0);
+  return <>
+    <button onClick={() => { viewing.isActive = !viewing.isActive; render((n) => n + 1); }}>Toggle View-as</button>
+    <GrantedAddressPage />
+  </>;
+}
+
 describe('GrantedAddressPage', () => {
   beforeEach(() => { viewing.isActive = false; });
+
+  it.each(['transactions', 'activity'])('rechecks metadata before restoring cached Full %s after View-as', async (kind) => {
+    const pending = deferred<void>();
+    let revoked = false;
+    const metadata = vi.fn(async () => {
+      if (revoked) { await pending.promise; return new HttpResponse(null, { status: 403 }); }
+      return HttpResponse.json({ grant_id: 'g', display_address: 'Full-address', disclosure_level: 'full', scope_methods: [kind === 'activity' ? 'activity_logs' : 'transaction_history'] });
+    });
+    const child = vi.fn(() => HttpResponse.json(kind === 'activity'
+      ? { logs: [{ method: 'private-rpc-method', status_code: 200, timestamp: '2026-10-14T00:00:00Z' }], total: 1 }
+      : { transactions: [transaction], address_labels: {} }));
+    server.use(
+      http.get(`${API}/privacy/grant/g/a`, metadata),
+      http.get(`${API}/privacy/grant/${kind === 'activity' ? 'g/activity' : 'g/a/transactions'}`, child),
+    );
+    renderWithProviders(<SwitchViewer />, { path: '/grant/:grantId/:addressId', initialEntries: ['/grant/g/a'] });
+    await screen.findByText(kind === 'activity' ? 'private-rpc-method' : '0x12345678...');
+    await userEvent.click(screen.getByRole('button', { name: 'Toggle View-as' }));
+    revoked = true;
+    await userEvent.click(screen.getByRole('button', { name: 'Toggle View-as' }));
+    expect(screen.queryByText('Full-address')).not.toBeInTheDocument();
+    expect(screen.queryByText('0x12345678...')).not.toBeInTheDocument();
+    expect(screen.queryByText('private-rpc-method')).not.toBeInTheDocument();
+    await waitFor(() => expect(metadata).toHaveBeenCalledTimes(2));
+    expect(child).toHaveBeenCalledTimes(1);
+    await act(async () => { pending.resolve(); });
+    await screen.findByText('Access Denied');
+    expect(child).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['metadata', 'transactions', 'activity'])('cancels pending %s on View-as and discards a late response', async (kind) => {
+    const pending = deferred<void>();
+    let signal: AbortSignal | undefined;
+    const metadata = vi.fn(async ({ request }: { request: Request }) => {
+      if (kind === 'metadata') { signal = request.signal; await pending.promise; }
+      return HttpResponse.json({ grant_id: 'g', display_address: 'Full-address', disclosure_level: 'full', scope_methods: [kind === 'activity' ? 'activity_logs' : 'transaction_history'] });
+    });
+    const child = vi.fn(async ({ request }: { request: Request }) => {
+      signal = request.signal;
+      await pending.promise;
+      return HttpResponse.json(kind === 'activity'
+        ? { logs: [{ method: 'private-rpc-method', status_code: 200, timestamp: '2026-10-14T00:00:00Z' }], total: 1 }
+        : { transactions: [transaction], address_labels: {} });
+    });
+    server.use(
+      http.get(`${API}/privacy/grant/g/a`, metadata),
+      http.get(`${API}/privacy/grant/${kind === 'activity' ? 'g/activity' : 'g/a/transactions'}`, child),
+    );
+    renderWithProviders(<SwitchViewer />, { path: '/grant/:grantId/:addressId', initialEntries: ['/grant/g/a'] });
+    await waitFor(() => expect(kind === 'metadata' ? metadata : child).toHaveBeenCalledTimes(1));
+    await userEvent.click(screen.getByRole('button', { name: 'Toggle View-as' }));
+    expect(signal?.aborted).toBe(true);
+    await act(async () => { pending.resolve(); });
+    expect(screen.queryByText('Full-address')).not.toBeInTheDocument();
+    expect(screen.queryByText('0x12345678...')).not.toBeInTheDocument();
+    expect(screen.queryByText('private-rpc-method')).not.toBeInTheDocument();
+    if (kind === 'metadata') expect(child).not.toHaveBeenCalled();
+  });
+
+  it.each(['metadata', 'transactions', 'activity'])('hides cached %s while its access check is paused offline', async (kind) => {
+    server.use(
+      http.get(`${API}/privacy/grant/g/a`, () => HttpResponse.json({ grant_id: 'g', display_address: 'Full-address', disclosure_level: 'full', scope_methods: [kind === 'activity' ? 'activity_logs' : 'transaction_history'] })),
+      http.get(`${API}/privacy/grant/g/a/transactions`, () => HttpResponse.json({ transactions: [transaction], address_labels: {} })),
+      http.get(`${API}/privacy/grant/g/activity`, () => HttpResponse.json({ logs: [{ method: 'private-rpc-method', status_code: 200, timestamp: '2026-10-14T00:00:00Z' }], total: 1 })),
+    );
+    const queryKey = { metadata: 'grantedAddress', transactions: 'grantedAddressTransactions', activity: 'grantActivityLogs' }[kind];
+    renderWithProviders(<><Refresh queryKey={queryKey} /><GrantedAddressPage /></>, { path: '/grant/:grantId/:addressId', initialEntries: ['/grant/g/a'] });
+    const secret = kind === 'activity' ? 'private-rpc-method' : '0x12345678...';
+    await screen.findByText(secret);
+    try {
+      onlineManager.setOnline(false);
+      await userEvent.click(screen.getByRole('button', { name: 'Refresh access' }));
+      expect(screen.queryByText(secret)).not.toBeInTheDocument();
+      if (kind === 'metadata') expect(screen.queryByText('Full-address')).not.toBeInTheDocument();
+      expect(screen.getByText(/Loading/)).toBeInTheDocument();
+    } finally {
+      act(() => onlineManager.setOnline(true));
+    }
+    await screen.findByText(secret);
+  });
   it('omits unavailable statistics and routes Full transaction links through the grant detail', async () => {
     server.use(
       http.get(`${API}/privacy/grant/g/a`, () => HttpResponse.json({ grant_id: 'g', display_address: '0xabc', disclosure_level: 'full' })),
@@ -48,6 +138,7 @@ describe('GrantedAddressPage', () => {
     allowed = false;
     await userEvent.click(screen.getByRole('button', { name: 'Refresh access' }));
     await screen.findByText('Disclosed transactions are not available');
+    expect(screen.queryByText('0xabc')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '0x12345678...' })).not.toBeInTheDocument();
     allowed = true;
     await userEvent.click(screen.getByRole('button', { name: 'Retry transactions' }));
@@ -65,6 +156,7 @@ describe('GrantedAddressPage', () => {
     allowed = false;
     await userEvent.click(screen.getByRole('button', { name: 'Refresh access' }));
     await screen.findByText('Disclosed activity logs are not available');
+    expect(screen.queryByText('Address-A')).not.toBeInTheDocument();
     expect(screen.queryByText('eth_blockNumber')).not.toBeInTheDocument();
     allowed = true;
     await userEvent.click(screen.getByRole('button', { name: 'Retry activity logs' }));
