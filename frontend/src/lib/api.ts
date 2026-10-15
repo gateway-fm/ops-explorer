@@ -700,8 +700,8 @@ export const api = {
     return fetchAPI<PseudonymizedTransactionsResponse>(`/privacy/grant/${encodeURIComponent(grantId)}/${encodeURIComponent(addressId)}/transactions?${params}`);
   },
 
-  getGrantedTransaction: (grantId: string, addressId: string, hash: string) =>
-    fetchAPI<GrantedTransactionDetail>(`/privacy/grant/${encodeURIComponent(grantId)}/${encodeURIComponent(addressId)}/transactions/${encodeURIComponent(hash)}`),
+  getGrantedTransaction: (grantId: string, addressId: string, hash: string, signal?: AbortSignal) =>
+    fetchAPI<GrantedTransactionDetail>(`/privacy/grant/${encodeURIComponent(grantId)}/${encodeURIComponent(addressId)}/transactions/${encodeURIComponent(hash)}`, { signal }),
 
   getGrantActivityLogs: (grantId: string, limit = 25, offset = 0) =>
     fetchAPI<ActivityLogsResponse>(`/privacy/grant/${grantId}/activity?limit=${limit}&offset=${offset}`),

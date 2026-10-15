@@ -86,4 +86,15 @@ describe('disclosed transaction composition', () => {
     expect(result.rows.map((row) => row.tx.block_number)).toEqual([50, 40]);
     expect(result.nextCursor).toBeUndefined();
   });
+
+  it('preserves participant-visible regular rows when a matching Full grant exists', () => {
+    const visible: Transaction = {
+      ...regular(20, 0, 'shared'), from: '0xsubject', to: '0xmine', value: '5',
+      addressMetadata: { '0xsubject': 'participant_override' },
+    };
+    const full = { source: { ...source, level: 'full' }, tx: disclosed(20, 0, 'shared') };
+    expect(mergeTransactions([visible], [full])).toEqual([
+      expect.objectContaining({ kind: 'regular', tx: visible }),
+    ]);
+  });
 });

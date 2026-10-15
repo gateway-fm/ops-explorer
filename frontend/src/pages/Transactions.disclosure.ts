@@ -64,7 +64,7 @@ export function mergeTransactions(regular: Transaction[], disclosed: DisclosedRo
     hashes.add(tx.hash.toLowerCase());
     if (tx.txIndex != null) positions.add(`${tx.blockNumber}:${tx.txIndex}`);
     const masked = tx.from?.startsWith('[') || tx.to?.startsWith('[') || tx.value == null || tx.value === '' || tx.value === 'hidden'
-      || Object.values(tx.addressMetadata ?? {}).some((reason) => reason === 'participant_override' || reason === 'no_access');
+      || Object.values(tx.addressMetadata ?? {}).some((reason) => reason === 'no_access');
     const full = masked ? disclosed.find((grant) => grant.source.level === 'full' && (
       grant.tx.tx_hash?.toLowerCase() === tx.hash.toLowerCase()
       || (tx.txIndex != null && grant.tx.tx_index != null && tx.blockNumber === grant.tx.block_number && tx.txIndex === grant.tx.tx_index)

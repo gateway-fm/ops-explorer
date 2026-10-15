@@ -92,6 +92,22 @@ describe('Transactions disclosure composition', () => {
     expect(screen.queryByText('Disclosed')).not.toBeInTheDocument();
   });
 
+  it('keeps the ordinary detail link for a participant-visible transaction even with a matching Full grant', async () => {
+    const visible = makeTx(1, { hash, blockNumber: 900, value: '5' });
+    visible.addressMetadata = { [visible.from]: 'participant_override' };
+    const feed = vi.fn(() => HttpResponse.json({ transactions: [{ ...grantTx, value: '5' }], disclosure_level: 'full' }));
+    server.use(
+      http.get(`${API}/transactions`, () => HttpResponse.json({ data: [visible], total: 1, totalPages: 1, page: 1 })),
+      http.get(`${API}/privacy/grant/g1/a1/transactions`, feed),
+    );
+    renderWithProviders(<Transactions />);
+    await waitFor(() => expect(feed).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByText('Loading disclosures…')).not.toBeInTheDocument());
+    expect(screen.getAllByTestId('tx-row')).toHaveLength(1);
+    expect(screen.getByRole('link', { name: /0xaaaa/ })).toHaveAttribute('href', `/tx/${hash}`);
+    expect(screen.queryByText('Disclosed')).not.toBeInTheDocument();
+  });
+
   it('does not query grants or render their cached rows during View-as', async () => {
     session.isActive = true;
     session.token = 'view-as';

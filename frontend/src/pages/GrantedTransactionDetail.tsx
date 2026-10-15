@@ -15,14 +15,22 @@ export function GrantedTransactionDetail() {
   const [searchParams] = useSearchParams();
   const viewingAs = isActive || searchParams.has('as');
   const grantPath = `/grant/${encodeURIComponent(grantId ?? '')}/${encodeURIComponent(addressId ?? '')}`;
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['grantedTransaction', auth.did, grantId, addressId, hash],
-    queryFn: () => api.getGrantedTransaction(grantId!, addressId!, hash!),
-    enabled: isAuthenticated && !viewingAs && !!grantId && !!addressId && !!hash,
+  const enabled = !authLoading && isAuthenticated && !viewingAs && !!grantId && !!addressId && !!hash;
+  const { data, fetchStatus, isFetchedAfterMount, error } = useQuery({
+    queryKey: ['grantedTransaction', auth.did, grantId, addressId, hash, viewingAs],
+    queryFn: ({ signal }) => api.getGrantedTransaction(grantId!, addressId!, hash!, signal),
+    enabled,
     retry: false,
+    // Full detail authorization can change while visiting another page. Keep
+    // no inactive detail cache and require a fresh access check on every visit.
+    gcTime: 0,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 
-  if (authLoading || isLoading) return <StateMessage variant="loading" />;
+  // A background or offline-paused check must not expose the previous Full
+  // response. View-as changes the key so leaving it cannot reuse an old request.
+  if (authLoading || (enabled && (fetchStatus !== 'idle' || (!isFetchedAfterMount && !error)))) return <StateMessage variant="loading" />;
   if (!isAuthenticated) return (
     <div className="space-y-4">
       <StateMessage variant="empty" title="Sign in to view disclosed transaction details" />
