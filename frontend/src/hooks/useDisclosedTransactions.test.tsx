@@ -18,10 +18,10 @@ const feed = { disclosure_level: 'full', transactions: [{ tx_hash: 'private-hash
 const noGrants = { disclosed_addresses: [] };
 const window = {};
 
-function setup() {
+function setup(boundary?: Parameters<typeof useDisclosedTransactions>[4]) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
-  return { client, ...renderHook(({ enabled, viewer }) => useDisclosedTransactions(enabled, viewer, 1, window), {
+  return { client, ...renderHook(({ enabled, viewer }) => useDisclosedTransactions(enabled, viewer, boundary ? 3 : 1, window, boundary), {
     wrapper, initialProps: { enabled: true, viewer: 'did:admin' },
   }) };
 }
@@ -34,6 +34,52 @@ beforeEach(() => {
 afterEach(() => { onlineManager.setOnline(true); });
 
 describe('disclosure query authorization lifecycle', () => {
+  it('retains the resolved boundary across grant cursor continuations', async () => {
+    const lookup = vi.fn().mockResolvedValue({ upper: { block: 10, index: 0 } });
+    let calls = 0;
+    requests.feed.mockImplementation(() => {
+      calls++;
+      return {
+        disclosure_level: 'full',
+        transactions: calls === 1 || calls === 6 ? [
+          { ...feed.transactions[0], tx_hash: `above-${calls}`, block_number: 20 },
+          { ...feed.transactions[0], tx_hash: `below-${calls}`, block_number: calls === 1 ? 5 : 4 },
+        ] : [],
+        ...(calls <= 5 ? { next_cursor: `cursor-${calls}` } : {}),
+      };
+    });
+    const { result } = setup({ page: 2, load: lookup });
+    await waitFor(() => expect(result.current.hasMore).toBe(true));
+    expect(result.current.rows.map((row) => row.tx.tx_hash)).toEqual(['below-1']);
+    await act(async () => { await result.current.loadMore(); });
+    await waitFor(() => expect(result.current.rows).toHaveLength(2));
+    expect(result.current.rows.map((row) => row.tx.tx_hash)).toEqual(['below-1', 'below-6']);
+    expect(lookup).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels a pending boundary lookup before it can start grant requests', async () => {
+    const pending = deferred<{ upper: { block: number; index: number } }>();
+    const lookup = vi.fn().mockReturnValue(pending.promise);
+    const { result, rerender } = setup({ page: 2, load: lookup });
+    await waitFor(() => expect(lookup).toHaveBeenCalledTimes(1));
+    const signal = lookup.mock.calls[0][1] as AbortSignal;
+    rerender({ enabled: false, viewer: 'did:admin' });
+    expect(signal.aborted).toBe(true);
+    await act(async () => { pending.resolve({ upper: { block: 10, index: 0 } }); });
+    expect(requests.feed).not.toHaveBeenCalled();
+    expect(result.current.rows).toEqual([]);
+  });
+
+  it('exposes a failed boundary lookup as a retryable disclosure error', async () => {
+    const lookup = vi.fn().mockRejectedValueOnce(new Error('API error: 503')).mockResolvedValue({});
+    const { result } = setup({ page: 2, load: lookup });
+    await waitFor(() => expect(result.current.error).toBeTruthy());
+    expect(requests.feed).not.toHaveBeenCalled();
+    act(() => result.current.retry());
+    await waitFor(() => expect(result.current.rows).toHaveLength(1));
+    expect(lookup).toHaveBeenCalledTimes(2);
+  });
+
   it('cancels the other grant batches when one fails, including their late cursor continuations', async () => {
     requests.addresses.mockResolvedValue({ disclosed_addresses: [...addresses.disclosed_addresses, { grant_id: 'other', address_id: 'b' }] });
     const pending = deferred<typeof feed & { next_cursor: string }>();

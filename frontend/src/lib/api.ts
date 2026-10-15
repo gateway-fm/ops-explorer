@@ -520,9 +520,9 @@ export const api = {
     return fetchAPI<PaginatedResponse<Transaction>>(`/transactions?${params}`);
   },
 
-  getTransactionsPaginated: (page = 1, pageSize = 25) => {
+  getTransactionsPaginated: (page = 1, pageSize = 25, signal?: AbortSignal) => {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
-    return fetchAPI<OffsetPaginatedResponse<Transaction>>(`/transactions?${params}`);
+    return fetchAPI<OffsetPaginatedResponse<Transaction>>(`/transactions?${params}`, { signal });
   },
 
   getTransaction: (hash: string) => fetchAPI<Transaction>(`/transactions/${hash}`),

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PseudonymizedTransaction, Transaction } from '../lib/api';
-import { grantWindow, inGrantWindow, mergeTransactions, loadGrantWindow } from './Transactions.disclosure';
+import { grantWindow, inGrantWindow, mergeTransactions, loadGrantWindow, loadGrantBoundary } from './Transactions.disclosure';
+import { deferred } from '../test/deferred';
 
 const regular = (block: number, index: number, hash = `${block}-${index}`) => ({
   hash, blockNumber: block, txIndex: index,
@@ -14,18 +15,48 @@ const source = { grantId: 'g', addressId: 'a', level: 'pseudonymous' };
 describe('disclosed transaction composition', () => {
   it('gives a grant-only viewer an unbounded first window and keeps older grants on the final regular page', () => {
     expect(grantWindow([], undefined, true)).toEqual({});
-    const tail = grantWindow([regular(20, 2)], regular(30, 0), true);
+    const tail = grantWindow([regular(20, 2)], regular(30, 0), true)!;
     expect(inGrantWindow(disclosed(1, 0), tail)).toBe(true);
     expect(inGrantWindow(disclosed(30, 0), tail)).toBe(false);
   });
 
   it('partitions a block split between regular pages without losing or repeating boundary rows', () => {
-    const first = grantWindow([regular(50, 9), regular(50, 5)], undefined, false);
-    const second = grantWindow([regular(50, 4), regular(40, 0)], regular(50, 5), false);
+    const first = grantWindow([regular(50, 9), regular(50, 5)], undefined, false)!;
+    const second = grantWindow([regular(50, 4), regular(40, 0)], regular(50, 5), false)!;
     expect([8, 5, 4, 0].map((i) => inGrantWindow(disclosed(50, i), first))).toEqual([true, true, false, false]);
     expect([8, 5, 4, 0].map((i) => inGrantWindow(disclosed(50, i), second))).toEqual([false, false, true, true]);
     expect(inGrantWindow(disclosed(50), first)).toBe(true);
     expect(inGrantWindow(disclosed(50), second)).toBe(false);
+  });
+
+  it.each([
+    { name: 'leading empty pages', pages: [[], [], [regular(50, 5)], [regular(40, 0)]] },
+    { name: 'an empty page within a split block', pages: [[regular(50, 9)], [], [regular(50, 4)], [regular(40, 0)]] },
+    { name: 'trailing empty pages', pages: [[regular(50, 5)], [], [], []] },
+    { name: 'all filtered pages', pages: [[], [], [], []] },
+  ])('assigns every disclosure exactly once with $name', async ({ pages }) => {
+    const candidates = [disclosed(60, 0), ...[9, 8, 5, 4, 0].map((i) => disclosed(50, i)), disclosed(50), disclosed(40, 0), disclosed(1, 0)];
+    const counts = candidates.map(() => 0);
+    for (const [index, page] of pages.entries()) {
+      const window = grantWindow(page, undefined, index === pages.length - 1);
+      if (!window) continue;
+      const boundary = await loadGrantBoundary(index, async (previousPage) => pages[previousPage - 1], new AbortController().signal);
+      expect(boundary.nextPage).toBeUndefined();
+      candidates.forEach((tx, i) => { if (inGrantWindow(tx, { ...window, upper: boundary.upper })) counts[i]++; });
+    }
+    expect(counts).toEqual(candidates.map(() => 1));
+  });
+
+  it('does not continue a boundary search after cancellation, even if its request resolves', async () => {
+    const pending = deferred<Transaction[]>();
+    const read = vi.fn(() => pending.promise);
+    const controller = new AbortController();
+    const result = loadGrantBoundary(3, read, controller.signal);
+    const rejected = expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    controller.abort();
+    pending.resolve([]);
+    await rejected;
+    expect(read).toHaveBeenCalledTimes(1);
   });
 
   it('prefers regular rows, suppresses hash/position duplicates, sorts, and preserves distinct hidden rows', () => {

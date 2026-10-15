@@ -1,12 +1,14 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { disclosureQueryOptions, isDisclosureReady } from '../lib/disclosureQuery';
-import type { GrantSource, GrantWindow } from '../pages/Transactions.disclosure';
+import type { GrantBoundary, GrantSource, GrantWindow } from '../pages/Transactions.disclosure';
 import { loadGrantWindow } from '../pages/Transactions.disclosure';
 
 interface Continuation { source: GrantSource; cursor?: string }
+interface FeedCursor { sources: Continuation[]; window?: GrantWindow; boundaryPage?: number }
+interface BoundaryLookup { page: number; load: (page: number, signal: AbortSignal) => Promise<GrantBoundary> }
 
-export function useDisclosedTransactions(enabled: boolean, viewer: string | null, page: number, window: GrantWindow | undefined) {
+export function useDisclosedTransactions(enabled: boolean, viewer: string | null, page: number, window: GrantWindow | undefined, boundary?: BoundaryLookup) {
   const sources = useQuery({
     ...disclosureQueryOptions,
     queryKey: ['disclosed-transaction-sources', viewer, enabled],
@@ -35,10 +37,19 @@ export function useDisclosedTransactions(enabled: boolean, viewer: string | null
   const feedEnabled = sourcesReady && !!window && initial.length > 0;
   const feed = useInfiniteQuery({
     ...disclosureQueryOptions,
-    queryKey: ['disclosed-transactions', viewer, page, window, sources.data?.sources, sources.dataUpdatedAt, feedEnabled],
+    queryKey: ['disclosed-transactions', viewer, page, window, sources.data?.sources, sources.dataUpdatedAt, feedEnabled, boundary?.page],
     enabled: feedEnabled,
-    initialPageParam: initial,
+    initialPageParam: { sources: initial, boundaryPage: boundary?.page } as FeedCursor,
     queryFn: async ({ pageParam, signal }) => {
+      let resolvedWindow = pageParam.window ?? window!;
+      if (boundary && pageParam.boundaryPage !== undefined) {
+        const result = await boundary.load(pageParam.boundaryPage, signal);
+        signal.throwIfAborted();
+        if (result.nextPage !== undefined) {
+          return { rows: [], continuation: { sources: pageParam.sources, boundaryPage: result.nextPage } as FeedCursor };
+        }
+        resolvedWindow = { ...resolvedWindow, upper: result.upper };
+      }
       // Promise.all rejects immediately, but leaves sibling requests running.
       // Cancel the whole batch on failure as well as on a query scope change.
       const batch = new AbortController();
@@ -46,13 +57,14 @@ export function useDisclosedTransactions(enabled: boolean, viewer: string | null
       signal.addEventListener('abort', cancel, { once: true });
       if (signal.aborted) cancel();
       try {
-        const results = await Promise.all(pageParam.map(async ({ source, cursor }) => ({
-          source, ...await loadGrantWindow(source, window!, api.getGrantedAddressTransactions, cursor, 5, batch.signal),
+        const results = await Promise.all(pageParam.sources.map(async ({ source, cursor }) => ({
+          source, ...await loadGrantWindow(source, resolvedWindow, api.getGrantedAddressTransactions, cursor, 5, batch.signal),
         })));
         signal.throwIfAborted();
+        const nextSources = results.flatMap((result) => result.nextCursor ? [{ source: result.source, cursor: result.nextCursor }] : []);
         return {
           rows: results.flatMap((result) => result.rows),
-          continuation: results.flatMap((result) => result.nextCursor ? [{ source: result.source, cursor: result.nextCursor }] : []),
+          continuation: nextSources.length ? { sources: nextSources, window: resolvedWindow } as FeedCursor : undefined,
         };
       } catch (error) {
         batch.abort(error);
@@ -61,7 +73,7 @@ export function useDisclosedTransactions(enabled: boolean, viewer: string | null
         signal.removeEventListener('abort', cancel);
       }
     },
-    getNextPageParam: (last) => last.continuation.length ? last.continuation : undefined,
+    getNextPageParam: (last) => last.continuation,
   });
 
   // Keep current rows during online pagination, but never during a refresh,

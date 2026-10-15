@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '../lib/api';
-import type { Transaction, TxCategory } from '../lib/api';
+import type { OffsetPaginatedResponse, Transaction, TxCategory } from '../lib/api';
 import { formatHash, formatWei, getNetworkCurrency } from '../lib/utils';
 import { PageHeader } from '../components/PageHeader';
 import { AddressLink } from '../components/AddressLink';
@@ -13,7 +13,7 @@ import { StateMessage } from '../components/StateMessage';
 import { useAuth } from '../lib/auth';
 import { useImpersonation } from '../hooks/useImpersonation';
 import { useDisclosedTransactions } from '../hooks/useDisclosedTransactions';
-import { grantLink, grantWindow, mergeTransactions } from './Transactions.disclosure';
+import { grantLink, grantWindow, loadGrantBoundary, mergeTransactions } from './Transactions.disclosure';
 import type { DisclosedRow } from './Transactions.disclosure';
 
 export function Transactions() {
@@ -30,7 +30,7 @@ export function Transactions() {
   // Main transactions query — no auto-refetch
   const { data, isLoading, error } = useQuery({
     queryKey: ['transactions', page, pageSize, viewer, token],
-    queryFn: () => api.getTransactionsPaginated(page, pageSize),
+    queryFn: ({ signal }) => api.getTransactionsPaginated(page, pageSize, signal),
   });
 
   const lastPage = data ? Math.max(1, data.totalPages) : undefined;
@@ -40,15 +40,23 @@ export function Transactions() {
     }
   }, [lastPage, page, setSearchParams]);
 
-  const previous = useQuery({
-    queryKey: ['transactions', page - 1, pageSize, viewer, token],
-    queryFn: () => api.getTransactionsPaginated(page - 1, pageSize),
-    enabled: compose && page > 1,
-  });
-  const window = data && page <= lastPage! && (page === 1 || previous.data)
-    ? grantWindow(data.data ?? [], previous.data?.data?.at(-1), page === lastPage)
+  const window = data && page <= lastPage!
+    ? grantWindow(data.data ?? [], undefined, page === lastPage)
     : undefined;
-  const disclosed = useDisclosedTransactions(compose, viewer, page, window);
+  const disclosed = useDisclosedTransactions(compose, viewer, page, window, page > 1 ? {
+    page: page - 1,
+    load: (beforePage, signal) => loadGrantBoundary(beforePage, async (previousPage, signal) => {
+      const key = ['transactions', previousPage, pageSize, viewer, token];
+      // Reuse the ordinary pages already displayed in this viewer's scope.
+      // The lookup only runs when grants actually need a page boundary.
+      const cached = queryClient.getQueryData<OffsetPaginatedResponse<Transaction>>(key);
+      if (cached) return cached.data ?? [];
+      const response = await api.getTransactionsPaginated(previousPage, pageSize, signal);
+      signal.throwIfAborted();
+      queryClient.setQueryData(key, response);
+      return response.data ?? [];
+    }, signal),
+  } : undefined);
   const rows = mergeTransactions(data?.data ?? [], disclosed.rows);
   const disclosedCount = rows.filter((row) => row.kind === 'disclosed').length;
 
@@ -62,7 +70,7 @@ export function Transactions() {
   // it only relies on the ordered list itself.
   const { data: livePage } = useQuery({
     queryKey: ['transactions-live', pageSize, viewer, token],
-    queryFn: () => api.getTransactionsPaginated(1, pageSize),
+    queryFn: ({ signal }) => api.getTransactionsPaginated(1, pageSize, signal),
     refetchInterval: page === 1 ? 3000 : false,
     enabled: page === 1,
   });
@@ -151,16 +159,16 @@ export function Transactions() {
 
         {isLoading && <StateMessage variant="loading" />}
         {disclosed.loading && <p className="px-4 py-3 text-sm text-neutral-500">Loading disclosures…</p>}
-        {(disclosed.error || (compose && previous.error)) && (
+        {disclosed.error && (
           <div className="px-4 py-3 text-sm text-amber-700" role="alert">
             Some disclosed transactions could not be loaded.{' '}
-            <button className="underline" onClick={() => { disclosed.retry(); if (previous.error) void previous.refetch(); }}>Retry</button>
+            <button className="underline" onClick={disclosed.retry}>Retry</button>
           </div>
         )}
         {disclosed.hasMore && <div className="p-4"><button className="btn-primary" disabled={disclosed.loadingMore} onClick={() => void disclosed.loadMore()}>{disclosed.loadingMore ? 'Loading disclosures…' : 'Load more disclosed transactions'}</button></div>}
 
         {!isLoading && !disclosed.loading && !disclosed.hasMore && !disclosed.error && !rows.length && (
-          <StateMessage variant="empty" title="No transactions yet" />
+          <StateMessage variant="empty" title={data?.total ? 'No transactions on this page' : 'No transactions yet'} />
         )}
 
         {/* Pagination */}

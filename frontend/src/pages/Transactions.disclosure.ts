@@ -4,13 +4,34 @@ export interface GrantSource { grantId: string; addressId: string; level: string
 export interface DisclosedRow { source: GrantSource; tx: PseudonymizedTransaction }
 interface Position { block: number; index?: number }
 export interface GrantWindow { upper?: Position; lower?: Position }
+export interface GrantBoundary { upper?: Position; nextPage?: number }
 
-export function grantWindow(rows: Transaction[], previousLast: Transaction | undefined, finalPage: boolean): GrantWindow {
+export function grantWindow(rows: Transaction[], previousLast: Transaction | undefined, finalPage: boolean): GrantWindow | undefined {
   const last = rows.at(-1);
+  // Empty filtered pages cannot close a range. Defer their disclosures to
+  // the next non-empty page, or the final page, instead of overlapping it.
+  if (!last && !finalPage) return undefined;
   return {
     ...(previousLast ? { upper: { block: previousLast.blockNumber, index: previousLast.txIndex } } : {}),
     ...(!finalPage && last ? { lower: { block: last.blockNumber, index: last.txIndex } } : {}),
   };
+}
+
+export async function loadGrantBoundary(
+  page: number,
+  readPage: (page: number, signal: AbortSignal) => Promise<Transaction[]>,
+  signal: AbortSignal,
+  maxPages = 5,
+): Promise<GrantBoundary> {
+  for (let checked = 0; page > 0 && checked < maxPages; checked++, page--) {
+    signal.throwIfAborted();
+    const last = (await readPage(page, signal)).at(-1);
+    signal.throwIfAborted();
+    if (last) return { upper: { block: last.blockNumber, index: last.txIndex } };
+  }
+  // Totals can include fully filtered pages. Preserve progress instead of
+  // treating an exhausted request budget as an unbounded window.
+  return page > 0 ? { nextPage: page } : {};
 }
 
 // Index-less responses from older proxies belong to the first page covering

@@ -75,6 +75,81 @@ describe('Transactions disclosure composition', () => {
     expect(screen.getByTestId('pagination-status')).toHaveTextContent('Page 2 of 2');
   });
 
+  it('does not give an empty non-final page an unbounded disclosure window', async () => {
+    const feed = vi.fn(() => HttpResponse.json({ transactions: [grantTx], disclosure_level: 'full' }));
+    server.use(
+      http.get(`${API}/transactions`, ({ request }) => {
+        const page = Number(new URL(request.url).searchParams.get('page') || '1');
+        return HttpResponse.json({ data: page === 1 ? [] : [makeTx(2, { blockNumber: 950 })], total: 26, totalPages: 2, page });
+      }),
+      http.get(`${API}/privacy/grant/g1/a1/transactions`, feed),
+    );
+    renderWithProviders(<Transactions />);
+    await screen.findByTestId('pagination-next');
+    await waitFor(() => expect(screen.queryByText('Loading disclosures…')).not.toBeInTheDocument());
+    expect(feed).not.toHaveBeenCalled();
+    expect(screen.queryByText('Disclosed')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByTestId('pagination-next'));
+    await screen.findByText('Disclosed');
+    expect(feed).toHaveBeenCalledTimes(1);
+  });
+
+  it('carries the previous non-empty boundary across a filtered page without repeating disclosures', async () => {
+    const disclosed = [1050, 975, 900].map((block) => ({ ...grantTx, block_number: block, tx_hash: `0x${String(block).padStart(64, 'a')}` }));
+    server.use(
+      http.get(`${API}/transactions`, ({ request }) => {
+        const page = Number(new URL(request.url).searchParams.get('page') || '1');
+        return HttpResponse.json({ data: page === 2 ? [] : [makeTx(page, { blockNumber: page === 1 ? 1000 : 950 })], total: 51, totalPages: 3, page });
+      }),
+      http.get(`${API}/privacy/grant/g1/a1/transactions`, () => HttpResponse.json({ transactions: disclosed, disclosure_level: 'full' })),
+    );
+    renderWithProviders(<Transactions />);
+    await waitFor(() => expect(screen.getByTestId('disclosed-count')).toHaveTextContent('1 disclosed shown'));
+    await userEvent.click(screen.getByTestId('pagination-next'));
+    await waitFor(() => expect(screen.getByTestId('pagination-status')).toHaveTextContent('Page 2 of 3'));
+    await waitFor(() => expect(screen.queryByText('Loading disclosures…')).not.toBeInTheDocument());
+    expect(screen.queryByText('Disclosed')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByTestId('pagination-next'));
+    await waitFor(() => expect(screen.getByTestId('disclosed-count')).toHaveTextContent('2 disclosed shown'));
+    expect(screen.queryByRole('link', { name: /1050/ })).not.toBeInTheDocument();
+  });
+
+  it('bounds searches through many empty pages and resumes them before fetching disclosures', async () => {
+    const pages: number[] = [];
+    const feed = vi.fn(() => HttpResponse.json({ transactions: [grantTx], disclosure_level: 'full' }));
+    server.use(
+      http.get(`${API}/transactions`, ({ request }) => {
+        const page = Number(new URL(request.url).searchParams.get('page') || '1');
+        pages.push(page);
+        return HttpResponse.json({ data: page === 1 ? [makeTx(1, { blockNumber: 1000 })] : [], total: 176, totalPages: 8, page });
+      }),
+      http.get(`${API}/privacy/grant/g1/a1/transactions`, feed),
+    );
+    renderWithProviders(<Transactions />, { initialEntries: ['/transactions?page=8'] });
+    const more = await screen.findByRole('button', { name: 'Load more disclosed transactions' });
+    expect(pages).toEqual([8, 7, 6, 5, 4, 3]);
+    expect(feed).not.toHaveBeenCalled();
+    await userEvent.click(more);
+    await screen.findByText('Disclosed');
+    expect(pages).toEqual([8, 7, 6, 5, 4, 3, 2, 1]);
+    expect(feed).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not search previous pages when the viewer has no grants', async () => {
+    const pages: number[] = [];
+    server.use(
+      http.get(`${API}/privacy/viewable-addresses`, () => HttpResponse.json({ disclosed_addresses: [] })),
+      http.get(`${API}/transactions`, ({ request }) => {
+        const page = Number(new URL(request.url).searchParams.get('page') || '1');
+        pages.push(page);
+        return HttpResponse.json({ data: [], total: 176, totalPages: 8, page });
+      }),
+    );
+    renderWithProviders(<Transactions />, { initialEntries: ['/transactions?page=8'] });
+    await screen.findByText('No transactions on this page');
+    expect(pages).toEqual([8]);
+  });
+
   it('returns an out-of-range URL to the last regular page instead of reopening an unbounded grant window', async () => {
     server.use(http.get(`${API}/transactions`, ({ request }) => {
       const page = Number(new URL(request.url).searchParams.get('page') || '1');
