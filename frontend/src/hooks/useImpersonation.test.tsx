@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
+import { BrowserRouter, useLocation, useSearchParams } from 'react-router-dom';
 import {
   ImpersonationProvider,
   ImpersonationTokenMirror,
@@ -11,10 +12,21 @@ import {
 // Note: we hit real fetch via global, mocked with vi.spyOn.
 
 function wrapper({ children }: { children: ReactNode }) {
-  return createElement(ImpersonationProvider, null, [
+  return createElement(ImpersonationProvider, null,
     createElement(ImpersonationTokenMirror, { key: 'mirror' }),
     children,
-  ]);
+  );
+}
+
+function routerWrapper({ children }: { children: ReactNode }) {
+  return wrapper({ children: createElement(BrowserRouter, { basename: '/explorer' }, children) });
+}
+
+function useDisclosureAccess() {
+  const session = useImpersonation();
+  const [params] = useSearchParams();
+  const location = useLocation();
+  return { ...session, location, disclosuresEnabled: !session.isActive && !params.has('as') };
 }
 
 function mockFetch(responses: Array<{ status: number; body?: unknown }>) {
@@ -35,6 +47,37 @@ afterEach(() => {
 });
 
 describe('useImpersonation', () => {
+  it('resumes router-based disclosures after stopping a restored View-as session', async () => {
+    window.history.replaceState({ preserved: 'router state' }, '', '/explorer/transactions?page=2&as=TOK-X#results');
+    vi.spyOn(globalThis, 'fetch').mockImplementation(mockFetch([
+      { status: 200, body: { target_did: 'did:p:x', org_id: 'org-7', expires_at: new Date(Date.now() + 3600000).toISOString() } },
+      { status: 200 },
+    ]) as typeof fetch);
+    const { result } = renderHook(useDisclosureAccess, { wrapper: routerWrapper });
+    expect(result.current.disclosuresEnabled).toBe(false);
+    await waitFor(() => expect(result.current.targetDID).toBe('did:p:x'));
+    await act(async () => { await result.current.stop(); });
+    expect(result.current.disclosuresEnabled).toBe(true);
+    expect(result.current.location.pathname).toBe('/transactions');
+    expect(result.current.location.search).toBe('?page=2');
+    expect(result.current.location.hash).toBe('#results');
+    expect(window.history.state.preserved).toBe('router state');
+  });
+
+  it.each([401, 404])('resumes router-based disclosures after rejecting a restored token (%s)', async (status) => {
+    window.history.replaceState({}, '', '/explorer/privacy?as=invalid&org=org-7');
+    let rejectRestore!: () => void;
+    const response = new Promise<Response>((resolve) => {
+      rejectRestore = () => resolve(new Response(null, { status }));
+    });
+    vi.spyOn(globalThis, 'fetch').mockReturnValue(response);
+    const { result } = renderHook(useDisclosureAccess, { wrapper: routerWrapper });
+    expect(result.current.disclosuresEnabled).toBe(false);
+    await act(async () => { rejectRestore(); });
+    await waitFor(() => expect(result.current.disclosuresEnabled).toBe(true));
+    expect(result.current.location.search).toBe('?org=org-7');
+  });
+
   it('starts a session and exposes target DID + org + token', async () => {
     const fetchSpy = vi.fn(async () =>
       new Response(

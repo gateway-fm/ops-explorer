@@ -50,8 +50,8 @@ function truncateAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
-function truncateDID(did: string): string {
-  if (!did) return '';
+function truncateDID(did?: string): string {
+  if (!did) return 'Hidden';
   return formatDID(did);
 }
 
@@ -226,7 +226,7 @@ export function PrivacyDashboard() {
                             </span>
                           </TooltipTrigger>
                           <TooltipContent>
-                            <span className="font-mono text-xs">{disclosed.ownerDid}</span>
+                            <span className="font-mono text-xs">{disclosed.ownerDid ?? 'Hidden'}</span>
                           </TooltipContent>
                         </Tooltip>
                         {/* RD-928: View-as initiator moved to the privacy-proxy

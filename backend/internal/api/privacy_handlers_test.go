@@ -194,7 +194,7 @@ func TestHandleGetGrantedAddress_MissingParams(t *testing.T) {
 
 func TestHandleGetGrantedAddress_FullDisclosure_HappyPath(t *testing.T) {
 	// Contract: a "full" disclosure resolves to the real address, the handler
-	// enriches with provider stats/balance/code, and emits GrantedAddressResponse
+	// emits grant-authorized metadata without regular provider enrichment
 	// with display_address == real address.
 	const realAddr = "0x407d73d8a49eeb85d32cf465507dd71d507100c1"
 	resolve := privacy.ResolveAddressResponse{
@@ -233,15 +233,6 @@ func TestHandleGetGrantedAddress_FullDisclosure_HappyPath(t *testing.T) {
 	}
 	if got.DisclosureLevel != "full" {
 		t.Errorf("disclosure_level = %q, want full", got.DisclosureLevel)
-	}
-	if got.TxCount != 7 {
-		t.Errorf("tx_count = %d, want 7", got.TxCount)
-	}
-	if got.Balance != "12345" {
-		t.Errorf("balance = %q, want 12345", got.Balance)
-	}
-	if !got.IsContract {
-		t.Errorf("is_contract = false, want true (non-empty code)")
 	}
 }
 

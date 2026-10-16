@@ -339,7 +339,7 @@ type ResolveAddressResponse struct {
 // This is for explorer backend internal use only - the real address should NOT be sent to frontend.
 // SECURITY: The caller must apply appropriate redaction before sending data to the frontend.
 func (c *Client) ResolveAddressID(ctx context.Context, grantID, addressID, token string) (*ResolveAddressResponse, error) {
-	endpoint := fmt.Sprintf("/api/v1/explorer/grant/%s/resolve/%s", grantID, addressID)
+	endpoint := fmt.Sprintf("/api/v1/explorer/grant/%s/resolve/%s", url.PathEscape(grantID), url.PathEscape(addressID))
 	u, err := url.Parse(c.baseURL + endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse URL: %w", err)
@@ -383,7 +383,7 @@ func (c *Client) ResolveAddressID(ctx context.Context, grantID, addressID, token
 // directly from the privacy proxy. The proxy handles all pseudonymization —
 // the explorer just forwards the response as raw JSON.
 func (c *Client) GetGrantTransactions(ctx context.Context, grantID, addressID, token string, limit int, cursor string, beforeBlock *uint64) ([]byte, int, error) {
-	endpoint := fmt.Sprintf("/api/v1/explorer/grant/%s/%s/transactions?limit=%d", grantID, addressID, limit)
+	endpoint := fmt.Sprintf("/api/v1/explorer/grant/%s/%s/transactions?limit=%d", url.PathEscape(grantID), url.PathEscape(addressID), limit)
 	// Opaque cursor (RD-1149) takes precedence over the legacy ?before= bound; the
 	// proxy returns next_cursor in the JSON body, which we forward as-is.
 	if cursor != "" {
@@ -419,6 +419,30 @@ func (c *Client) GetGrantTransactions(ctx context.Context, grantID, addressID, t
 	return body, resp.StatusCode, nil
 }
 
+// GetGrantTransaction forwards only the grant-scoped detail response. In
+// particular, an older proxy's 404 must not fall back to regular transaction reads.
+func (c *Client) GetGrantTransaction(ctx context.Context, grantID, addressID, hash, token string) ([]byte, int, error) {
+	endpoint := fmt.Sprintf("/api/v1/explorer/grant/%s/%s/transactions/%s", url.PathEscape(grantID), url.PathEscape(addressID), url.PathEscape(hash))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+endpoint, nil)
+	if err != nil {
+		return nil, 0, errors.New("failed to create grant transaction request")
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		// Transport errors can contain the URL's private grant/address/hash.
+		return nil, 0, errors.New("grant transaction request failed")
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, errors.New("failed to read grant transaction response")
+	}
+	return body, resp.StatusCode, nil
+}
+
 // ActivityLogsResponse matches the privacy proxy's grant activity logs response.
 type ActivityLogsResponse struct {
 	Logs   []ActivityLogEntry `json:"logs"`
@@ -437,7 +461,7 @@ type ActivityLogEntry struct {
 // GetGrantActivityLogs fetches activity logs for a disclosure grant from the privacy proxy.
 // The caller's JWT is forwarded so the proxy can verify grant holder identity.
 func (c *Client) GetGrantActivityLogs(ctx context.Context, grantID string, token string, limit, offset int) ([]byte, int, error) {
-	endpoint := fmt.Sprintf("/api/v1/explorer/grant/%s/activity?limit=%d&offset=%d", grantID, limit, offset)
+	endpoint := fmt.Sprintf("/api/v1/explorer/grant/%s/activity?limit=%d&offset=%d", url.PathEscape(grantID), limit, offset)
 
 	u, err := url.Parse(c.baseURL + endpoint)
 	if err != nil {
