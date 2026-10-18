@@ -363,7 +363,7 @@ export interface OwnAddress {
 export interface DisclosedAddress {
   address: string;
   address_id: string;
-  owner_did: string;
+  owner_did?: string;
   disclosure_level: string;
   grant_id: string;
   expires_at?: string;
@@ -381,15 +381,16 @@ export interface GrantedAddressResponse {
   display_address: string;
   disclosure_level: string;
   grant_id: string;
-  balance: string;
-  tx_count: number;
-  is_contract: boolean;
+  balance?: string;
+  tx_count?: number;
+  is_contract?: boolean;
   scope_methods?: string[]; // Grant scope methods (e.g. "transaction_history", "activity_logs")
 }
 
 export interface PseudonymizedTransaction {
   tx_hash?: string;
   block_number: number;
+  tx_index?: number; // Older proxies omit this position.
   block_timestamp: number;
   from: string;
   to?: string;
@@ -397,6 +398,20 @@ export interface PseudonymizedTransaction {
   gas_used: number;
   status: number;
   direction: 'in' | 'out' | 'self';
+}
+
+export interface GrantedTransactionDetail extends PseudonymizedTransaction {
+  tx_hash: string;
+  gas_price: number;
+  gas_limit?: number;
+  max_fee_per_gas?: number;
+  max_priority_fee_per_gas?: number;
+  nonce?: number;
+  tx_type: number;
+  input_data: string;
+  contract_address?: string;
+  error?: string;
+  revert_reason?: string;
 }
 
 export interface PseudonymizedTransactionsResponse {
@@ -505,9 +520,9 @@ export const api = {
     return fetchAPI<PaginatedResponse<Transaction>>(`/transactions?${params}`);
   },
 
-  getTransactionsPaginated: (page = 1, pageSize = 25) => {
+  getTransactionsPaginated: (page = 1, pageSize = 25, signal?: AbortSignal) => {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
-    return fetchAPI<OffsetPaginatedResponse<Transaction>>(`/transactions?${params}`);
+    return fetchAPI<OffsetPaginatedResponse<Transaction>>(`/transactions?${params}`, { signal });
   },
 
   getTransaction: (hash: string) => fetchAPI<Transaction>(`/transactions/${hash}`),
@@ -672,21 +687,24 @@ export const api = {
   },
 
   // Privacy endpoints
-  getViewableAddresses: () =>
-    fetchAPI<ViewableAddressesResponse>('/privacy/viewable-addresses'),
+  getViewableAddresses: (signal?: AbortSignal) =>
+    fetchAPI<ViewableAddressesResponse>('/privacy/viewable-addresses', { signal }),
 
-  getGrantedAddress: (grantId: string, addressId: string) =>
-    fetchAPI<GrantedAddressResponse>(`/privacy/grant/${grantId}/${addressId}`),
+  getGrantedAddress: (grantId: string, addressId: string, signal?: AbortSignal) =>
+    fetchAPI<GrantedAddressResponse>(`/privacy/grant/${encodeURIComponent(grantId)}/${encodeURIComponent(addressId)}`, { signal }),
 
-  getGrantedAddressTransactions: (grantId: string, addressId: string, limit = 25, before?: number, cursor?: string) => {
+  getGrantedAddressTransactions: (grantId: string, addressId: string, limit = 25, before?: number, cursor?: string, signal?: AbortSignal) => {
     const params = new URLSearchParams({ limit: String(limit) });
     if (cursor) params.set('cursor', cursor);
     else if (before) params.set('before', String(before));
-    return fetchAPI<PseudonymizedTransactionsResponse>(`/privacy/grant/${grantId}/${addressId}/transactions?${params}`);
+    return fetchAPI<PseudonymizedTransactionsResponse>(`/privacy/grant/${encodeURIComponent(grantId)}/${encodeURIComponent(addressId)}/transactions?${params}`, { signal });
   },
 
-  getGrantActivityLogs: (grantId: string, limit = 25, offset = 0) =>
-    fetchAPI<ActivityLogsResponse>(`/privacy/grant/${grantId}/activity?limit=${limit}&offset=${offset}`),
+  getGrantedTransaction: (grantId: string, addressId: string, hash: string, signal?: AbortSignal) =>
+    fetchAPI<GrantedTransactionDetail>(`/privacy/grant/${encodeURIComponent(grantId)}/${encodeURIComponent(addressId)}/transactions/${encodeURIComponent(hash)}`, { signal }),
+
+  getGrantActivityLogs: (grantId: string, limit = 25, offset = 0, signal?: AbortSignal) =>
+    fetchAPI<ActivityLogsResponse>(`/privacy/grant/${encodeURIComponent(grantId)}/activity?limit=${limit}&offset=${offset}`, { signal }),
 
   // ETH address linking endpoints (proxied through backend to privacy-proxy)
   eth: {

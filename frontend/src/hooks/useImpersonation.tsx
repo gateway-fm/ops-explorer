@@ -79,7 +79,11 @@ function writeTokenToURL(token: string | null) {
   } else {
     url.searchParams.delete(URL_PARAM);
   }
-  window.history.replaceState({}, '', url.toString());
+  // This provider lives above BrowserRouter. Native replaceState does not
+  // notify it, so publish the location change for useSearchParams consumers
+  // and preserve the router's existing history state.
+  window.history.replaceState(window.history.state, '', url.toString());
+  window.dispatchEvent(new PopStateEvent('popstate', { state: window.history.state }));
 }
 
 /**
