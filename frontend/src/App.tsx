@@ -26,6 +26,7 @@ import Stats from './pages/Stats';
 import { PrivacyDashboard } from './pages/PrivacyDashboard';
 import { ViewAsEntry } from './pages/ViewAsEntry';
 import { GrantedAddressPage } from './pages/GrantedAddressPage';
+import { GrantedTransactionDetail } from './pages/GrantedTransactionDetail';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -68,6 +69,7 @@ function App() {
                   <Route path="privacy" element={<PrivacyDashboard />} />
                   <Route path="view-as" element={<ViewAsEntry />} />
                   <Route path="grant/:grantId/:addressId" element={<GrantedAddressPage />} />
+                  <Route path="grant/:grantId/:addressId/tx/:hash" element={<GrantedTransactionDetail />} />
                 </Route>
               </Routes>
             </BrowserRouter>

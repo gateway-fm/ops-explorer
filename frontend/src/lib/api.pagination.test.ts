@@ -78,4 +78,12 @@ describe('by-address pagination: cursor preference', () => {
     expect(url).toContain('cursor=grant-cursor');
     expect(url).not.toContain('before=');
   });
+
+  it('escapes opaque grant IDs for activity requests and forwards cancellation', async () => {
+    const fn = captureFetch();
+    const controller = new AbortController();
+    await api.getGrantActivityLogs('g/with%?&', 25, 0, controller.signal);
+    expect(calledURL(fn)).toBe('/api/privacy/grant/g%2Fwith%25%3F%26/activity?limit=25&offset=0');
+    expect(fn.mock.calls[0][1].signal).toBe(controller.signal);
+  });
 });
