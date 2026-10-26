@@ -29,10 +29,11 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # from the gateway-fm/chain-indexer service over gRPC, so the api
 # image no longer ships an embedded indexer binary.
 
-FROM alpine:3.22
+# Node runtime for sol2uml, pinned to a patched release.
+FROM node:24.22.1-alpine
 
 RUN apk update --no-cache && apk upgrade --no-cache
-RUN apk --no-cache add ca-certificates libc6-compat nodejs npm
+RUN apk --no-cache add ca-certificates libc6-compat
 
 # Download solc static binaries for contract verification, verifying each
 # against its published sha256 (S-1). These hashes are the soliditylang
