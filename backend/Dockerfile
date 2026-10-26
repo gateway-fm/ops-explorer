@@ -1,9 +1,11 @@
-# D-1: pin the builder to go1.26.4 in lockstep with go.mod's `toolchain
-# go1.26.4` so the runtime binary is built against the patched stdlib that
-# clears the stdlib DoS (Aikido #10140394, fix = stdlib 1.26.4) on top of
-# GO-2026-5039 (net/textproto, privacy path) and GO-2026-5037 (crypto/x509).
-# Do not float below 1.26.4.
-FROM golang:1.26.4-alpine AS builder
+# D-1: pin the builder to go1.26.10 in lockstep with go.mod's `toolchain
+# go1.26.10` so the runtime binary is built against the patched stdlib that
+# clears AIKIDO-2026-934590 (fix = stdlib 1.26.10), CVE-2026-56857 and
+# CVE-2026-78663 (Aikido criticals, fix = stdlib 1.26.9) on top of the
+# earlier stdlib DoS (Aikido #10140394, 1.26.6), GO-2026-5039
+# (net/textproto, privacy path) and GO-2026-5037 (crypto/x509).
+# Do not float below 1.26.10.
+FROM golang:1.26.10-alpine AS builder
 
 # Upgrade system packages
 RUN apk update --no-cache && apk upgrade --no-cache
@@ -29,10 +31,11 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # from the gateway-fm/chain-indexer service over gRPC, so the api
 # image no longer ships an embedded indexer binary.
 
-FROM alpine:3.22
+# Node runtime for sol2uml, pinned to a patched release.
+FROM node:24.22.1-alpine
 
 RUN apk update --no-cache && apk upgrade --no-cache
-RUN apk --no-cache add ca-certificates libc6-compat nodejs npm
+RUN apk --no-cache add ca-certificates libc6-compat
 
 # Download solc static binaries for contract verification, verifying each
 # against its published sha256 (S-1). These hashes are the soliditylang

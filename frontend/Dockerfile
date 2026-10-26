@@ -1,4 +1,4 @@
-FROM node:22-alpine AS builder
+FROM node:24.22.1-alpine AS builder
 
 # Upgrade system packages
 RUN apk update --no-cache && apk upgrade --no-cache
@@ -9,7 +9,7 @@ RUN apk add --no-cache python3 make g++
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install --legacy-peer-deps
+RUN npm ci --legacy-peer-deps
 
 COPY . .
 
@@ -30,8 +30,9 @@ RUN npm run build
 
 FROM nginx:alpine@sha256:dc48b7a872a79fb541ba5081d320b11b549231bc63ba465a7495afaa7d2ebcb8
 
-# Upgrade system packages
-RUN apk update --no-cache && apk upgrade --no-cache
+# Refresh runtime packages and fail if the Brotli security fix is unavailable.
+RUN apk update --no-cache && apk upgrade --no-cache \
+    && apk add --no-cache "brotli-libs>=1.2.1-r0"
 
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
