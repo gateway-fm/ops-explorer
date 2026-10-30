@@ -3,7 +3,7 @@
 # clears the stdlib DoS (Aikido #10140394, fix = stdlib 1.26.4) on top of
 # GO-2026-5039 (net/textproto, privacy path) and GO-2026-5037 (crypto/x509).
 # Do not float below 1.26.4.
-FROM golang:1.26.4-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.4-alpine AS builder
 
 # Upgrade system packages
 RUN apk update --no-cache && apk upgrade --no-cache
@@ -21,8 +21,9 @@ COPY . .
 ARG VERSION=dev
 ARG GIT_COMMIT=none
 ARG BUILD_TIME=unknown
+ARG TARGETARCH
 
-RUN CGO_ENABLED=0 GOOS=linux go build \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
 	-ldflags "-X explorer/internal/version.Version=${VERSION} -X explorer/internal/version.Commit=${GIT_COMMIT} -X explorer/internal/version.BuildTime=${BUILD_TIME}" \
 	-o /api ./cmd/api
 # cmd/indexer was retired in RD-855 Phase 6 — chain data now comes
