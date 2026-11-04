@@ -10,6 +10,8 @@ RUN go mod download
 
 COPY . .
 
+RUN mkdir -p /opt/solc
+
 # Build identity stamped into the binary via -ldflags (mirrors privacy-proxy
 # RD-1023). CI forwards these as --build-arg; a plain `docker build` falls back
 # to the safe defaults so it never fails when git metadata is unavailable.
@@ -44,6 +46,7 @@ FROM gcr.io/distroless/static-debian13:nonroot@sha256:963fa6c544fe5ce420f1f54fb8
 
 COPY --from=builder-standalone /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder-standalone /api /api
+COPY --from=builder-standalone --chown=nonroot:nonroot /opt/solc /opt/solc
 
 USER nonroot:nonroot
 
@@ -55,6 +58,7 @@ FROM gcr.io/distroless/static-debian13:nonroot@sha256:963fa6c544fe5ce420f1f54fb8
 
 COPY --from=builder-privacy /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder-privacy /api /api
+COPY --from=builder-privacy --chown=nonroot:nonroot /opt/solc /opt/solc
 
 USER nonroot:nonroot
 
