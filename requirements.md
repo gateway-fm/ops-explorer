@@ -105,4 +105,4 @@ This document outlines the core functional requirements of the Block Explorer an
 ## Technical Debt & Issues
 - **Coverage**: Core logic has low automated test coverage (~6.7% for backend).
 - **Security**: Critical patches applied for SSRF and Integer Overflows.
-- **Verification**: Local verification depends on `solc-static-linux` being available.
+- **Verification**: Local verification downloads native solc builds on demand; on arm64 only 0.8.31 and later have native builds.
