@@ -24,6 +24,13 @@ import (
 //go:embed migrations/*.sql
 var migrations embed.FS
 
+//go:embed sso_migrations/*.sql
+var ssoMigrations embed.FS
+
+// MigrationFiles is consumed by the offline migration owner. Serving V2
+// processes do not import or invoke migration administration.
+func SSOMigrationFiles() (fs.FS, error) { return fs.Sub(ssoMigrations, "sso_migrations") }
+
 // DB holds the pool handle. The HiddenTxTypes field was preserved so the
 // api package's existing code compiles; it no longer affects any query
 // since this DB doesn't serve chain data anymore.

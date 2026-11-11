@@ -26,6 +26,8 @@ import Stats from './pages/Stats';
 import { PrivacyDashboard } from './pages/PrivacyDashboard';
 import { ViewAsEntry } from './pages/ViewAsEntry';
 import { GrantedAddressPage } from './pages/GrantedAddressPage';
+import { isV2 } from './lib/v2Session';
+import { V2App } from './V2App';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -39,6 +41,7 @@ const queryClient = new QueryClient({
 });
 
 function App() {
+  if (isV2()) return <V2App />;
   return (
     <ThemeProvider>
     <QueryClientProvider client={queryClient}>

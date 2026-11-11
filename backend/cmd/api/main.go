@@ -24,6 +24,12 @@ func main() {
 	// exactly which binary is running. Values are injected via -ldflags at
 	// build time; a plain `go build` logs version=dev.
 	log.Info("build info", "version", version.Version, "commit", version.Commit, "built", version.BuildTime)
+	if selected, err := startV2IfSelected(); selected {
+		if err != nil {
+			log.Fatal("v2 API failed")
+		}
+		return
+	}
 
 	cfg, err := config.Load()
 	if err != nil {

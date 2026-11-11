@@ -1,4 +1,5 @@
 import { getConfig } from './runtimeConfig';
+import { appSession, isV2 } from './v2Session';
 
 /**
  * Redirect the browser to the login page via the backend,
@@ -11,6 +12,7 @@ import { getConfig } from './runtimeConfig';
  * the privacy UI SPA can't run inside a proxied iframe path prefix.
  */
 export function redirectToLogin(returnUrl?: string): void {
+  if (isV2()) { void appSession.login(returnUrl).catch(() => {}); return; }
   const apiBase = getConfig('VITE_API_URL', '/api');
   const basePath = getConfig('VITE_BASE_PATH', '');
   const inIframe = window.self !== window.top;

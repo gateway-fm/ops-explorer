@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"explorer/internal/auth"
+	"explorer/internal/authv2"
 	"explorer/internal/chaininfo"
 	"explorer/internal/events"
 	"explorer/internal/price"
@@ -27,6 +28,8 @@ import (
 )
 
 type Server struct {
+	v2                   *authv2.Service
+	v2Reads              *V2ReadClient
 	db                   APIDatabase
 	rpc                  *rpc.Client
 	provider             DataProvider
@@ -47,10 +50,10 @@ type Server struct {
 	// JWKS (A-2). nil unless SSO_JWKS_URL is configured; when nil, GetAuthDID
 	// falls back to display-only ExtractClaims. The impersonation caller-DID
 	// binding requires this to be non-nil (the JWKS-required path).
-	jwtVerifier          *auth.Verifier
-	port                 int
-	router               *chi.Mux
-	etherscanResults     sync.Map // guid -> *etherscanVerifyResult
+	jwtVerifier      *auth.Verifier
+	port             int
+	router           *chi.Mux
+	etherscanResults sync.Map // guid -> *etherscanVerifyResult
 
 	// draining is flipped to true when graceful shutdown begins (SIGTERM →
 	// ctx cancel in Start). While true, the readiness probe reports 503 so
@@ -620,6 +623,9 @@ func (s *Server) Start(ctx context.Context) error {
 		Addr:              fmt.Sprintf(":%d", s.port),
 		Handler:           s.router,
 		ReadHeaderTimeout: 5 * time.Second,
+	}
+	if s.v2 != nil {
+		srv.MaxHeaderBytes = 64 << 10
 	}
 
 	go func() {

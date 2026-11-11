@@ -1,5 +1,6 @@
 import { getConfig } from './runtimeConfig';
 import { getImpersonationTokenHeader } from '../hooks/useImpersonation';
+import { appSession, isV2 } from './v2Session';
 
 const API_BASE = getConfig('VITE_API_URL', '/api');
 
@@ -455,6 +456,7 @@ export interface VersionInfo {
 }
 
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  if (isV2()) return appSession.request<T>(endpoint, options);
   const res = await fetch(`${API_BASE}${endpoint}`, {
     credentials: 'include',
     ...options,

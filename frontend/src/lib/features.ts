@@ -13,6 +13,7 @@
 //      feature should default off in privacy mode.
 
 import { getConfig } from './runtimeConfig';
+import { isV2 } from './v2Session';
 
 export interface FeatureFlags {
   /**
@@ -50,7 +51,7 @@ export interface FeatureFlags {
 }
 
 function isPrivacyMode(): boolean {
-  return getConfig('VITE_PRIVACY_MODE') === 'true';
+  return isV2() || getConfig('VITE_PRIVACY_MODE') === 'true';
 }
 
 export function features(): FeatureFlags {

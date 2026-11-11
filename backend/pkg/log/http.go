@@ -95,6 +95,10 @@ type responseRecorder struct {
 	wroteHeader bool
 }
 
+// Unwrap preserves real socket deadline control through access logging. The
+// private V2 response gate itself intentionally has no Unwrap method.
+func (r *responseRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
+
 func (r *responseRecorder) WriteHeader(code int) {
 	if r.wroteHeader {
 		return

@@ -1,24 +1,17 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
-
-interface AuthState {
-  authenticated: boolean;
-  did: string | null;
-  expiresAt: number | null;
-}
-
-interface AuthContextType {
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  auth: AuthState;
-  logout: () => Promise<void>;
-  checkStatus: () => Promise<void>;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+import { isV2 } from './v2Session';
+import { V2AuthProvider } from './authV2';
+import { AuthContext, type AuthState } from './authContext';
+export { useAuth } from './authContext';
+export type { AuthContextType } from './authContext';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  return isV2() ? <V2AuthProvider context={AuthContext}>{children}</V2AuthProvider> : <LegacyAuthProvider>{children}</LegacyAuthProvider>;
+}
+
+function LegacyAuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [auth, setAuth] = useState<AuthState>({
     authenticated: false,
@@ -75,11 +68,3 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-}

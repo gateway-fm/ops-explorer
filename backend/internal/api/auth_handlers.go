@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"explorer/internal/auth"
+	"explorer/internal/authv2"
 	"explorer/pkg/log"
 )
 
@@ -206,6 +207,9 @@ func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 // raw cookie is still forwarded as the Bearer and privacy-proxy re-validates it
 // on every call; the proxy remains the authoritative gate.
 func (s *Server) GetAuthDID(r *http.Request) string {
+	if s.v2 != nil {
+		return authv2.Actor(r.Context())
+	}
 	cookie, err := r.Cookie(AuthCookieName)
 	if err != nil || cookie.Value == "" {
 		return ""
@@ -229,6 +233,9 @@ func (s *Server) GetAuthDID(r *http.Request) string {
 }
 
 func (s *Server) GetAuthToken(r *http.Request) string {
+	if s.v2 != nil {
+		return authv2.Token(r.Context())
+	}
 	cookie, err := r.Cookie(AuthCookieName)
 	if err != nil {
 		return ""
