@@ -3,6 +3,32 @@ import { getConfig } from './runtimeConfig';
 export const isV2 = () => import.meta.env.VITE_AUTH_PROTOCOL === 'ops-v2' || getConfig('VITE_AUTH_PROTOCOL') === 'ops-v2';
 export interface AppIdentity { actor: string; profile: string; activation: string; expires: number }
 export interface SessionState { identity: AppIdentity | null; loading: boolean; changed: boolean; error: string | null }
+export interface AppOperation {
+  readonly identity: Readonly<AppIdentity>;
+  readonly signal: AbortSignal;
+  check(): void;
+  request<T>(endpoint: string, options?: RequestInit): Promise<T>;
+  dispose(): void;
+}
+export class WalletHTTPError extends Error {
+  readonly status: number;
+  constructor(status: number) { super(status === 409 ? 'Wallet state conflict. The challenge may be expired or used, or this link may be revoked.' : `Wallet request failed (${status}). Refresh links before trying another action.`); this.status = status; }
+}
+const walletEndpoint = (path: string) => /^\/eth\/(?:addresses(?:\/0x[0-9a-f]{40})?|link\/(?:challenge|verify))$/.test(path);
+async function boundedBody(response: Response, max: number, check: () => void): Promise<string> {
+  if (!response.body || response.redirected || !/^application\/json(?:;\s*charset=utf-8)?$/i.test(response.headers.get('Content-Type') ?? '')) throw Error('Invalid wallet response');
+  const reader = response.body.getReader(), decoder = new TextDecoder('utf-8', { fatal: true });
+  let raw = '', size = 0;
+  try {
+    for (;;) {
+      const next = await reader.read(); check();
+      if (next.done) break;
+      size += next.value.byteLength; if (size > max) throw Error('Wallet response is too large');
+      raw += decoder.decode(next.value, { stream: true });
+    }
+    raw += decoder.decode(); check(); return raw;
+  } finally { void reader.cancel().catch(() => {}); reader.releaseLock(); }
+}
 interface Status { protocol: 'ops-v2'; authenticated: boolean; did?: string; source_profile?: string; session_id?: string; expires_at?: number }
 interface Intent { v: 1; actor: string; profile: string; prior: string; returnPath: string; expiresAt: number }
 const intentKey = 'ops-v2-app-renewal';
@@ -49,6 +75,7 @@ export class AppSession {
   private live = true;
   private listeners = new Set<() => void>();
   private requests = new Set<AbortController>();
+  private scopes = new Set<AbortController>();
   private clearPrivate = () => {};
   private base: string;
   private now: () => number;
@@ -65,10 +92,30 @@ export class AppSession {
     // Capture before abort/subscription/query callbacks can start another owner.
     const owner = { epoch: this.epoch, operation: this.operation };
     for (const request of this.requests) request.abort(); this.requests.clear();
+    this.retireScopes();
     // Unmount first, then clear data/cursors before a new identity is published.
     this.publish({ identity: null, loading: false, changed, error });
     this.clearPrivate();
     return owner;
+  }
+  private retireScopes() { for (const scope of this.scopes) scope.abort(); this.scopes.clear(); }
+  captureOperation(): AppOperation {
+    const identity = this.state.identity, owner = { epoch: this.epoch, operation: this.operation };
+    const notice = this.captureNotice();
+    const abort = new AbortController();
+    const check = () => {
+      if (!identity || !notice || abort.signal.aborted || !this.fence(owner, notice, identity.activation, false) || identity.expires <= this.now()) throw Error('App context changed');
+    };
+    check(); this.scopes.add(abort);
+    return Object.freeze({
+      identity: Object.freeze({ ...identity! }), signal: abort.signal, check,
+      request: async <T,>(endpoint: string, options: RequestInit = {}) => {
+        check();
+        if (!walletEndpoint(endpoint)) throw Error('Invalid wallet endpoint');
+        return this.scopedRequest<T>(endpoint, { ...options, signal: AbortSignal.any([abort.signal, ...(options.signal ? [options.signal] : [])]) }, check, 1 << 20);
+      },
+      dispose: () => { abort.abort(); this.scopes.delete(abort); },
+    });
   }
   private current(epoch: number, activation?: string) { return this.live && this.epoch === epoch && (activation === undefined || this.state.identity?.activation === activation); }
   private noticeUnavailable() {
@@ -162,22 +209,37 @@ export class AppSession {
     } catch { if (this.fence(owner, notice)) this.clear(false, 'Cannot verify app session. Try again.'); }
   }
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    return this.scopedRequest<T>(endpoint, options);
+  }
+  private async scopedRequest<T>(endpoint: string, options: RequestInit, operationCheck?: () => void, maxBytes?: number): Promise<T> {
     const identity = this.state.identity, epoch = this.epoch;
     if (!this.live || !identity || identity.expires <= this.now()) { this.clear(false); throw Error('Sign in required'); }
     const notice = this.captureNotice();
     if (!notice || !this.current(epoch, identity.activation)) throw Error('App context changed');
     const owner = { epoch, operation: this.operation };
+    const check = () => {
+      operationCheck?.();
+      if (!this.fence(owner, notice, identity.activation, false) || identity.expires <= this.now()) throw Error('App context changed');
+    };
     const abort = new AbortController(); this.requests.add(abort);
     const onAbort = () => abort.abort(); options.signal?.addEventListener('abort', onAbort, { once: true }); if (options.signal?.aborted) abort.abort();
     try {
       const headers = new Headers(options.headers); headers.set('X-OPS-App-Session', identity.activation); headers.delete('Authorization'); headers.delete('X-Impersonate-Token');
-      if (!this.fence(owner, notice, identity.activation, false)) throw Error('App context changed');
+      check();
       const res = await this.transport(this.base + endpoint, { ...options, credentials: 'include', cache: 'no-store', redirect: 'error', headers, signal: abort.signal });
-      if (!this.fence(owner, notice, identity.activation, false) || identity.expires <= this.now()) throw Error('App context changed');
+      check();
+      if (res.status === 409 && maxBytes && walletEndpoint(endpoint)) {
+        let raw: string;
+        try { raw = await boundedBody(res, 1024, check); }
+        catch { check(); this.clear(true); throw Error('App context changed'); }
+        check();
+        if (/^\s*\{\s*"error"\s*:\s*"wallet state conflict"\s*\}\s*$/.test(raw)) throw new WalletHTTPError(409);
+      }
       if (res.status === 409 || res.status === 401) { this.clear(res.status === 409); throw Error('App context changed'); }
+      if (!res.ok && maxBytes) { await boundedBody(res, 1024, check); check(); throw new WalletHTTPError(res.status); }
       if (!res.ok) throw Error(`API error: ${res.status}`);
-      const value: unknown = await res.json();
-      if (!this.fence(owner, notice, identity.activation, false) || identity.expires <= this.now()) throw Error('App context changed');
+      const value: unknown = maxBytes ? JSON.parse(await boundedBody(res, maxBytes, check)) : await res.json();
+      check();
       return value as T;
     } catch (error) { this.fence(owner, notice, identity.activation, false); throw error;
     } finally { options.signal?.removeEventListener('abort', onAbort); this.requests.delete(abort); }
@@ -185,6 +247,7 @@ export class AppSession {
   async logout() {
     const identity = this.state.identity;
     if (!identity || !this.live) return;
+    this.retireScopes();
     let notice = this.captureNotice(); if (!notice) return;
     const owner = { epoch: this.epoch, operation: ++this.operation };
     try {
@@ -202,6 +265,7 @@ export class AppSession {
   }
   async login(returnPath = window.location.pathname + window.location.search, renew = false) {
     if (!this.live || !localReturn(returnPath)) throw Error('Invalid return path');
+    this.retireScopes();
     const notice = this.captureNotice(); if (!notice) return;
     const selected = this.state.identity, owner = { epoch: this.epoch, operation: ++this.operation };
     if (renew && !selected) throw Error('No owned app context');

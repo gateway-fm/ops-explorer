@@ -195,6 +195,18 @@ func Token(ctx context.Context) string {
 	}
 	return v.raw
 }
+
+// CheckCurrent checks the original Protected request capture immediately before
+// an upstream action. A successful read COMMIT is required. This does not hold a
+// lock across the action or undo an already forwarded request after logout.
+func (s *Service) CheckCurrent(ctx context.Context) error {
+	if s == nil || !s.Ready() {
+		return ErrUnavailable
+	}
+	v, _ := ctx.Value(sessionKey{}).(*requestSession)
+	return s.recheck(ctx, v)
+}
+
 func Actor(ctx context.Context) string {
 	v, _ := ctx.Value(sessionKey{}).(*requestSession)
 	if v == nil {

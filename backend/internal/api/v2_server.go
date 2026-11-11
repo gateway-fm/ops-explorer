@@ -25,7 +25,7 @@ func NewV2(session *authv2.Service, provider *V2ReadClient, port int) (*Server, 
 	// therefore sees the same routes as real requests without running handlers.
 	s.router.Use(func(next http.Handler) http.Handler {
 		return session.Boundary(next, func(path, method string) bool {
-			if method != "GET" && method != "HEAD" && method != "POST" {
+			if method != "GET" && method != "HEAD" && method != "POST" && method != "DELETE" {
 				return false
 			}
 			return s.router.Match(chi.NewRouteContext(), method, path)
@@ -42,6 +42,14 @@ func NewV2(session *authv2.Service, provider *V2ReadClient, port int) (*Server, 
 		}
 		s.router.Method(method, route, http.HandlerFunc(session.Auth))
 	}
+	s.router.Group(func(r chi.Router) {
+		r.Use(v2WalletDeadline)
+		r.Use(session.Protected)
+		r.Get("/api/eth/addresses", s.handleV2Wallet)
+		r.Post("/api/eth/link/challenge", s.handleV2Wallet)
+		r.Post("/api/eth/link/verify", s.handleV2Wallet)
+		r.Delete("/api/eth/addresses/{address}", s.handleV2Wallet)
+	})
 	for _, prefix := range []string{"/api", "/api/v1", "/api/v2"} {
 		s.router.Get(prefix+"/version", s.handleVersion)
 		s.router.Get(prefix+"/chain-info", func(w http.ResponseWriter, r *http.Request) {
