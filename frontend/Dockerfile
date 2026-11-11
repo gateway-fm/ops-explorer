@@ -1,4 +1,4 @@
-FROM node:24.22.1-alpine AS builder
+FROM node:24.22.3-alpine3.23 AS builder
 
 # Upgrade system packages
 RUN apk update --no-cache && apk upgrade --no-cache
