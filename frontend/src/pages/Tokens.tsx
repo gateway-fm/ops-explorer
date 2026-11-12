@@ -15,6 +15,7 @@ const FILTERS: { label: string; value: string }[] = [
   { label: 'All', value: '' },
   { label: 'ERC-20', value: 'ERC20' },
   { label: 'ERC-721', value: 'ERC721' },
+  { label: 'ERC-1155', value: 'ERC1155' },
 ];
 
 export default function Tokens() {

@@ -193,6 +193,13 @@ func mapTokenInventoryItems(in []*indexerv1.TokenInventoryItem) []types.TokenInv
 		if uri := it.GetTokenUri(); uri != "" {
 			item.TokenURI = &uri
 		}
+		// ERC-1155 fields: a non-empty quantity marks a multi-token id, where
+		// the same id is shared across `holders` owners.
+		if qty := it.GetQuantity(); qty != "" {
+			item.Quantity = &qty
+			holders := it.GetHolders()
+			item.Holders = &holders
+		}
 		out = append(out, item)
 	}
 	return out
