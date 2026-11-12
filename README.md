@@ -27,6 +27,10 @@
 
 ## Quickstart (Dev Mode)
 
+For the native OPS V2 entry, see [app sessions](docs/ops-v2-app-sessions.md),
+[wallets](docs/ops-v2-wallets.md) and [native regression checks](docs/ops-v2-testing.md).
+The general dev quickstart below selects the standalone stack.
+
 Spins up a local [Anvil](https://book.getfoundry.sh/reference/anvil/) testnet, PostgreSQL, the backend services, the frontend, and the chain-indexer — all via Docker Compose.
 
 ### Prerequisites

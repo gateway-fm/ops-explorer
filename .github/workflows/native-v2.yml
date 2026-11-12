@@ -1,0 +1,59 @@
+name: Native V2 Explorer
+
+on:
+  pull_request: {}
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-bff:
+    name: Native BFF and browser entry
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ops_v2_ci_session
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      E2B_TEST_OWNER_DSN: postgres://postgres:postgres@127.0.0.1:5432/ops_v2_ci_session?sslmode=disable
+      GOMAXPROCS: '2'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.9'
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.22.1'
+      - name: Prepare empty owned database with the real offline migration
+        run: node scripts/test-native-v2.mjs prepare
+      - name: Require native session, forwarding and output-fence checks
+        run: node scripts/test-native-v2.mjs
+      - name: Build native privacy API and administration command
+        working-directory: backend
+        run: |
+          CGO_ENABLED=0 go build -p 1 -tags privacy -o /dev/null ./cmd/api
+          CGO_ENABLED=0 go build -p 1 -o /dev/null ./cmd/sso-v2-admin
+      - name: Test and build native browser entry
+        working-directory: frontend
+        run: |
+          npm ci
+          npx --no-install vitest run
+          npx --no-install tsc --noEmit --project tsconfig.app.json
+          npx --no-install vite build --config vite.v2.config.ts
