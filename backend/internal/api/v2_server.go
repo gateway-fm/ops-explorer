@@ -1,9 +1,7 @@
 package api
 
 import (
-	"context"
 	"explorer/internal/authv2"
-	"explorer/internal/rpc"
 	"explorer/pkg/log"
 	"github.com/go-chi/chi/v5"
 	"net/http"
@@ -51,6 +49,13 @@ func NewV2(session *authv2.Service, provider *V2ReadClient, port int) (*Server, 
 		r.Delete("/api/eth/addresses/{address}", s.handleV2Wallet)
 	})
 	for _, prefix := range []string{"/api", "/api/v1", "/api/v2"} {
+		s.router.Group(func(r chi.Router) {
+			r.Use(v2WalletDeadline)
+			r.Use(session.Protected)
+			r.Route(prefix, s.setupV2DisclosureRoutes)
+		})
+	}
+	for _, prefix := range []string{"/api", "/api/v1", "/api/v2"} {
 		s.router.Get(prefix+"/version", s.handleVersion)
 		s.router.Get(prefix+"/chain-info", func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.RawQuery != "" {
@@ -60,27 +65,9 @@ func NewV2(session *authv2.Service, provider *V2ReadClient, port int) (*Server, 
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(session.SetupJSON())
 		})
-		s.router.Group(func(r chi.Router) {
-			r.Use(session.Protected)
-			r.Use(func(next http.Handler) http.Handler {
-				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					ctx := context.WithValue(r.Context(), rpc.ContextKeyAuthToken, authv2.Token(r.Context()))
-					next.ServeHTTP(w, r.WithContext(ctx))
-				})
-			})
-			r.Route(prefix, func(r chi.Router) { s.setupV2ReadRoutes(r) })
-		})
 	}
+	s.router.Group(func(r chi.Router) { r.Use(v2ReadDeadline); r.Use(session.Protected); s.setupV2ReadRoutes(r) })
 	return s, nil
-}
-
-func (s *Server) setupV2ReadRoutes(r chi.Router) {
-	// These exact existing read families are fail-closed in this auth component.
-	// They never pass through legacy numeric/offset DTOs or raw-indexer fallbacks.
-	// The separate current-privacy REST adapter supplies their wire contract.
-	for _, path := range []string{"/stats", "/stats/tx-history", "/sync", "/search", "/search/suggestions", "/blocks", "/blocks/", "/blocks/latest", "/blocks/{number}", "/blocks/{number}/internal", "/transactions", "/transactions/", "/transactions/{hash}", "/transactions/{hash}/transfers", "/transactions/{hash}/logs", "/transactions/{hash}/internal", "/addresses/{address}", "/addresses/{address}/", "/addresses/{address}/transactions", "/addresses/{address}/transfers", "/addresses/{address}/contract", "/addresses/{address}/contract/uml", "/addresses/{address}/internal", "/addresses/{address}/logs", "/addresses/{address}/balances", "/tokens", "/tokens/", "/tokens/{address}", "/tokens/{address}/", "/tokens/{address}/holders", "/tokens/{address}/inventory", "/tokens/{address}/transfers", "/token-transfers", "/logs", "/accounts"} {
-		r.Get(path, func(w http.ResponseWriter, r *http.Request) { writeError(w, 503, "private_data_unavailable") })
-	}
 }
 
 // Handler supports normal TLS/reverse-proxy composition without exposing any
