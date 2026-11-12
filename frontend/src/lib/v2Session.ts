@@ -14,16 +14,63 @@ export class WalletHTTPError extends Error {
   readonly status: number;
   constructor(status: number) { super(status === 409 ? 'Wallet state conflict. The challenge may be expired or used, or this link may be revoked.' : `Wallet request failed (${status}). Refresh links before trying another action.`); this.status = status; }
 }
+export class ReadHTTPError extends Error {
+  readonly status: number;
+  readonly code: string;
+  constructor(status: number, code: string) { super(code === 'cursor_stale' ? 'The page belongs to an older session or data revision. Start again from the first page.' : code === 'too_broad' ? 'This request is too broad. Narrow the filters and try again.' : code === 'denied' ? 'Your current permissions do not allow this read.' : code === 'not_found' ? 'This record is unavailable.' : 'Private data is temporarily unavailable.'); this.status = status; this.code = code; }
+}
+export class DisclosureHTTPError extends Error {
+  readonly status: number;
+  readonly conflict: boolean;
+  constructor(status: number) { super(status === 409 ? 'The case or its data source changed. Reload the case before reading again.' : status === 404 ? 'The disclosure case is unavailable.' : status === 422 ? 'This protected data scope is unavailable. Narrow the request.' : status === 400 ? 'The disclosure request is invalid.' : 'The disclosure service is temporarily unavailable.'); this.status = status; this.conflict = status === 409; }
+}
+function disclosureEndpoint(endpoint: string, method: string): boolean {
+  if (method !== 'GET' && method !== 'POST' || !endpoint.startsWith('/') || endpoint.startsWith('//') || endpoint.length > 17000 || /[\\#\u0000-\u0020\u007f]/.test(endpoint)) return false;
+  const [path, raw = '', extra] = endpoint.split('?'); if (extra !== undefined || path.includes('%') || /%(?![0-9a-fA-F]{2})/.test(raw)) return false;
+  const parts = path.slice(1).split('/'), query = new URLSearchParams(raw);
+  let allowed: string[] = [], maxCursor = 8192, valid = false;
+  const alias = (v: string) => /^da1\.[A-Za-z0-9_-]{1,64}\.[A-Za-z0-9_-]{21}[AQgw]$/.test(v);
+  if (parts[0] === 'disclosure' && parts[1] === 'cases') {
+    if (parts.length === 2) { valid = true; if (method === 'GET') allowed = ['role', 'organizationId', 'limit', 'cursor']; }
+    else if (validUUID(parts[2])) {
+      if (parts.length === 3) valid = method === 'GET';
+      if (parts.length === 4 && parts[3] === 'audit') { valid = method === 'GET'; allowed = ['limit', 'cursor']; }
+      if (parts.length === 4 && ['read', 'revoke'].includes(parts[3])) valid = method === 'POST';
+    }
+  } else if (parts.length === 1 && parts[0] === 'viewable-addresses') { valid = method === 'GET'; allowed = ['limit', 'cursor']; }
+  else if (parts[0] === 'grant' && validUUID(parts[1]) && method === 'GET') {
+    maxCursor = 2048;
+    if (parts.length === 3 && parts[2] === 'activity') { valid = true; allowed = ['limit', 'cursor']; }
+    if (parts.length === 4 && parts[2] === 'resolve' && alias(parts[3])) valid = true;
+    if (parts.length >= 4 && alias(parts[2]) && parts[3] === 'transactions') {
+      if (parts.length === 4) { valid = true; allowed = ['limit', 'cursor']; }
+      if (parts.length === 5 && /^0x[0-9a-f]{64}$/.test(parts[4])) valid = true;
+    }
+  }
+  if (!valid || method === 'POST' && raw !== '') return false;
+  for (const [key, value] of query) {
+    if (!allowed.includes(key) || query.getAll(key).length !== 1 || !value) return false;
+    if (key === 'limit' && (!/^[1-9][0-9]{0,2}$/.test(value) || Number(value) > 100)) return false;
+    if (key === 'cursor' && (value.length > maxCursor || /[^\x21-\x7e]/.test(value))) return false;
+    if (key === 'role' && value !== 'recipient' && value !== 'data-org-admin') return false;
+    if (key === 'organizationId' && !validUUID(value)) return false;
+  }
+  if (query.has('organizationId') && query.get('role') !== 'data-org-admin' || query.get('role') === 'data-org-admin' && !query.has('organizationId')) return false;
+  return true;
+}
+function readFailure(raw: string): string | null {
+  try { const v: unknown = JSON.parse(raw); if (!v || typeof v !== 'object' || Array.isArray(v) || Object.keys(v).join() !== 'error') return null; const e = (v as { error: unknown }).error; if (!e || typeof e !== 'object' || Array.isArray(e) || Object.keys(e).join() !== 'code') return null; const code = (e as { code: unknown }).code; return typeof code === 'string' && ['invalid_request', 'unauthenticated', 'denied', 'not_found', 'cursor_stale', 'too_broad', 'unavailable'].includes(code) ? code : null; } catch { return null; }
+}
 const walletEndpoint = (path: string) => /^\/eth\/(?:addresses(?:\/0x[0-9a-f]{40})?|link\/(?:challenge|verify))$/.test(path);
 async function boundedBody(response: Response, max: number, check: () => void): Promise<string> {
-  if (!response.body || response.redirected || !/^application\/json(?:;\s*charset=utf-8)?$/i.test(response.headers.get('Content-Type') ?? '')) throw Error('Invalid wallet response');
+  if (!response.body || response.redirected || !/^application\/json(?:;\s*charset=utf-8)?$/i.test(response.headers.get('Content-Type') ?? '')) throw Error('Invalid private response');
   const reader = response.body.getReader(), decoder = new TextDecoder('utf-8', { fatal: true });
   let raw = '', size = 0;
   try {
     for (;;) {
       const next = await reader.read(); check();
       if (next.done) break;
-      size += next.value.byteLength; if (size > max) throw Error('Wallet response is too large');
+      size += next.value.byteLength; if (size > max) throw Error('Private response is too large');
       raw += decoder.decode(next.value, { stream: true });
     }
     raw += decoder.decode(); check(); return raw;
@@ -211,7 +258,17 @@ export class AppSession {
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     return this.scopedRequest<T>(endpoint, options);
   }
-  private async scopedRequest<T>(endpoint: string, options: RequestInit, operationCheck?: () => void, maxBytes?: number): Promise<T> {
+  async read<T>(endpoint: string, signal?: AbortSignal): Promise<T> {
+    if (!endpoint.startsWith('/v2/explorer/') || endpoint.includes('#') || endpoint.includes('\\') || /[\u0000-\u001f\u007f]/.test(endpoint)) throw Error('Invalid read endpoint');
+    return this.scopedRequest<T>(endpoint, { method: 'GET', signal }, undefined, 8 << 20, 'read');
+  }
+  async disclosure<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const method = options.method ?? 'GET';
+    if (!disclosureEndpoint(endpoint, method) || method === 'GET' && options.body !== undefined || method === 'POST' && (typeof options.body !== 'string' || new TextEncoder().encode(options.body).length > (128 << 10))) throw Error('Invalid disclosure endpoint or request');
+    const headers = new Headers(options.headers); if (method === 'POST') headers.set('Content-Type', 'application/json');
+    return this.scopedRequest<T>(endpoint, { ...options, method, headers }, undefined, 2 << 20, 'disclosure');
+  }
+  private async scopedRequest<T>(endpoint: string, options: RequestInit, operationCheck?: () => void, maxBytes?: number, mode?: 'read' | 'disclosure'): Promise<T> {
     const identity = this.state.identity, epoch = this.epoch;
     if (!this.live || !identity || identity.expires <= this.now()) { this.clear(false); throw Error('Sign in required'); }
     const notice = this.captureNotice();
@@ -228,6 +285,16 @@ export class AppSession {
       check();
       const res = await this.transport(this.base + endpoint, { ...options, credentials: 'include', cache: 'no-store', redirect: 'error', headers, signal: abort.signal });
       check();
+      if (mode === 'read' && res.status === 409) {
+        const raw = await boundedBody(res, 1024, check); check();
+        if (readFailure(raw) === 'cursor_stale') throw new ReadHTTPError(409, 'cursor_stale');
+        this.clear(true); throw Error('App context changed');
+      }
+      if (mode === 'disclosure' && res.status === 409) {
+        const raw = await boundedBody(res, 1024, check); check();
+        if (/^\s*\{\s*"error"\s*:\s*"disclosure context changed"\s*\}\s*$/.test(raw)) throw new DisclosureHTTPError(409);
+        this.clear(true); throw Error('App context changed');
+      }
       if (res.status === 409 && maxBytes && walletEndpoint(endpoint)) {
         let raw: string;
         try { raw = await boundedBody(res, 1024, check); }
@@ -236,7 +303,7 @@ export class AppSession {
         if (/^\s*\{\s*"error"\s*:\s*"wallet state conflict"\s*\}\s*$/.test(raw)) throw new WalletHTTPError(409);
       }
       if (res.status === 409 || res.status === 401) { this.clear(res.status === 409); throw Error('App context changed'); }
-      if (!res.ok && maxBytes) { await boundedBody(res, 1024, check); check(); throw new WalletHTTPError(res.status); }
+      if (!res.ok && maxBytes) { const raw = await boundedBody(res, 1024, check); check(); if (mode === 'read') throw new ReadHTTPError(res.status, readFailure(raw) ?? 'unavailable'); if (mode === 'disclosure') throw new DisclosureHTTPError(res.status); throw new WalletHTTPError(res.status); }
       if (!res.ok) throw Error(`API error: ${res.status}`);
       const value: unknown = maxBytes ? JSON.parse(await boundedBody(res, maxBytes, check)) : await res.json();
       check();
