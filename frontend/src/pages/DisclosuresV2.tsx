@@ -43,7 +43,7 @@ function localDate(seconds: number) { const date = new Date(seconds * 1000); ret
 function CreateCase({ onCreated }: { onCreated: () => void }) {
   const identity = useIdentity(), navigate = useNavigate(), ticket = useRef(0), attempt = useRef<{ signature: string; body: string }>(undefined);
   const now = Math.floor(Date.now() / 1000);
-  const [rule, setRule] = useState(''), [targets, setTargets] = useState(''), [reference, setReference] = useState(''), [purpose, setPurpose] = useState(''), [legal, setLegal] = useState('');
+  const [rule, setRule] = useState(''), [targets, setTargets] = useState(''), [addresses, setAddresses] = useState(''), [reference, setReference] = useState(''), [purpose, setPurpose] = useState(''), [legal, setLegal] = useState('');
   const [from, setFrom] = useState(localDate(now - 3600)), [through, setThrough] = useState(localDate(now)), [minutes, setMinutes] = useState(15), [selected, setSelected] = useState<DisclosureResource[]>([...disclosureResources]), [level, setLevel] = useState<DisclosureLevel>('pseudonymous');
   const [busy, setBusy] = useState(false), [error, setError] = useState<string>();
   useEffect(() => () => { ++ticket.current; }, []);
@@ -52,7 +52,9 @@ function CreateCase({ onCreated }: { onCreated: () => void }) {
     try {
       const start = Math.floor(new Date(from).getTime() / 1000), end = Math.floor(new Date(through).getTime() / 1000), actors = [...new Set(targets.split(/[\s,]+/).filter(Boolean))].sort();
       if (!actors.length || actors.length > 256 || actors.some(a => !/^ops:p1:[A-Za-z0-9_-]{43}$/.test(a)) || !selected.length || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || !Number.isSafeInteger(minutes) || minutes < 1 || minutes > 43200) throw Error('Check the client identifiers, dates, resources and expiry.');
-      const request = { ruleId: rule.trim(), recipientActorId: identity.actor, caseReference: reference, purpose, legalBasis: legal, scope: { targetActors: actors, resources: [...selected].sort(), addresses: { mode: 'all-target-addresses', values: [] }, dataTime: { start, end }, level } };
+      const values = [...new Set(addresses.split(/[\s,]+/).filter(Boolean).map(a => a.toLowerCase()))].sort();
+      if (values.length > 1024 || values.some(a => !/^0x[0-9a-f]{40}$/.test(a))) throw Error('Use complete wallet addresses for the address limit.');
+      const request = { ruleId: rule.trim(), recipientActorId: identity.actor, caseReference: reference, purpose, legalBasis: legal, scope: { targetActors: actors, resources: [...selected].sort(), addresses: { mode: values.length ? 'list' : 'all-target-addresses', values }, dataTime: { start, end }, level } };
       const signature = JSON.stringify({ request, minutes });
       if (attempt.current?.signature !== signature) attempt.current = { signature, body: JSON.stringify({ ...request, expiresAt: Math.floor(Date.now() / 1000) + minutes * 60, idempotencyKey: crypto.randomUUID() }) };
       const raw = await appSession.disclosure<unknown>('/disclosure/cases', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: attempt.current.body });
@@ -64,6 +66,7 @@ function CreateCase({ onCreated }: { onCreated: () => void }) {
     <p>The approved rule limits the clients, dates and detail level you can request.</p>
     <label className="block">Approved rule ID<input required maxLength={128} value={rule} onChange={e => setRule(e.target.value)} className="block border p-2 w-full" /></label>
     <label className="block">Client actor IDs<textarea required value={targets} onChange={e => setTargets(e.target.value)} placeholder="ops:p1:…" className="block border p-2 w-full" /></label>
+    <label className="block">Limit to these wallet addresses (optional)<textarea value={addresses} onChange={e => setAddresses(e.target.value)} placeholder="0x…" className="block border p-2 w-full" /><span>Leave empty to request all eligible wallets of these clients. For a rule limited to named wallets, enter the permitted addresses.</span></label>
     <label className="block">Case reference<input required maxLength={256} value={reference} onChange={e => setReference(e.target.value)} className="block border p-2 w-full" /></label>
     <label className="block">Purpose<input required maxLength={1024} value={purpose} onChange={e => setPurpose(e.target.value)} className="block border p-2 w-full" /></label>
     <label className="block">Legal basis<input required maxLength={1024} value={legal} onChange={e => setLegal(e.target.value)} className="block border p-2 w-full" /></label>
