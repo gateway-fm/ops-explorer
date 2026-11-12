@@ -3,7 +3,9 @@ package api
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"sync"
@@ -52,6 +54,7 @@ type Server struct {
 	// binding requires this to be non-nil (the JWKS-required path).
 	jwtVerifier      *auth.Verifier
 	port             int
+	listenHost       string
 	router           *chi.Mux
 	etherscanResults sync.Map // guid -> *etherscanVerifyResult
 
@@ -610,6 +613,20 @@ func (s *Server) authContextMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// BindIP selects an explicit listener interface before Start. Empty retains the
+// existing all-interface default; configured values must be literal IPs.
+func (s *Server) BindIP(host string) error {
+	if host != "" {
+		address, err := netip.ParseAddr(host)
+		if err != nil || address.Zone() != "" {
+			return fmt.Errorf("invalid API listener IP")
+		}
+		host = address.String()
+	}
+	s.listenHost = host
+	return nil
+}
+
 func (s *Server) Start(ctx context.Context) error {
 	if s.wsHub != nil {
 		go s.wsHub.Run(ctx)
@@ -620,7 +637,7 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	srv := &http.Server{
-		Addr:              fmt.Sprintf(":%d", s.port),
+		Addr:              net.JoinHostPort(s.listenHost, fmt.Sprint(s.port)),
 		Handler:           s.router,
 		ReadHeaderTimeout: 5 * time.Second,
 	}

@@ -68,6 +68,9 @@ func startV2IfSelected() (bool, error) {
 	if e != nil {
 		return true, e
 	}
+	if e = server.BindIP(os.Getenv("API_LISTEN_HOST")); e != nil {
+		return true, e
+	}
 	log.RedactHTTPPaths = true
 	log.Info("starting v2 API", "port", port)
 	e = server.Start(ctx)
