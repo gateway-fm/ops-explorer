@@ -23,7 +23,7 @@ const v2ExplorerResponseLimit = 8 << 20
 type v2ReadRoute struct{ path, query string }
 
 var v2ReadRoutes = []v2ReadRoute{
-	{"/chain-id", ""}, {"/stats", ""}, {"/stats/tx-history", "chart"},
+	{"/chain-id", ""}, {"/stats", "page"}, {"/stats/tx-history", "chart"},
 	{"/blocks", "page"}, {"/blocks/latest/number", ""}, {"/blocks/hash/{hash}", ""}, {"/blocks/{number}", ""}, {"/blocks/{number}/transactions", "transactions"}, {"/blocks/{number}/internal", "page"},
 	{"/transactions/paginated", "transactions"}, {"/transactions", "transactions"}, {"/transactions/{hash}", ""}, {"/transactions/{hash}/internal", "page"}, {"/transactions/{hash}/transfers", "page"}, {"/transactions/{hash}/logs", "logs"},
 	{"/addresses/{address}/stats", ""}, {"/addresses/{address}/transactions", "transactions"}, {"/addresses/{address}/balance", ""}, {"/addresses/{address}/code", ""}, {"/addresses/{address}/balances", "page"}, {"/addresses/{address}/transfers", "page"}, {"/addresses/{address}/internal", "page"}, {"/addresses/{address}/logs", "scopedLogs"}, {"/addresses/{address}/contract", ""}, {"/addresses/{address}/is-contract", ""},

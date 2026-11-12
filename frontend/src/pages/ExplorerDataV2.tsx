@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useNavigate, useParams } from 'react-router-dom';
 import { appSession, ReadHTTPError } from '../lib/v2Session';
-import { continuationMessage, readItem, readPage, readTarget, searchSuggestionTarget, type ReadItem } from '../lib/v2Reads';
+import { continuationMessage, readItem, readPage, readObservedStats, readObservedHistory, readTarget, searchSuggestionTarget, type ReadItem } from '../lib/v2Reads';
 import type { PageInfo } from '../lib/v2ReadTypes';
+import { ObservedStats, ObservedHistoryChart } from './ExplorerSummaryV2';
 
 const quantity = /^(0|[1-9][0-9]{0,77})$/;
 const address = /^0x[0-9a-f]{40}$/;
@@ -35,7 +36,7 @@ function ItemTable({ items }: { items: ReadItem[] }) {
   return <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{columns.map(k => <th className="text-left p-2" key={k}>{label(k)}</th>)}<th className="text-left p-2">Details</th></tr></thead><tbody>{items.map((item, index) => <tr className="border-t align-top" key={typeof item.id === 'string' ? item.id : index}>{columns.map(k => <td className="p-2 max-w-72" key={k}>{k in item ? <Cell name={k} value={item[k]} row={item} /> : 'Unknown'}</td>)}<td className="p-2"><details><summary>Show</summary><RecordView item={item} /></details></td></tr>)}</tbody></table></div>;
 }
 type Result = { item?: ReadItem; items?: ReadItem[]; unavailable?: boolean; error?: string; stale?: boolean };
-function ReadResult({ endpoint, collection, onPage }: { endpoint: string; collection: boolean; onPage?: (p: PageInfo | null) => void }) {
+function ReadResult({ endpoint, collection, summary, onPage }: { endpoint: string; collection: boolean; summary?: 'stats' | 'chart'; onPage?: (p: PageInfo | null) => void }) {
   const [result, setResult] = useState<Result | null>(null);
   useEffect(() => {
     let active = true;
@@ -45,10 +46,11 @@ function ReadResult({ endpoint, collection, onPage }: { endpoint: string; collec
       const owner = scope;
       void appSession.read<unknown>(endpoint, owner.signal).then(raw => {
         owner.check();
-        const page = collection ? readPage(raw) : undefined;
-        const next: Result = page ? { items: page.items } : raw === null ? { unavailable: true } : { item: readItem(raw) };
+        const page = collection ? summary === 'chart' ? readObservedHistory(raw) : readPage(raw) : undefined;
+        const item = !collection && raw !== null ? summary === 'stats' ? readObservedStats(raw) : readItem(raw) : undefined;
+        const next: Result = page ? { items: page.items } : item ? { item } : { unavailable: true };
         owner.check();
-        if (active) { onPage?.(page?.page ?? null); setResult(next); }
+        if (active) { onPage?.(page?.page ?? (summary === 'stats' && item ? item.page as PageInfo : null)); setResult(next); }
       }).catch(error => {
         if (!active || owner.signal.aborted) return;
         try { owner.check(); } catch { return; }
@@ -57,14 +59,15 @@ function ReadResult({ endpoint, collection, onPage }: { endpoint: string; collec
       });
     } catch { setResult({ error: 'Verify your app session before reading data.' }); }
     return () => { active = false; scope?.dispose(); };
-  }, [endpoint, collection, onPage]);
+  }, [endpoint, collection, summary, onPage]);
   if (!result) return <p role="status">Loading current data…</p>;
   if (result.error) return <p role="alert">{result.error}</p>;
   if (result.unavailable) return <p role="status">This record is unavailable.</p>;
-  return result.items ? <ItemTable items={result.items} /> : result.item ? <RecordView item={result.item} /> : null;
+  return result.items ? summary === 'chart' ? <ObservedHistoryChart items={result.items} /> : <ItemTable items={result.items} /> : result.item ? summary === 'stats' ? <ObservedStats item={result.item} /> : <RecordView item={result.item} /> : null;
 }
-export function ReadPanel({ path, title, collection = false, filters = '' }: { path: string; title: string; collection?: boolean; filters?: string }) {
-  const [query, setQuery] = useState(new URLSearchParams(collection ? { limit: filters === 'chart' ? '30' : '25' } : {}));
+export function ReadPanel({ path, title, collection = false, filters = '', summary }: { path: string; title: string; collection?: boolean; filters?: string; summary?: 'stats' | 'chart' }) {
+  const paged = collection || summary === 'stats';
+  const [query, setQuery] = useState(new URLSearchParams(paged ? { limit: filters === 'chart' ? '30' : '25' } : {}));
   const [cursor, setCursor] = useState<string>();
   const [previous, setPrevious] = useState<(string | undefined)[]>([]);
   const [page, setPage] = useState<PageInfo | null>(null);
@@ -72,19 +75,19 @@ export function ReadPanel({ path, title, collection = false, filters = '' }: { p
   const endpoint = readTarget(path, query, cursor);
   const reset = () => { setCursor(undefined); setPrevious([]); setPage(null); setRevision(v => v + 1); };
   return <section className="space-y-4"><h2 className="text-xl">{title}</h2><p className="text-sm">Only data available under your current permissions is shown. Unavailable metrics stay unknown.</p>
-    {collection && <form className="flex flex-wrap gap-3" onSubmit={event => { event.preventDefault(); const values = new FormData(event.currentTarget), next = new URLSearchParams(); values.forEach((v, k) => { if (typeof v === 'string' && v.trim()) next.set(k, v.trim()); }); setQuery(next); reset(); }}>
-      <label>Limit <input className="border p-1 w-20" name="limit" defaultValue={filters === 'chart' ? '30' : '25'} inputMode="numeric" pattern="[1-9][0-9]*" /></label>
+    {paged && <form className="flex flex-wrap gap-3" onSubmit={event => { event.preventDefault(); const values = new FormData(event.currentTarget), next = new URLSearchParams(); values.forEach((v, k) => { if (typeof v === 'string' && v.trim()) next.set(k, v.trim()); }); setQuery(next); reset(); }}>
+      <label>{summary ? 'Transactions per page ' : 'Limit '}<input className="border p-1 w-20" name="limit" defaultValue={filters === 'chart' ? '30' : '25'} inputMode="numeric" pattern="[1-9][0-9]*" /></label>
       {filters === 'transactions' && <label>Category <select name="category"><option value="">All available</option><option value="coin_transfer">Coin transfer</option><option value="contract_creation">Contract creation</option><option value="contract_call">Contract call</option><option value="token_transfer">Token transfer</option></select></label>}
       {filters === 'logs' && (path.startsWith('/addresses/') ? ['topic0', 'from', 'to'] : ['address', 'topic0', 'from', 'to']).map(name => <label key={name}>{label(name)} <input className="border p-1" name={name} /></label>)}
       {filters === 'tokens' && <label>Type <select name="type"><option value="">All available</option>{['ERC20', 'ERC721', 'ERC1155'].map(v => <option key={v}>{v}</option>)}</select></label>}
       {filters === 'chart' && <label>Interval <select name="interval"><option value="day">Day</option><option value="hour">Hour</option><option value="week">Week</option></select></label>}
       <button type="submit">Apply filters</button></form>}
     <button onClick={reset}>Refresh / first page</button>
-    <ReadResult key={endpoint + ':' + revision} endpoint={endpoint} collection={collection} onPage={collection ? setPage : undefined} />
-    {collection && page && <div className="flex flex-wrap gap-3 items-center"><span>{page.total !== undefined ? `Total: ${page.total}` : 'Total unavailable'}</span><span>{continuationMessage(page)}</span><button disabled={!previous.length} onClick={() => { setPage(null); setCursor(previous.at(-1)); setPrevious(v => v.slice(0, -1)); }}>Previous</button><button disabled={!page.next} onClick={() => { if (page.next) { setPrevious(v => [...v.slice(-63), cursor]); setCursor(page.next); setPage(null); } }}>Continue</button></div>}
+    <ReadResult key={endpoint + ':' + revision} endpoint={endpoint} collection={collection} summary={summary} onPage={paged ? setPage : undefined} />
+    {paged && page && <div className="flex flex-wrap gap-3 items-center"><span>{summary ? 'This page is not a chain or period total.' : page.total !== undefined ? `Total: ${page.total}` : 'Total unavailable'}</span><span>{continuationMessage(page)}</span><button disabled={!previous.length} onClick={() => { setPage(null); setCursor(previous.at(-1)); setPrevious(v => v.slice(0, -1)); }}>Previous</button><button disabled={!page.next} onClick={() => { if (page.next) { setPrevious(v => [...v.slice(-63), cursor]); setCursor(page.next); setPage(null); } }}>Continue</button></div>}
   </section>;
 }
-export function OverviewV2() { return <div className="space-y-8"><ReadPanel path="/stats" title="Overview" /><ReadPanel path="/blocks/latest/number" title="Current block" /><ReadPanel path="/chain-id" title="Chain" /><ReadPanel path="/stats/tx-history" title="Visible transaction history" collection filters="chart" /></div>; }
+export function OverviewV2() { return <div className="space-y-8"><ReadPanel path="/stats" title="Visible activity on this page" summary="stats" /><ReadPanel path="/blocks/latest/number" title="Current block" /><ReadPanel path="/chain-id" title="Chain" /><ReadPanel path="/stats/tx-history" title="Visible transaction history" collection filters="chart" summary="chart" /></div>; }
 function Tabs({ children }: { children: ReactNode }) { return <nav className="flex flex-wrap gap-4 border-b pb-3">{children}</nav>; }
 export function BlockV2() {
   const { number, hash: blockHash } = useParams(); const base = blockHash ? '/blocks/hash/' + blockHash : '/blocks/' + number;

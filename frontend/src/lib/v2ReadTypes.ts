@@ -15,6 +15,7 @@ export interface PageInfo {
   scanLimited: boolean;
   total?: Quantity;
   population: "LIVE_RETAINED_INDEXED_ROWS_CURRENT_RIGHTS";
+  coverage?: "OBSERVED_VISIBLE_PAGE";
 }
 export interface Page<T> { items:T[]; page:PageInfo }
 // hasMore:true requires visible lookahead. False requires actual exhaustion.
@@ -76,8 +77,10 @@ export interface AddressStats {
 export interface ChainStats {
   totalBlocks?:Quantity; totalTransactions?:Quantity; totalAddresses?:Quantity;
   totalTokens?:Quantity; avgBlockTime?:Decimal; privacyEnabled:true;
+  observedTransactions:Quantity; observedBlocks:Quantity;
+  observedParticipantAddresses:Quantity; page:PageInfo;
 }
-export interface TxHistoryPoint { timestamp:Quantity; count?:Quantity }
+export interface TxHistoryPoint { timestamp:Quantity; count:Quantity }
 export interface Contract {
   address:Address; bytecode?:Hex; bytecodeHash?:Hash; creator?:Address;
   creationTx?:Hash; blockNumber?:Quantity; isVerified?:boolean;

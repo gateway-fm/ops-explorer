@@ -3,7 +3,7 @@ import type { Page, PageInfo } from './v2ReadTypes';
 export type ReadItem = Record<string, unknown>;
 const object = (v: unknown): v is ReadItem => !!v && typeof v === 'object' && !Array.isArray(v);
 const quantity = (v: unknown): v is string => typeof v === 'string' && /^(0|[1-9][0-9]{0,77})$/.test(v);
-const quantities = new Set(['number', 'blockNumber', 'blockTimestamp', 'timestamp', 'gasLimit', 'baseFeePerGas', 'transactionCount', 'difficulty', 'totalDifficulty', 'value', 'gasUsed', 'gasPrice', 'maxFeePerGas', 'maxPriorityFeePerGas', 'nonce', 'maxFeePerBlobGas', 'tokenTransferCount', 'tokenId', 'gas', 'totalSupply', 'holderCount', 'transferCount', 'balance', 'txCount', 'internalTxCount', 'firstSeen', 'lastSeen', 'totalBlocks', 'totalTransactions', 'totalAddresses', 'totalTokens', 'count', 'lastIndexedBlock', 'minFetchedBlock', 'maxFetchedBlock', 'behindBlocks', 'chainId']);
+const quantities = new Set(['number', 'blockNumber', 'blockTimestamp', 'timestamp', 'gasLimit', 'baseFeePerGas', 'transactionCount', 'difficulty', 'totalDifficulty', 'value', 'gasUsed', 'gasPrice', 'maxFeePerGas', 'maxPriorityFeePerGas', 'nonce', 'maxFeePerBlobGas', 'tokenTransferCount', 'tokenId', 'gas', 'totalSupply', 'holderCount', 'transferCount', 'balance', 'txCount', 'internalTxCount', 'firstSeen', 'lastSeen', 'totalBlocks', 'totalTransactions', 'totalAddresses', 'totalTokens', 'observedTransactions', 'observedBlocks', 'observedParticipantAddresses', 'count', 'lastIndexedBlock', 'minFetchedBlock', 'maxFetchedBlock', 'behindBlocks', 'chainId']);
 const numbers = new Set(['txIndex', 'logIndex', 'txType', 'status', 'decimals', 'optimizationRuns']);
 export function searchSuggestionTarget(row: ReadItem): string | undefined {
   if (Object.keys(row).sort().join() !== 'type,value' || typeof row.type !== 'string') return;
@@ -33,10 +33,29 @@ export function readItem(value: unknown): ReadItem {
   return value;
 }
 export function readPage(value: unknown): Page<ReadItem> {
+  return readPageValue(value, false);
+}
+function readPageValue(value: unknown, observed: boolean): Page<ReadItem> {
   if (!object(value) || Object.keys(value).sort().join() !== 'items,page' || !Array.isArray(value.items) || value.items.length > 1000 || !object(value.page)) throw Error('Invalid read page');
-  const p = value.page;
-  if (Object.keys(p).some(k => !['next', 'hasMore', 'scanLimited', 'total', 'population'].includes(k)) || p.population !== 'LIVE_RETAINED_INDEXED_ROWS_CURRENT_RIGHTS' || p.hasMore !== true && p.hasMore !== false && p.hasMore !== null || typeof p.scanLimited !== 'boolean' || p.next !== undefined && (typeof p.next !== 'string' || p.next.length < 1 || p.next.length > 8192) || p.total !== undefined && !quantity(p.total) || p.hasMore === true && p.next === undefined || p.hasMore === false && p.next !== undefined || p.hasMore === null && (!p.scanLimited || p.next === undefined)) throw Error('Invalid read continuation');
-  return { items: value.items.map(readItem), page: p as unknown as PageInfo };
+  return { items: value.items.map(readItem), page: readPageInfo(value.page, observed) };
+}
+function readPageInfo(value: unknown, observed = false): PageInfo {
+  if (!object(value)) throw Error('Invalid read continuation');
+  const p = value;
+  if (Object.keys(p).some(k => !['next', 'hasMore', 'scanLimited', 'total', 'population', ...(observed ? ['coverage'] : [])].includes(k)) || p.population !== 'LIVE_RETAINED_INDEXED_ROWS_CURRENT_RIGHTS' || p.coverage !== undefined && p.coverage !== 'OBSERVED_VISIBLE_PAGE' || p.hasMore !== true && p.hasMore !== false && p.hasMore !== null || typeof p.scanLimited !== 'boolean' || p.next !== undefined && (typeof p.next !== 'string' || p.next.length < 1 || p.next.length > 8192) || p.total !== undefined && !quantity(p.total) || p.hasMore === true && p.next === undefined || p.hasMore === false && p.next !== undefined || p.hasMore === null && (!p.scanLimited || p.next === undefined)) throw Error('Invalid read continuation');
+  return p as unknown as PageInfo;
+}
+export function readObservedStats(value: unknown): ReadItem & { page: PageInfo } {
+  const item = readItem(value);
+  if (Object.keys(item).sort().join() !== 'observedBlocks,observedParticipantAddresses,observedTransactions,page,privacyEnabled' || item.privacyEnabled !== true || !quantity(item.observedTransactions) || !quantity(item.observedBlocks) || !quantity(item.observedParticipantAddresses)) throw Error('Invalid observed statistics');
+  const page = readPageInfo(item.page, true);
+  if (page.coverage !== 'OBSERVED_VISIBLE_PAGE' || page.total !== undefined) throw Error('Invalid observed coverage');
+  return { ...item, page };
+}
+export function readObservedHistory(value: unknown): Page<ReadItem> {
+  const page = readPageValue(value, true);
+  if (page.page.coverage !== 'OBSERVED_VISIBLE_PAGE' || page.page.total !== undefined || page.items.some(item => Object.keys(item).sort().join() !== 'count,timestamp' || !quantity(item.timestamp) || !quantity(item.count) || item.count === '0')) throw Error('Invalid observed history');
+  return page;
 }
 export function readTarget(path: string, filters: URLSearchParams, cursor?: string): string {
   const query = new URLSearchParams(filters); query.delete('cursor');

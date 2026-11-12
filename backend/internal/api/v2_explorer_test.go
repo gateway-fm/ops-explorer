@@ -51,6 +51,16 @@ func TestV2ReadActualSessionLosslessWireAndChangedCapture(t *testing.T) {
 	if response.Code != 200 || response.Body.String() != body || response.Header().Get("Set-Cookie") != "" || response.Header().Get("Cache-Control") != "no-store" {
 		t.Fatal("lossless checked source bytes not preserved", response.Code)
 	}
+	const statsBody = `{"privacyEnabled":true,"observedTransactions":"2","observedBlocks":"1","observedParticipantAddresses":"1","page":{"coverage":"OBSERVED_VISIBLE_PAGE","population":"LIVE_RETAINED_INDEXED_ROWS_CURRENT_RIGHTS","hasMore":null,"scanLimited":true,"next":"opaque-next"}}`
+	f.onWallet = func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/explorer/stats" || r.URL.RawQuery != "cursor=opaque&limit=1" {
+			t.Error("fixed paginated observed stats upstream")
+		}
+		_, _ = w.Write([]byte(statsBody))
+	}
+	if got := f.call("GET", "/api/v2/explorer/stats?limit=1&cursor=opaque", ""); got.Code != 200 || got.Body.String() != statsBody {
+		t.Fatal("observed stats coverage/continuation changed at BFF", got.Code, got.Body.String())
+	}
 	before := f.effects.Load()
 	for _, path := range []string{"/api/transactions", "/api/v1/transactions", "/api/v2/explorer/tokens/0x11/inventory", "/api/v2/explorer/transactions?offset=1", "/api/v2/explorer/transactions?limit=1&limit=2", "/api/v2/explorer/transactions/0x123"} {
 		if got := f.call("GET", path, ""); got.Code < 400 {
