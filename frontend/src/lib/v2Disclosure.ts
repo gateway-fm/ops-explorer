@@ -5,7 +5,7 @@ export interface DisclosureScope { targetActors: string[]; resources: Disclosure
 export interface DisclosureCase { caseId: string; ruleId: string; recipientActorId: string; creatorActorId: string; dataOrganizationId: string; scope: DisclosureScope; caseReference: string; purpose: string; legalBasis: string; status: 'open' | 'revoked'; version: number; createdAt: number; expiresAt: number }
 export interface CasePage { items: DisclosureCase[]; nextCursor: string; scanComplete: boolean }
 export interface DataAddress { addressId: string; display: string; address?: string; isMine?: boolean }
-export interface DataTransaction { blockNumber: string; transactionIndex: number; blockTime: number; gasUsed: string; status: number; direction: string; from: string; to: string | null; transactionHash?: string; value?: string; gasPrice?: string; gasLimit?: string; nonce?: string; input?: string; type?: number }
+export interface DataTransaction { blockNumber: string; transactionIndex: number; blockTime: number; gasUsed: string; status: number; direction: string; from: string; to: string | null; transactionHash?: string; addressId?: string; value?: string; gasPrice?: string; gasLimit?: string; nonce?: string; input?: string; type?: number }
 export interface DataActivity { recordId: string; method: string; statusCode: number; time: number; actorId?: string; ipAddress?: string }
 export interface DataSummary { total: string; successful: string; failed: string; methodBreakdown: { method: string; total: string; successful: string; failed: string }[] }
 export interface DataSanctions { status: 'clear' | 'hit' | 'not-applicable'; scopedAddressCount: number; checkedAt: number; matches: { address: DataAddress; sourceId: string; reason?: string }[] }
@@ -49,9 +49,9 @@ function address(value: unknown, selected: DisclosureLevel): DataAddress {
   return { addressId: pattern(v.addressId, aliasPattern, 128), display: text(v.display, 256), address: optional(v.address, v => pattern(v, addressPattern, 42)), isMine: mine as boolean | undefined };
 }
 function transaction(value: unknown, selected: DisclosureLevel, detail = false): DataTransaction {
-  const v = object(value); if (selected !== 'full' && (v.transactionHash !== undefined || v.value !== undefined) || detail && selected !== 'full') return invalid();
+  const v = object(value); if (selected !== 'full' && (v.transactionHash !== undefined || v.value !== undefined || v.addressId !== undefined) || detail && selected !== 'full') return invalid();
   if (!['incoming', 'outgoing', 'self'].includes(String(v.direction))) return invalid();
-  const out: DataTransaction = { blockNumber: quantity(v.blockNumber), transactionIndex: integer(v.transactionIndex, 4294967295), blockTime: integer(v.blockTime), gasUsed: quantity(v.gasUsed), status: integer(v.status, 1), direction: String(v.direction), from: text(v.from, 256), to: v.to === null ? null : text(v.to, 256), transactionHash: optional(v.transactionHash, x => pattern(x, hashPattern, 66)), value: optional(v.value, quantity) };
+  const out: DataTransaction = { blockNumber: quantity(v.blockNumber), transactionIndex: integer(v.transactionIndex, 4294967295), blockTime: integer(v.blockTime), gasUsed: quantity(v.gasUsed), status: integer(v.status, 1), direction: String(v.direction), from: text(v.from, 256), to: v.to === null ? null : text(v.to, 256), transactionHash: optional(v.transactionHash, x => pattern(x, hashPattern, 66)), addressId: optional(v.addressId, x => pattern(x, aliasPattern, 128)), value: optional(v.value, quantity) };
   if (detail) { out.gasPrice = quantity(v.gasPrice); out.gasLimit = quantity(v.gasLimit); out.nonce = quantity(v.nonce); out.type = integer(v.type, 4); out.input = pattern(v.input, /^0x(?:[0-9a-f]{2})*$/, 1 << 20); }
   return out;
 }

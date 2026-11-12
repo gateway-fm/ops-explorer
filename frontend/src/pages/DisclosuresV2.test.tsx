@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
-import { DisclosuresV2 } from './DisclosuresV2';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { DisclosureCaseV2, DisclosuresV2 } from './DisclosuresV2';
 
 const mock = vi.hoisted(() => {
   const actor = 'ops:p1:' + 'A'.repeat(43);
@@ -12,6 +12,20 @@ vi.mock('../lib/v2Session', () => ({ appSession: { snapshot: () => mock.state, s
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe('standing-rule case creation', () => {
+  it('opens transaction details when the case grants transactions without address browsing', async () => {
+    const id = '11111111-1111-4111-8111-111111111111', alias = 'da1.render-test.3AVmeb8xFDUr-vAhQHJYIg', hash = '0x' + 'a'.repeat(64);
+    const record = { caseId: id, ruleId: 'transactions-only', creatorActorId: mock.state.identity.actor, recipientActorId: mock.state.identity.actor, dataOrganizationId: id, scope: { targetActors: [mock.state.identity.actor], resources: ['transactions'], addresses: { mode: 'all-target-addresses', values: [] }, dataTime: { start: 1900000000, end: 1900000100 }, level: 'full' }, caseReference: 'audit-123', purpose: 'Investigation', legalBasis: 'Internal control', status: 'open', version: 1, createdAt: 1900000000, expiresAt: 1900000300 };
+    mock.disclosure.mockImplementation(async (path: string, options?: RequestInit) => {
+      if (path.includes('/audit')) return { items: [], nextCursor: '', scanComplete: true };
+      if (options?.method !== 'POST') return record;
+      return { v: 1, readId: id, caseId: id, resource: 'transactions', view: 'list', level: 'full', effectiveUntil: 1900000300, coverage: { status: 'RETAINED_AT_READ', sourceBasisDigest: 'sha256:' + 'a'.repeat(64), preparedAt: 1900000000 }, result: { items: [{ blockNumber: '1', blockTime: 1900000000, transactionIndex: 0, gasUsed: '21000', status: 1, direction: 'outgoing', from: '0x' + '1'.repeat(40), to: null, transactionHash: hash, addressId: alias, value: '7' }], nextCursor: null } };
+    });
+    render(<MemoryRouter initialEntries={['/disclosures/cases/' + id]}><Routes><Route path="/disclosures/cases/:caseId" element={<DisclosureCaseV2 />} /></Routes></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Transactions' }));
+    const details = await screen.findByRole('link', { name: 'Details' });
+    expect(details.getAttribute('href')).toBe(`/disclosures/cases/${id}/addresses/${alias}/transactions/${hash}`);
+    expect(screen.queryByRole('button', { name: 'Addresses' })).toBeNull();
+  });
   it('supports rules restricted to named wallets and preserves the request after an uncertain result', async () => {
     const bodies: string[] = [];
     mock.request.mockResolvedValue([]);
