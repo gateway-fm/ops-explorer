@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { continuationMessage, readItem, readPage, readTarget } from './v2Reads';
+import { continuationMessage, readItem, readPage, readTarget, searchSuggestionTarget } from './v2Reads';
 const page = { hasMore: null, next: 'opaque', scanLimited: true, population: 'LIVE_RETAINED_INDEXED_ROWS_CURRENT_RIGHTS' };
 describe('lossless current-scope read pages', () => {
   it('preserves huge decimal values, masked null and a continued empty page without inventing totals', () => {
@@ -11,7 +11,13 @@ describe('lossless current-scope read pages', () => {
   });
   it('distinguishes block nonce hex and suggestion text from transaction quantities', () => {
     expect(readItem({ parentHash: '0x1', nonce: '0x0000000000000000' }).nonce).toBe('0x0000000000000000');
-    expect(readItem({ type: 'token', value: 'Bank token', label: 'Bank' }).value).toBe('Bank token');
+    for (const type of ['transaction', 'address', 'token', 'contract']) {
+      const value = '0x' + 'a'.repeat(type === 'transaction' ? 64 : 40);
+      expect(readItem({ type, value })).toEqual({ type, value });
+      expect(searchSuggestionTarget({ type, value })).toContain(value);
+    }
+    expect(() => readItem({ type: 'token', value: 'Bank token' })).toThrow();
+    expect(() => readItem({ type: 'unknown', value: '123' })).toThrow();
     expect(() => readItem({ value: 9007199254740992 })).toThrow();
     expect(() => readItem({ balance: '1e6' })).toThrow();
   });

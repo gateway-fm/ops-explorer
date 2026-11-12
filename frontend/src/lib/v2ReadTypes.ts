@@ -87,7 +87,7 @@ export interface Contract {
   // Code is an owned StateEngine result; ABI ONLY current approved Git registry.
   // Creator/creation fields obey the actual source and current field masks.
 }
-export interface SearchSuggestion { type:string; value:string; label:string }
+export interface SearchSuggestion { type:'transaction'|'address'|'token'|'contract'; value:string }
 export interface SyncStatus {
   lastIndexedBlock:Quantity; isSyncing:boolean; updatedAt:string;
 }

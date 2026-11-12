@@ -5,10 +5,22 @@ const object = (v: unknown): v is ReadItem => !!v && typeof v === 'object' && !A
 const quantity = (v: unknown): v is string => typeof v === 'string' && /^(0|[1-9][0-9]{0,77})$/.test(v);
 const quantities = new Set(['number', 'blockNumber', 'blockTimestamp', 'timestamp', 'gasLimit', 'baseFeePerGas', 'transactionCount', 'difficulty', 'totalDifficulty', 'value', 'gasUsed', 'gasPrice', 'maxFeePerGas', 'maxPriorityFeePerGas', 'nonce', 'maxFeePerBlobGas', 'tokenTransferCount', 'tokenId', 'gas', 'totalSupply', 'holderCount', 'transferCount', 'balance', 'txCount', 'internalTxCount', 'firstSeen', 'lastSeen', 'totalBlocks', 'totalTransactions', 'totalAddresses', 'totalTokens', 'count', 'lastIndexedBlock', 'minFetchedBlock', 'maxFetchedBlock', 'behindBlocks', 'chainId']);
 const numbers = new Set(['txIndex', 'logIndex', 'txType', 'status', 'decimals', 'optimizationRuns']);
+export function searchSuggestionTarget(row: ReadItem): string | undefined {
+  if (Object.keys(row).sort().join() !== 'type,value' || typeof row.type !== 'string') return;
+  const value = row.value;
+  if (typeof value !== 'string') throw Error('Invalid suggestion');
+  if (row.type === 'transaction' && /^0x[0-9a-f]{64}$/.test(value)) return '/transactions/' + value;
+  if (/^0x[0-9a-f]{40}$/.test(value)) {
+    if (row.type === 'token') return '/tokens/' + value;
+    if (row.type === 'contract') return '/addresses/' + value + '/contract';
+    if (row.type === 'address') return '/addresses/' + value + '/stats';
+  }
+  throw Error('Invalid suggestion');
+}
 function checkedValue(value: unknown, key = '', parent?: ReadItem): void {
+  if (key === 'value' && parent && searchSuggestionTarget(parent)) return;
   if (value === null) return; // actual nullable source fields stay null
   if (key === 'nonce' && parent?.parentHash) { if (typeof value !== 'string' || !/^0x[0-9a-f]{16}$/.test(value)) throw Error('Invalid block nonce'); return; }
-  if (key === 'value' && typeof parent?.type === 'string' && typeof parent?.label === 'string') { if (typeof value !== 'string') throw Error('Invalid suggestion'); return; }
   if (quantities.has(key)) { if (!quantity(value)) throw Error('Invalid lossless quantity'); return; }
   if (typeof value === 'number') { if (!numbers.has(key) || !Number.isSafeInteger(value) || value < 0 || value > 0xffffffff) throw Error('Invalid numeric read field'); return; }
   if (Array.isArray(value)) { value.forEach(v => checkedValue(v)); return; }

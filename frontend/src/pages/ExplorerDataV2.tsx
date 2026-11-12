@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useNavigate, useParams } from 'react-router-dom';
 import { appSession, ReadHTTPError } from '../lib/v2Session';
-import { continuationMessage, readItem, readPage, readTarget, type ReadItem } from '../lib/v2Reads';
+import { continuationMessage, readItem, readPage, readTarget, searchSuggestionTarget, type ReadItem } from '../lib/v2Reads';
 import type { PageInfo } from '../lib/v2ReadTypes';
 
 const quantity = /^(0|[1-9][0-9]{0,77})$/;
@@ -12,10 +12,9 @@ function Cell({ name, value, row }: { name: string; value: unknown; row?: ReadIt
   if (value === null) return <span>{name === 'value' ? 'Hidden' : 'Unknown'}</span>;
   if (typeof value === 'boolean') return <span>{value ? 'Yes' : 'No'}</span>;
   if (typeof value === 'string') {
-    let target: string | undefined;
-    if (row?.type && row?.label && name === 'value') { if (address.test(value)) target = row.type === 'token' ? '/tokens/' + value : '/addresses/' + value + '/stats'; if (hash.test(value)) target = row.type === 'block' ? '/blocks/hash/' + value : '/transactions/' + value; if (row.type === 'block' && quantity.test(value)) target = '/blocks/' + value; }
+    let target = row && name === 'value' ? searchSuggestionTarget(row) : undefined;
     if (hash.test(value) && ['hash', 'txHash', 'creationTx'].includes(name)) target = name === 'hash' && row?.parentHash ? '/blocks/hash/' + value : '/transactions/' + value;
-    if (address.test(value) && value !== '0x' + '0'.repeat(40)) target = ['tokenAddress', 'l1Address'].includes(name) ? '/tokens/' + value : '/addresses/' + value;
+    if (!target && address.test(value) && value !== '0x' + '0'.repeat(40)) target = ['tokenAddress', 'l1Address'].includes(name) ? '/tokens/' + value : '/addresses/' + value;
     if (quantity.test(value) && (name === 'blockNumber' || name === 'number' && row?.parentHash)) target = '/blocks/' + value;
     if (target) return <Link className="underline break-all" to={target}>{value}</Link>;
     if (value.length > 256) return <details><summary>{value.slice(0, 96)}…</summary><pre className="break-all whitespace-pre-wrap">{value}</pre></details>;
@@ -35,7 +34,7 @@ function ItemTable({ items }: { items: ReadItem[] }) {
   if (!columns.length) columns.push(...Object.keys(items[0]).slice(0, 6));
   return <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{columns.map(k => <th className="text-left p-2" key={k}>{label(k)}</th>)}<th className="text-left p-2">Details</th></tr></thead><tbody>{items.map((item, index) => <tr className="border-t align-top" key={typeof item.id === 'string' ? item.id : index}>{columns.map(k => <td className="p-2 max-w-72" key={k}>{k in item ? <Cell name={k} value={item[k]} row={item} /> : 'Unknown'}</td>)}<td className="p-2"><details><summary>Show</summary><RecordView item={item} /></details></td></tr>)}</tbody></table></div>;
 }
-type Result = { item?: ReadItem; items?: ReadItem[]; error?: string; stale?: boolean };
+type Result = { item?: ReadItem; items?: ReadItem[]; unavailable?: boolean; error?: string; stale?: boolean };
 function ReadResult({ endpoint, collection, onPage }: { endpoint: string; collection: boolean; onPage?: (p: PageInfo | null) => void }) {
   const [result, setResult] = useState<Result | null>(null);
   useEffect(() => {
@@ -47,7 +46,7 @@ function ReadResult({ endpoint, collection, onPage }: { endpoint: string; collec
       void appSession.read<unknown>(endpoint, owner.signal).then(raw => {
         owner.check();
         const page = collection ? readPage(raw) : undefined;
-        const next: Result = page ? { items: page.items } : { item: readItem(raw) };
+        const next: Result = page ? { items: page.items } : raw === null ? { unavailable: true } : { item: readItem(raw) };
         owner.check();
         if (active) { onPage?.(page?.page ?? null); setResult(next); }
       }).catch(error => {
@@ -61,6 +60,7 @@ function ReadResult({ endpoint, collection, onPage }: { endpoint: string; collec
   }, [endpoint, collection, onPage]);
   if (!result) return <p role="status">Loading current data…</p>;
   if (result.error) return <p role="alert">{result.error}</p>;
+  if (result.unavailable) return <p role="status">This record is unavailable.</p>;
   return result.items ? <ItemTable items={result.items} /> : result.item ? <RecordView item={result.item} /> : null;
 }
 export function ReadPanel({ path, title, collection = false, filters = '' }: { path: string; title: string; collection?: boolean; filters?: string }) {
