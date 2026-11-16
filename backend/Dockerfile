@@ -32,7 +32,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # image no longer ships an embedded indexer binary.
 
 # Node runtime for sol2uml, pinned to a patched release.
-FROM node:24.22.1-alpine
+FROM node:24.22.3-alpine3.23
 
 RUN apk update --no-cache && apk upgrade --no-cache
 RUN apk --no-cache add ca-certificates libc6-compat
