@@ -28,7 +28,7 @@ ENV VITE_RPC_URL=$VITE_RPC_URL
 
 RUN npm run build
 
-FROM nginx:alpine@sha256:dc48b7a872a79fb541ba5081d320b11b549231bc63ba465a7495afaa7d2ebcb8
+FROM nginx:1.31.9-alpine@sha256:90b6bd2aec278b16b98221d64deb1d6d35d164567f507ab0716e6053878315aa
 
 # Refresh runtime packages and fail if the Brotli security fix is unavailable.
 RUN apk update --no-cache && apk upgrade --no-cache \
