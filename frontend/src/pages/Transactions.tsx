@@ -1,3 +1,4 @@
+import { ExplorerTable } from '../components/ExplorerReadPresentation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, useCallback, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -92,24 +93,12 @@ export function Transactions() {
         )}
 
         <div className="overflow-x-auto">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Tx Hash</th>
-                <th>Type</th>
-                <th>Block</th>
-                <th>From</th>
-                <th>To</th>
-                <th>Value</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
+          <ExplorerTable headings={['Tx Hash', 'Type', 'Block', 'From', 'To', 'Value', 'Status']}>
+
               {data?.data?.map((tx) => (
                 <TxTableRow key={tx.hash} tx={tx} />
               ))}
-            </tbody>
-          </table>
+          </ExplorerTable>
         </div>
 
         {isLoading && <StateMessage variant="loading" />}

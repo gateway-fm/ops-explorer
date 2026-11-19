@@ -12,9 +12,9 @@ vi.mock('../lib/v2Session', () => ({ appSession: { snapshot: () => mock.state, s
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe('standing-rule case creation', () => {
-  it('opens transaction details when the case grants transactions without address browsing', async () => {
+  it.each([['transactions'], ['events', 'transactions']])('opens transaction details with declared resources %j without inventing unsupported reads', async (...resources) => {
     const id = '11111111-1111-4111-8111-111111111111', alias = 'da1.render-test.3AVmeb8xFDUr-vAhQHJYIg', hash = '0x' + 'a'.repeat(64);
-    const record = { caseId: id, ruleId: 'transactions-only', creatorActorId: mock.state.identity.actor, recipientActorId: mock.state.identity.actor, dataOrganizationId: id, scope: { targetActors: [mock.state.identity.actor], resources: ['transactions'], addresses: { mode: 'all-target-addresses', values: [] }, dataTime: { start: 1900000000, end: 1900000100 }, level: 'full' }, caseReference: 'audit-123', purpose: 'Investigation', legalBasis: 'Internal control', status: 'open', version: 1, createdAt: 1900000000, expiresAt: 1900000300 };
+    const record = { caseId: id, ruleId: 'transactions-only', creatorActorId: mock.state.identity.actor, recipientActorId: mock.state.identity.actor, dataOrganizationId: id, scope: { targetActors: [mock.state.identity.actor], resources, addresses: { mode: 'all-target-addresses', values: [] }, dataTime: { start: 1900000000, end: 1900000100 }, level: 'full' }, caseReference: 'audit-123', purpose: 'Investigation', legalBasis: 'Internal control', status: 'open', version: 1, createdAt: 1900000000, expiresAt: 1900000300 };
     mock.disclosure.mockImplementation(async (path: string, options?: RequestInit) => {
       if (path.includes('/audit')) return { items: [], nextCursor: '', scanComplete: true };
       if (options?.method !== 'POST') return record;
@@ -25,6 +25,8 @@ describe('standing-rule case creation', () => {
     const details = await screen.findByRole('link', { name: 'Details' });
     expect(details.getAttribute('href')).toBe(`/disclosures/cases/${id}/addresses/${alias}/transactions/${hash}`);
     expect(screen.queryByRole('button', { name: 'Addresses' })).toBeNull();
+    if(resources.includes('events'))expect(screen.getByRole('button',{name:'Events — unavailable'})).toBeDisabled();
+    expect(mock.disclosure.mock.calls.every(([, options])=>!options?.body||JSON.parse(String(options.body)).resource!=='events')).toBe(true);
   });
   it('supports rules restricted to named wallets and preserves the request after an uncertain result', async () => {
     const bodies: string[] = [];

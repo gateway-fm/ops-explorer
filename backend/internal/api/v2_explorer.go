@@ -104,7 +104,7 @@ func v2ReadQuery(raw string, kind string) (string, error) {
 			}
 		}
 	case "tokens":
-		allowed["type"] = true
+		allowed["type"], allowed["search"] = true, true
 	case "search":
 		allowed["q"] = true
 		maxLimit = 20
@@ -155,7 +155,7 @@ func v2ReadQuery(raw string, kind string) (string, error) {
 			if v != "hour" && v != "day" && v != "week" {
 				return "", authv2.ErrInvalid
 			}
-		case "q":
+		case "q", "search":
 			if !utf8.ValidString(v) || len(v) > 128 || strings.TrimSpace(v) != v {
 				return "", authv2.ErrInvalid
 			}
@@ -193,7 +193,7 @@ func v2ReadStatus(status int, raw []byte) bool {
 	if status == 200 {
 		return true
 	}
-	code := map[int]string{400: "invalid_request", 401: "unauthenticated", 403: "denied", 404: "not_found", 409: "cursor_stale", 422: "too_broad", 503: "unavailable"}[status]
+	code := map[int]string{400: "invalid_request", 401: "unauthenticated", 403: "denied", 404: "not_found", 409: "cursor_stale", 410: "history_pruned", 422: "too_broad", 503: "unavailable"}[status]
 	if code == "" || len(raw) > 1024 {
 		return false
 	}

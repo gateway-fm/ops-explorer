@@ -16,11 +16,15 @@ export interface PageInfo {
   total?: Quantity;
   population: "LIVE_RETAINED_INDEXED_ROWS_CURRENT_RIGHTS";
   coverage?: "OBSERVED_VISIBLE_PAGE";
+  consistency?: 'SNAPSHOT'|'CURRENT';
+  endedAt?: 'ENDED_AT_UNSPECIFIED'|'ENDED_AT_END_OF_RANGE'|'ENDED_AT_RETENTION_FLOOR'|'ENDED_AT_INDEX_FLOOR';
+  historyFromBlock?: Quantity;
 }
 export interface Page<T> { items:T[]; page:PageInfo }
 // hasMore:true requires visible lookahead. False requires actual exhaustion.
 // null+scanLimited+next permits short/empty items. Never fake0/false for unknown.
 export interface Block {
+  source?: 'INDEXER'|'NODE';
   number:Quantity; hash:Hash; parentHash:Hash; timestamp:Quantity;
   gasLimit:Quantity; baseFeePerGas?:Quantity; transactionCount?:Quantity;
   difficulty:Quantity; totalDifficulty?:Quantity; nonce:Hex; miner:Address;
@@ -29,6 +33,7 @@ export interface Block {
   // gasUsed/bloom/blobGasUsed/size omitted; no raw global-volume leak.
 }
 export interface Transaction {
+  source?: 'INDEXER'|'NODE';
   hash:Hash; blockNumber:Quantity|null; blockTimestamp?:Quantity;
   txIndex:number|null; from:Address; to:Address|null; contractAddress?:Address;
   value:Quantity|null; gasUsed?:Quantity; gasPrice:Quantity; gasLimit?:Quantity;
@@ -90,7 +95,7 @@ export interface Contract {
   // Code is an owned StateEngine result; ABI ONLY current approved Git registry.
   // Creator/creation fields obey the actual source and current field masks.
 }
-export interface SearchSuggestion { type:'transaction'|'address'|'token'|'contract'; value:string }
+export interface SearchSuggestion { type:'block'|'transaction'|'address'|'token'|'contract'; value:string }
 export interface SyncStatus {
   lastIndexedBlock:Quantity; isSyncing:boolean; updatedAt:string;
 }
@@ -106,7 +111,7 @@ export interface NativeBalance { address:Address; balance:Quantity; blockNumber?
 export interface Code { address:Address; code:Hex; blockNumber?:Quantity; blockHash?:Hash }
 export interface IsContract { address:Address; isContract:boolean }
 export interface Failure { error:{code:"invalid_request"|"unauthenticated"|"denied"|
-  "not_found"|"cursor_stale"|"too_broad"|"unavailable"} }
+  "not_found"|"cursor_stale"|"history_pruned"|"too_broad"|"unavailable"} }
 // Optional numeric metrics are present ONLY for a qualified exact current scope
 // or explicit relevant-owner admin dataset permission; unknown is omission.
 // Percentage never uses hidden/global denominator for a partial visible set.

@@ -1,8 +1,9 @@
 import type { AddressVisibility, VisibilityReason } from '../lib/api';
+import type { VisibilityReason as NativeVisibilityReason } from '../lib/v2ReadTypes';
 import { LABEL_CONFIG } from './addressLabelConfig';
 
 interface AddressLabelProps {
-  reason?: VisibilityReason;
+  reason?: VisibilityReason | NativeVisibilityReason;
   visibility?: AddressVisibility | null;
   className?: string;
 }

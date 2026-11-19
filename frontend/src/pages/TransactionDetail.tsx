@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { ChevronDown, ChevronUp } from 'lucide-react';
+import { TransactionDetailPresentation, InfoRow, TxCategoryBadges, LogCardPresentation } from '../components/TransactionDetailPresentation';
 import { api } from '../lib/api';
-import type { TokenTransfer, Log, TxCategory } from '../lib/api';
+import type { TokenTransfer, Log } from '../lib/api';
 import { formatWei, formatGas, formatTimestamp, getNetworkCurrency } from '../lib/utils';
 import { formatTokenValue } from '../lib/formatToken';
 import { useTokenMap } from '../hooks/useTokenMap';
@@ -16,38 +17,6 @@ import { CopyButton } from '../components/CopyButton';
 import { StateMessage } from '../components/StateMessage';
 import { decodeEvent, getMethodId, fetchEventSignature, decodeEventWithSignature, KNOWN_EVENTS } from '../lib/eventDecoder';
 import type { DecodedEvent } from '../lib/eventDecoder';
-
-// Category display configuration
-const CATEGORY_CONFIG: Record<TxCategory, { label: string; className: string }> = {
-  contract_creation: { label: 'Contract Creation', className: 'bg-purple-100 text-purple-700' },
-  contract_call: { label: 'Contract Call', className: 'bg-blue-100 text-blue-700' },
-  coin_transfer: { label: 'Coin Transfer', className: 'bg-green-100 text-green-700' },
-  token_transfer: { label: 'Token Transfer', className: 'bg-orange-100 text-orange-700' },
-  system_transaction: { label: 'System Transaction', className: 'bg-neutral-100 text-neutral-500' },
-};
-
-function TxCategoryBadges({ categories }: { categories?: TxCategory[] }) {
-  if (!categories || categories.length === 0) {
-    return <span className="text-neutral-400">-</span>;
-  }
-
-  return (
-    <div className="flex flex-wrap gap-2">
-      {categories.map((category) => {
-        const config = CATEGORY_CONFIG[category];
-        if (!config) return null;
-        return (
-          <span
-            key={category}
-            className={`inline-block text-xs px-2 py-0.5 rounded font-medium ${config.className}`}
-          >
-            {config.label}
-          </span>
-        );
-      })}
-    </div>
-  );
-}
 
 export function TransactionDetail() {
   const { hash } = useParams<{ hash: string }>();
@@ -116,46 +85,7 @@ export function TransactionDetail() {
   const hasTrace = internalTxs && internalTxs.length > 0;
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Transaction Details" />
-
-      {/* Tabs - only show when there are logs or internal calls to display */}
-      {(hasLogs || hasTrace) && (
-        <div className="tabs" role="tablist">
-          <button
-            onClick={() => setActiveTab('overview')}
-            role="tab"
-            data-testid="tab-overview"
-            aria-selected={activeTab === 'overview'}
-            className={activeTab === 'overview' ? 'tab-active' : 'tab'}
-          >
-            Overview
-          </button>
-          {hasLogs && (
-            <button
-              onClick={() => setActiveTab('logs')}
-              role="tab"
-              data-testid="tab-logs"
-              aria-selected={activeTab === 'logs'}
-              className={activeTab === 'logs' ? 'tab-active' : 'tab'}
-            >
-              Logs ({logs?.length || 0})
-            </button>
-          )}
-          {hasTrace && (
-            <button
-              onClick={() => setActiveTab('trace')}
-              role="tab"
-              data-testid="tab-trace"
-              aria-selected={activeTab === 'trace'}
-              className={activeTab === 'trace' ? 'tab-active' : 'tab'}
-            >
-              Internal Txns ({internalTxs?.length || 0})
-            </button>
-          )}
-        </div>
-      )}
-
+    <TransactionDetailPresentation activeTab={activeTab} setActiveTab={setActiveTab} logsVisible={!!hasLogs} traceVisible={!!hasTrace} logCount={logs?.length || 0} traceCount={internalTxs?.length || 0}>
       {/* Overview Tab */}
       {activeTab === 'overview' && (
         <div className="card">
@@ -364,16 +294,7 @@ export function TransactionDetail() {
       {activeTab === 'trace' && internalTxs && (
         <CallTraceTree tx={tx} internalTxs={internalTxs} />
       )}
-    </div>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="info-row" data-testid="info-row" data-label={label}>
-      <div className="info-label">{label}</div>
-      <div className="info-value">{value}</div>
-    </div>
+    </TransactionDetailPresentation>
   );
 }
 
@@ -551,60 +472,5 @@ function LogCard({ log }: { log: Log }) {
     ? decodeEventWithSignature(fetchedSignature, log.topic1, log.topic2, log.topic3, log.data || '')
     : null);
 
-  return (
-    <div className="card p-4 space-y-3">
-      <div className="flex items-center gap-2">
-        <span className="badge badge-neutral font-mono">
-          {log.logIndex}
-        </span>
-        <span className="text-neutral-500 text-sm">Log Index</span>
-      </div>
-
-      <div className="space-y-3">
-        <div className="flex flex-col sm:flex-row gap-1 sm:gap-2">
-          <span className="text-neutral-500 text-sm w-20 shrink-0">Address</span>
-          <span className="flex items-center gap-1">
-            <AddressLink address={log.address} full className="text-sm" reason={log.addressMetadata?.[log.address?.toLowerCase()]} />
-            <AddressLabel reason={log.addressMetadata?.[log.address?.toLowerCase()]} />
-          </span>
-        </div>
-
-        {/* Decoded Event Section - shown when event is recognized */}
-        {decoded && (
-          <DecodedEventSection decoded={decoded} methodId={methodId} />
-        )}
-
-        {/* Loading indicator while fetching signature */}
-        {isFetchingSignature && (
-          <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 flex items-center gap-2">
-            <div className="w-4 h-4 border-2 border-neutral-300 border-t-primary-500 rounded-full animate-spin" />
-            <span className="text-xs text-neutral-500">Looking up event signature...</span>
-          </div>
-        )}
-
-        {topics.length > 0 && (
-          <div className="flex flex-col gap-1">
-            <span className="text-neutral-500 text-sm">Topics</span>
-            <div className="space-y-2 pl-2">
-              {topics.map((topic) => (
-                <TopicRow key={topic.index} index={topic.index} value={topic.value} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {log.data && log.data !== '' && (
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <span className="text-neutral-500 text-sm">Data</span>
-              <span className="text-neutral-400 text-xs">({log.data.length / 2} bytes)</span>
-            </div>
-            <div className="code-block p-2 text-xs max-h-64 overflow-y-auto">
-              <div className="break-all whitespace-pre-wrap">0x{log.data}</div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
+  return <LogCardPresentation index={log.logIndex} address={<><AddressLink address={log.address} full className="text-sm" reason={log.addressMetadata?.[log.address?.toLowerCase()]} /><AddressLabel reason={log.addressMetadata?.[log.address?.toLowerCase()]} /></>} decoded={decoded && <DecodedEventSection decoded={decoded} methodId={methodId} />} fetching={isFetchingSignature} data={log.data || ''} topics={topics.length > 0 && <div className="flex flex-col gap-1"><span className="text-neutral-500 text-sm">Topics</span><div className="space-y-2 pl-2">{topics.map(topic => <TopicRow key={topic.index} index={topic.index} value={topic.value} />)}</div></div>} />;
 }

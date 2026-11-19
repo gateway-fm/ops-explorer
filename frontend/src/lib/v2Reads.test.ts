@@ -25,4 +25,19 @@ describe('lossless current-scope read pages', () => {
     for (const value of [{ transactions: [], total: 1 }, { items: [], page: { ...page, total: 5 } }, { items: [], page: { ...page, hasMore: false } }, { items: [], page: { ...page, next: undefined } }]) expect(() => readPage(value)).toThrow();
     expect(readPage({ items: [], page: { hasMore: false, scanLimited: false, total: '0', population: page.population } }).page.total).toBe('0');
   });
+  it('keeps current-value and pruned-history boundaries visible without inventing exhaustion', () => {
+    const pruned = readPage({ items: [], page: { ...page, next: undefined, hasMore: false, consistency: 'SNAPSHOT', endedAt: 'ENDED_AT_RETENTION_FLOOR', historyFromBlock: '123' } });
+    expect(continuationMessage(pruned.page)).toContain('pruned');
+    expect(continuationMessage(pruned.page)).toContain('123');
+    const current = readPage({ items: [], page: { ...page, consistency: 'CURRENT', endedAt: 'ENDED_AT_UNSPECIFIED', historyFromBlock: '0' } });
+    expect(current.page.next).toBe('opaque');
+    expect(continuationMessage(current.page)).toContain('may change');
+    expect(continuationMessage(current.page)).not.toContain('End');
+    for (const boundary of [{ consistency: 'UNKNOWN' }, { endedAt: 'unknown' }, { historyFromBlock: 123 }]) expect(() => readPage({ items: [], page: { ...page, ...boundary } })).toThrow();
+  });
+  it('routes node-qualified block suggestions and rejects invalid block identities', () => {
+    expect(searchSuggestionTarget({ type: 'block', value: '123' })).toBe('/blocks/123');
+    expect(() => searchSuggestionTarget({ type: 'block', value: '9223372036854775808' })).toThrow();
+    expect(() => searchSuggestionTarget({ type: 'block', value: '0x123' })).toThrow();
+  });
 });

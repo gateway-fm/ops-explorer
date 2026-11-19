@@ -1,3 +1,4 @@
+import { BlockInfoRow as InfoRow } from '../components/BlockInfoRow';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { useState } from 'react';
@@ -264,15 +265,6 @@ function BlockDetailsTab({ block }: { block: Block }) {
           />
         </div>
       )}
-    </div>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="info-row" data-testid="info-row" data-label={label}>
-      <div className="info-label">{label}</div>
-      <div className="info-value">{value}</div>
     </div>
   );
 }

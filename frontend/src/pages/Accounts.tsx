@@ -1,3 +1,4 @@
+import { ExplorerTable } from '../components/ExplorerReadPresentation';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -83,17 +84,8 @@ export function Accounts() {
 
       <div className="card">
         <div className="overflow-x-auto">
-          <table className="table">
-            <thead>
-              <tr>
-                <th className="w-16">Rank</th>
-                <th>Address</th>
-                <th className="text-right">Balance</th>
-                <th className="text-right">Percentage</th>
-                <th className="text-right">Txn Count</th>
-              </tr>
-            </thead>
-            <tbody>
+          <ExplorerTable headings={[{label:'Rank',className:'w-16'},'Address',{label:'Balance',className:'text-right'},{label:'Percentage',className:'text-right'},{label:'Txn Count',className:'text-right'}]}>
+
               {data?.data?.map((account, index) => (
                 <tr key={account.address} data-testid="account-row">
                   <td className="text-neutral-400">
@@ -129,8 +121,7 @@ export function Accounts() {
                   </td>
                 </tr>
               ))}
-            </tbody>
-          </table>
+          </ExplorerTable>
         </div>
 
         {/* Pagination */}

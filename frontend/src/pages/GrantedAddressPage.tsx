@@ -1,3 +1,4 @@
+import { AuthenticationPrompt } from '../components/AuthenticationPrompt';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, Link } from 'react-router-dom';
@@ -94,26 +95,11 @@ export function GrantedAddressPage() {
 
   // Show authentication prompt if not logged in
   if (!isAuthenticated && !authLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 space-y-4">
-        <div className="w-16 h-16 rounded-full bg-primary-50 flex items-center justify-center border border-primary-200">
-          <Fingerprint className="w-8 h-8 text-primary" />
-        </div>
-        <h2 className="text-xl font-semibold text-neutral-900">Authentication Required</h2>
-        <p className="text-neutral-500 text-center max-w-md">
-          Sign in to view disclosed address details.
-        </p>
-        <div className="mt-4">
-          <button
-            onClick={() => redirectToLogin(`/grant/${grantId}/${addressId}`)}
-            className="btn-primary flex items-center gap-2"
-          >
-            <Fingerprint className="w-4 h-4" />
-            Sign In
-          </button>
-        </div>
-      </div>
-    );
+    return <AuthenticationPrompt title="Authentication Required" detail="Sign in to view disclosed address details." actions={
+      <button onClick={() => redirectToLogin(`/grant/${grantId}/${addressId}`)} data-testid="sign-in-button" className="btn-primary flex items-center gap-2">
+        <Fingerprint className="w-4 h-4" />Sign In
+      </button>
+    } />;
   }
 
   if (authLoading || isLoading) {

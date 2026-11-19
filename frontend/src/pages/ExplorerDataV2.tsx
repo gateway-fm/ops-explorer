@@ -55,7 +55,7 @@ function ReadResult({ endpoint, collection, summary, onPage }: { endpoint: strin
         if (!active || owner.signal.aborted) return;
         try { owner.check(); } catch { return; }
         onPage?.(null);
-        setResult({ error: error instanceof ReadHTTPError ? error.message : 'The read could not be completed. Try again.', stale: error instanceof ReadHTTPError && error.code === 'cursor_stale' });
+        setResult({ error: error instanceof ReadHTTPError ? error.message : 'The read could not be completed. Try again.', stale: error instanceof ReadHTTPError && ['cursor_stale', 'history_pruned'].includes(error.code) });
       });
     } catch { setResult({ error: 'Verify your app session before reading data.' }); }
     return () => { active = false; scope?.dispose(); };

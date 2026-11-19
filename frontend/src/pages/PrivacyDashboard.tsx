@@ -1,3 +1,5 @@
+import { DisclosurePanelPresentation } from '../components/DisclosurePanelPresentation';
+import { AuthenticationPrompt } from '../components/AuthenticationPrompt';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -93,27 +95,11 @@ export function PrivacyDashboard() {
 
   // Show authentication prompt if not authenticated via Privado
   if (!isAuthenticated && !authLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 space-y-4">
-        <div className="w-16 h-16 rounded-full bg-primary-50 flex items-center justify-center border border-primary-200">
-          <Fingerprint className="w-8 h-8 text-primary" />
-        </div>
-        <h2 className="text-xl font-semibold text-neutral-900">Auditor</h2>
-        <p className="text-neutral-500 text-center max-w-md">
-          Sign in to view addresses disclosed to you for audit.
-        </p>
-        <div className="mt-4">
-          <button
-            onClick={() => redirectToLogin('/privacy')}
-            data-testid="sign-in-button"
-            className="btn-primary flex items-center gap-2"
-          >
-            <Fingerprint className="w-4 h-4" />
-            Sign In
-          </button>
-        </div>
-      </div>
-    );
+    return <AuthenticationPrompt title="Auditor" detail="Sign in to view addresses disclosed to you for audit." actions={
+      <button onClick={() => redirectToLogin('/privacy')} data-testid="sign-in-button" className="btn-primary flex items-center gap-2">
+        <Fingerprint className="w-4 h-4" />Sign In
+      </button>
+    } />;
   }
 
   if (authLoading || dataLoading) {
@@ -142,12 +128,7 @@ export function PrivacyDashboard() {
       />
 
       {/* Disclosed Addresses */}
-      <div className="card">
-        <div className="px-4 py-3 border-b border-neutral-200">
-          <span className="text-sm font-medium text-neutral-700" data-testid="disclosure-banner">
-            Disclosed Addresses ({disclosedCount})
-          </span>
-        </div>
+      <DisclosurePanelPresentation title={<>Disclosed Addresses ({disclosedCount})</>}>
 
         {disclosedCount === 0 ? (
           <div className="empty-state">
@@ -259,7 +240,7 @@ export function PrivacyDashboard() {
             </table>
           </div>
         )}
-      </div>
+      </DisclosurePanelPresentation>
     </div>
   );
 }

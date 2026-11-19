@@ -158,3 +158,12 @@ describe('single opaque cross-document activation notice', () => {
     await a.check(true); expect(a.snapshot().identity?.actor).toBe(first.did);
   });
 });
+
+
+it('marks the original expired identity for the signed-out presentation without retaining identity data', async () => {
+  let now = 1000;
+  const session = new AppSession('/api', () => now, freshStatus() as typeof fetch);
+  await session.check(); expect(session.snapshot().reason).toBeUndefined();
+  now = 1300; session.expire();
+  expect(session.snapshot()).toEqual({identity:null,loading:false,changed:false,error:null,reason:'expired'});
+});

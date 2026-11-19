@@ -2,6 +2,8 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import { flushSync } from 'react-dom';
 import { appSession } from '../lib/v2Session';
 import { WalletController } from '../lib/v2Wallet';
+import { PageHeader } from '../components/PageHeader';
+import { DisclosurePanelPresentation } from '../components/DisclosurePanelPresentation';
 
 export function WalletsV2() {
   const session = useSyncExternalStore(appSession.subscribe, appSession.snapshot);
@@ -17,15 +19,27 @@ function WalletPanel() {
     window.addEventListener('pagehide', hide);
     return () => { window.removeEventListener('pagehide', hide); wallet.cancel(); };
   }, [wallet]);
-  return <section className="space-y-4" aria-label="Your wallet links">
-    <h2>Wallets</h2>
-    <p>Link an address you control to your OPS identity. Linking does not grant group membership or authorize a transaction.</p>
-    {state.error && <p role="alert">{state.error}</p>}
-    <div className="flex gap-4"><button disabled={state.busy} onClick={() => void wallet.load()}>Refresh links</button><button disabled={state.busy} onClick={() => void wallet.connect()}>Link wallet</button><button onClick={wallet.cancel}>Cancel wallet operation</button></div>
-    {state.busy && <p role="status">Waiting for the wallet operation…</p>}
-    {state.links.length ? <ul>{state.links.map(link => <li key={link.address}><code>{link.address}</code> · Verified {link.verifiedAt} <button disabled={state.busy} onClick={() => wallet.prepareUnlink(link.address)}>Unlink</button></li>)}</ul> : <p>No wallet links are currently displayed. Refresh links to check the current state.</p>}
-    {state.stage === 'choose' && <section><h3>Choose the address to link</h3>{state.accounts.map(value => <button key={value} onClick={() => void wallet.select(value)}><code>{value}</code></button>)}</section>}
-    {state.message && <section><h3>Wallet ownership proof</h3><pre className="whitespace-pre-wrap break-all">{state.message}</pre>{state.stage === 'sign' && <button disabled={state.busy} onClick={() => void wallet.sign()}>Sign ownership proof</button>}{state.stage === 'confirm' && <button disabled={state.busy} onClick={() => void wallet.confirm()}>Confirm link</button>}</section>}
-    {state.unlink && <section role="alert"><p>Unlink <code>{state.unlink}</code>? This address cannot be linked to this OPS identity again under the current deployment rules. There is no Undo.</p><button disabled={state.busy} onClick={() => void wallet.unlink()}>Confirm permanent unlink</button></section>}
+  const activeStep = state.stage !== 'idle' || state.unlink !== null;
+  // A confirm/unlink can already have reached the service. Do not offer a
+  // local cancel control that would look like an undo for that request.
+  const saving = state.busy && (state.stage === 'confirm' || state.unlink !== null);
+  return <section className="space-y-5" aria-label="Your wallet links">
+    <PageHeader title="Wallets" subtitle="Addresses linked to your current OPS identity" />
+    <p className="text-sm text-neutral-500">Link an address you control to your OPS identity. Linking does not grant group membership or authorize a transaction.</p>
+    {state.error && <p role="alert" className="rounded-lg border border-error-200 bg-error-50 p-3 text-sm text-error-700">{state.error}</p>}
+    <div className="flex flex-wrap gap-2">
+      <button className="btn-secondary" disabled={state.busy || activeStep} onClick={() => void wallet.load()}>Refresh links</button>
+      <button className="btn-primary" disabled={state.busy || activeStep} onClick={() => void wallet.connect()}>Link wallet</button>
+      {activeStep && !saving && <button className="btn-secondary" onClick={wallet.cancel}>{state.unlink ? 'Cancel unlinking' : 'Cancel linking'}</button>}
+    </div>
+    {state.busy && <p role="status" className="text-sm text-neutral-500">Waiting for the wallet operation…</p>}
+    {saving && <p className="text-sm text-neutral-500">Saving is in progress. Closing this page cannot undo a request already sent. Wait for its result, then refresh links before starting another action.</p>}
+    {activeStep && !saving && state.busy && <p className="text-xs text-neutral-500">Canceling here stops this OPS step. Dismiss any open wallet prompt separately.</p>}
+    <DisclosurePanelPresentation title="Linked addresses">
+      {state.links.length ? <ul className="divide-y divide-neutral-100">{state.links.map(link => <li key={link.address} className="flex flex-wrap items-center justify-between gap-3 p-4"><div className="min-w-0"><code className="break-all text-xs">{link.address}</code><p className="mt-1 text-xs text-neutral-500">Verified <time dateTime={link.verifiedAt}>{new Date(link.verifiedAt).toLocaleString()}</time></p></div><button className="btn-secondary" disabled={state.busy || activeStep} onClick={() => wallet.prepareUnlink(link.address)}>Unlink</button></li>)}</ul> : <p className="p-4 text-sm text-neutral-500">No wallet links are currently displayed. Refresh links to check the current state.</p>}
+    </DisclosurePanelPresentation>
+    {state.stage === 'choose' && <DisclosurePanelPresentation title="Choose the address to link"><div className="space-y-2 p-4">{state.accounts.map(value => <button className="btn-secondary w-full" key={value} disabled={state.busy} onClick={() => void wallet.select(value)}><code className="break-all text-xs">{value}</code></button>)}</div></DisclosurePanelPresentation>}
+    {state.message && <DisclosurePanelPresentation title="Wallet ownership proof"><div className="space-y-4 p-4"><p className="text-sm text-neutral-500">Sign a message to prove ownership. This does not authorize a transaction.</p><details><summary className="cursor-pointer text-sm font-medium text-primary">Ownership proof details</summary><pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-neutral-100 p-3 font-mono text-xs">{state.message}</pre></details>{state.stage === 'sign' && <button className="btn-primary" disabled={state.busy} onClick={() => void wallet.sign()}>Sign ownership proof</button>}{state.stage === 'confirm' && <button className="btn-primary" disabled={state.busy} onClick={() => void wallet.confirm()}>Confirm link</button>}</div></DisclosurePanelPresentation>}
+    {state.unlink && <section className="card space-y-4 border-warning-200 p-5" role="alert"><h2 className="text-base font-semibold text-neutral-900">Permanently unlink this address?</h2><code className="block break-all text-xs">{state.unlink}</code><p className="text-sm text-neutral-500">This address cannot be linked to this OPS identity again under the current deployment rules. There is no Undo.</p><button className="btn-secondary text-error-600" disabled={state.busy} onClick={() => void wallet.unlink()}>Confirm permanent unlink</button></section>}
   </section>;
 }

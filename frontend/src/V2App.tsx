@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter, Link, Outlet, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthContext, useAuth } from './lib/authContext';
+import { BrowserRouter, Outlet, Routes, Route, useParams, useLocation, Navigate } from 'react-router-dom';
+import { AuthContext } from './lib/authContext';
 import { V2AuthProvider } from './lib/authV2';
 import { appSession } from './lib/v2Session';
 import { TooltipProvider } from './components/ui/tooltip';
@@ -9,57 +9,64 @@ import { ThemeProvider } from './hooks/useTheme';
 import { getConfig } from './lib/runtimeConfig';
 import { PublicNetworkSetup } from './pages/NetworkSetupV2';
 import { WalletsV2 } from './pages/WalletsV2';
-import { OverviewV2, ReadPanel, BlockV2, TransactionV2, TransactionReadV2, AddressV2, AddressReadV2, TokenV2, TokenReadV2, SyncV2, SearchV2 } from './pages/ExplorerDataV2';
+import { BlocksNative, BlockNative } from './pages/BlocksNative';
+import { TransactionsNative, AccountsNative, TransfersNative, LogsNative } from './pages/CollectionsNative';
+import { TokensNative, TokenNative } from './pages/TokensNative';
+import { SyncNative, SearchNative, ApiDocsNative } from './pages/NetworkNative';
+import { NativeExplorerLayout } from './components/NativeExplorerControls';
+import { HomeNative } from './pages/HomeNative';
+import { TransactionNative } from './pages/TransactionNative';
+import { AddressNative } from './pages/AddressNative';
 import { DisclosuresV2, DisclosureCaseV2, DisclosureAddressV2, DisclosureTransactionV2 } from './pages/DisclosuresV2';
 
 const queries = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, staleTime: 1000 } } });
 function Layout() {
-  const { auth, logout } = useAuth();
-  return <div className="max-w-7xl mx-auto p-5 space-y-5"><header className="space-y-3"><h1>Explorer</h1><p className="break-all" data-field="app-actor">{auth.did}</p><nav className="flex flex-wrap gap-4"><Link to="/">Overview</Link><Link to="/blocks">Blocks</Link><Link to="/transactions">Transactions</Link><Link to="/accounts">Accounts</Link><Link to="/tokens">Tokens</Link><Link to="/token-transfers">Transfers</Link><Link to="/logs">Logs</Link><Link to="/search">Search</Link><Link to="/sync">Index status</Link><Link to="/wallets">Wallets</Link><Link to="/disclosures">Disclosures</Link><Link to="/chain-info">Network setup</Link><button onClick={() => { void appSession.login(undefined, true).catch(() => {}); }}>Refresh identity</button><button onClick={() => { void appSession.login().catch(() => {}); }}>Switch account</button><button onClick={() => { void logout().catch(() => {}); }}>Sign out</button></nav></header><PrivateOutlet /></div>;
-}
-
-function PrivateOutlet() {
   const state = useSyncExternalStore(appSession.subscribe, appSession.snapshot);
-  // A renewed original token invalidates source cursors even for the same actor.
-  return state.identity ? <Outlet key={state.identity.activation} /> : null;
+  // The whole private screen, including search and menus, belongs to this
+  // activation. A batched account adoption must not reuse the prior query.
+  return state.identity ? <NativeExplorerLayout key={state.identity.activation}><Outlet /></NativeExplorerLayout> : null;
+}
+function TokenAlias() { const {address} = useParams(); return <Navigate to={`/tokens/${address}`} replace/>; }
+
+// Only this explicit approved-network page is public. Private routed pages
+// remain unmounted until the original application identity is verified.
+function PublicEntryLayout({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  return <NativeExplorerLayout>{location.pathname === '/chain-info' ? <PublicNetworkSetup /> : children}</NativeExplorerLayout>;
 }
 
 // V2 never mounts the V1 impersonation, disclosure-consent, ABI-write, wallet
 // provider or refresh-token components.
 export function V2App() {
   if (window.self !== window.top) return <main><h1>Open Explorer to continue</h1><p>Private sessions require a top-level browser tab.</p><a href={window.location.href} target="_top">Open Explorer</a></main>;
-  return <ThemeProvider><QueryClientProvider client={queries}><V2AuthProvider context={AuthContext}><TooltipProvider><BrowserRouter basename={getConfig('VITE_BASE_PATH', '')}><Routes><Route path="/" element={<Layout />}><Route index element={<OverviewV2 />} />
+  return <ThemeProvider><QueryClientProvider client={queries}><TooltipProvider><BrowserRouter basename={getConfig('VITE_BASE_PATH', '')}><V2AuthProvider context={AuthContext} gate={content => <PublicEntryLayout>{content}</PublicEntryLayout>}><Routes><Route path="/" element={<Layout />}><Route index element={<HomeNative />} />
 <Route path="chain-info" element={<PublicNetworkSetup />} />
 <Route path="wallets" element={<WalletsV2 />} />
 <Route path="disclosures" element={<DisclosuresV2 />} />
 <Route path="disclosures/cases/:caseId" element={<DisclosureCaseV2 />} />
 <Route path="disclosures/cases/:caseId/addresses/:addressId" element={<DisclosureAddressV2 />} />
 <Route path="disclosures/cases/:caseId/addresses/:addressId/transactions/:hash" element={<DisclosureTransactionV2 />} />
-<Route path="blocks" element={<ReadPanel path="/blocks" title="Blocks" collection />} />
-<Route path="blocks/hash/:hash" element={<BlockV2 />} />
-<Route path="blocks/:number" element={<BlockV2 />} />
-<Route path="transactions" element={<ReadPanel path="/transactions" title="Transactions" collection filters="transactions" />} />
-<Route path="transactions/paginated" element={<ReadPanel path="/transactions/paginated" title="Transactions" collection filters="transactions" />} />
-<Route path="transactions/:hash" element={<TransactionV2 />}>
-<Route index element={<TransactionReadV2 />} />
-<Route path="transfers" element={<TransactionReadV2 suffix="/transfers" collection />} />
-<Route path="logs" element={<TransactionReadV2 suffix="/logs" collection filters="logs" />} />
-<Route path="internal" element={<TransactionReadV2 suffix="/internal" collection />} />
-</Route>
-<Route path="addresses/:address" element={<AddressV2 />}>
-<Route index element={<Navigate to="stats" replace />} />
-{['stats','transactions','balance','code','balances','transfers','internal','logs','contract','is-contract'].map(suffix=><Route key={suffix} path={suffix} element={<AddressReadV2 suffix={suffix} collection={['transactions','balances','transfers','internal','logs'].includes(suffix)} filters={suffix==='transactions'?'transactions':suffix==='logs'?'logs':''} />} />)}
-</Route>
-<Route path="accounts" element={<ReadPanel path="/accounts" title="Accounts" collection />} />
-<Route path="tokens" element={<ReadPanel path="/tokens" title="Tokens" collection filters="tokens" />} />
-<Route path="tokens/:address" element={<TokenV2 />}>
-<Route index element={<TokenReadV2 />} />
-<Route path="holders" element={<TokenReadV2 suffix="/holders" collection />} />
-<Route path="transfers" element={<TokenReadV2 suffix="/transfers" collection />} />
-</Route>
-<Route path="token-transfers" element={<ReadPanel path="/transfers" title="Transfers" collection />} />
-<Route path="logs" element={<ReadPanel path="/logs" title="Logs" collection filters="logs" />} />
-<Route path="search" element={<SearchV2 />} />
-<Route path="sync" element={<SyncV2 />} />
-<Route path="*" element={<p>Page not found.</p>} /></Route></Routes></BrowserRouter></TooltipProvider></V2AuthProvider></QueryClientProvider></ThemeProvider>;
+<Route path="blocks" element={<BlocksNative/>} />
+<Route path="blocks/hash/:hash" element={<BlockNative/>} />
+<Route path="blocks/:number" element={<BlockNative/>} />
+<Route path="transactions" element={<TransactionsNative/>} />
+<Route path="transactions/paginated" element={<TransactionsNative/>} />
+<Route path="tx/:hash" element={<TransactionNative />} />
+<Route path="transactions/:hash" element={<TransactionNative />} />
+{['transfers','logs','internal'].map(suffix => <Route key={`tx-${suffix}`} path={`transactions/:hash/${suffix}`} element={<TransactionNative/>}/>)}
+<Route path="address/:address" element={<AddressNative />} />
+<Route path="addresses/:address" element={<AddressNative />} />
+{['stats','transactions','balance','transfers','internal','logs','is-contract','code','balances','contract'].map(suffix => <Route key={`address-${suffix}`} path={`addresses/:address/${suffix}`} element={<AddressNative/>}/>)}
+<Route path="block/:number" element={<BlockNative/>} />
+<Route path="token/:address" element={<TokenAlias />} />
+<Route path="accounts" element={<AccountsNative/>} />
+<Route path="tokens" element={<TokensNative/>} />
+<Route path="tokens/:address" element={<TokenNative/>}/>
+{['holders','transfers','contract'].map(suffix=><Route key={`token-${suffix}`} path={`tokens/:address/${suffix}`} element={<TokenNative/>}/>)}
+<Route path="token-transfers" element={<TransfersNative/>} />
+<Route path="logs" element={<LogsNative/>} />
+<Route path="search" element={<SearchNative/>} />
+<Route path="sync" element={<SyncNative/>} />
+<Route path="api-docs" element={<ApiDocsNative/>} />
+<Route path="*" element={<p>Page not found.</p>} /></Route></Routes></V2AuthProvider></BrowserRouter></TooltipProvider></QueryClientProvider></ThemeProvider>;
 }

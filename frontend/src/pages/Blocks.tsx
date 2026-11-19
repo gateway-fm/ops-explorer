@@ -1,3 +1,4 @@
+import { ExplorerTable } from '../components/ExplorerReadPresentation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useState, useCallback, useEffect } from 'react';
@@ -67,25 +68,15 @@ export function Blocks() {
           />
         )}
 
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Block</th>
-              <th>Age</th>
-              <th>Txns</th>
-              <th>Gas Used</th>
-              <th>Hash</th>
-            </tr>
-          </thead>
-          <tbody>
+        <ExplorerTable headings={['Block','Age','Txns','Gas Used','Hash']}>
+
             {data?.data?.map((block) => (
               <BlockTableRow
                 key={block.number}
                 block={block}
               />
             ))}
-          </tbody>
-        </table>
+        </ExplorerTable>
 
         {isLoading && <StateMessage variant="loading" />}
 

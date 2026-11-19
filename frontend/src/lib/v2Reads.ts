@@ -2,13 +2,14 @@ import type { Page, PageInfo } from './v2ReadTypes';
 
 export type ReadItem = Record<string, unknown>;
 const object = (v: unknown): v is ReadItem => !!v && typeof v === 'object' && !Array.isArray(v);
-const quantity = (v: unknown): v is string => typeof v === 'string' && /^(0|[1-9][0-9]{0,77})$/.test(v);
+const quantity = (v: unknown): v is string => typeof v === 'string' && /^(0|[1-9][0-9]{0,77})$/.test(v) && BigInt(v)<(1n<<256n);
 const quantities = new Set(['number', 'blockNumber', 'blockTimestamp', 'timestamp', 'gasLimit', 'baseFeePerGas', 'transactionCount', 'difficulty', 'totalDifficulty', 'value', 'gasUsed', 'gasPrice', 'maxFeePerGas', 'maxPriorityFeePerGas', 'nonce', 'maxFeePerBlobGas', 'tokenTransferCount', 'tokenId', 'gas', 'totalSupply', 'holderCount', 'transferCount', 'balance', 'txCount', 'internalTxCount', 'firstSeen', 'lastSeen', 'totalBlocks', 'totalTransactions', 'totalAddresses', 'totalTokens', 'observedTransactions', 'observedBlocks', 'observedParticipantAddresses', 'count', 'lastIndexedBlock', 'minFetchedBlock', 'maxFetchedBlock', 'behindBlocks', 'chainId']);
 const numbers = new Set(['txIndex', 'logIndex', 'txType', 'status', 'decimals', 'optimizationRuns']);
 export function searchSuggestionTarget(row: ReadItem): string | undefined {
   if (Object.keys(row).sort().join() !== 'type,value' || typeof row.type !== 'string') return;
   const value = row.value;
   if (typeof value !== 'string') throw Error('Invalid suggestion');
+  if (row.type === 'block' && /^(0|[1-9][0-9]{0,18})$/.test(value) && BigInt(value) <= 9223372036854775807n) return '/blocks/' + value;
   if (row.type === 'transaction' && /^0x[0-9a-f]{64}$/.test(value)) return '/transactions/' + value;
   if (/^0x[0-9a-f]{40}$/.test(value)) {
     if (row.type === 'token') return '/tokens/' + value;
@@ -42,7 +43,8 @@ function readPageValue(value: unknown, observed: boolean): Page<ReadItem> {
 function readPageInfo(value: unknown, observed = false): PageInfo {
   if (!object(value)) throw Error('Invalid read continuation');
   const p = value;
-  if (Object.keys(p).some(k => !['next', 'hasMore', 'scanLimited', 'total', 'population', ...(observed ? ['coverage'] : [])].includes(k)) || p.population !== 'LIVE_RETAINED_INDEXED_ROWS_CURRENT_RIGHTS' || p.coverage !== undefined && p.coverage !== 'OBSERVED_VISIBLE_PAGE' || p.hasMore !== true && p.hasMore !== false && p.hasMore !== null || typeof p.scanLimited !== 'boolean' || p.next !== undefined && (typeof p.next !== 'string' || p.next.length < 1 || p.next.length > 8192) || p.total !== undefined && !quantity(p.total) || p.hasMore === true && p.next === undefined || p.hasMore === false && p.next !== undefined || p.hasMore === null && (!p.scanLimited || p.next === undefined)) throw Error('Invalid read continuation');
+  if (Object.keys(p).some(k => !['next', 'hasMore', 'scanLimited', 'total', 'population', 'consistency', 'endedAt', 'historyFromBlock', ...(observed ? ['coverage'] : [])].includes(k)) || p.population !== 'LIVE_RETAINED_INDEXED_ROWS_CURRENT_RIGHTS' || p.coverage !== undefined && p.coverage !== 'OBSERVED_VISIBLE_PAGE' || p.hasMore !== true && p.hasMore !== false && p.hasMore !== null || typeof p.scanLimited !== 'boolean' || p.next !== undefined && (typeof p.next !== 'string' || p.next.length < 1 || p.next.length > 8192) || p.total !== undefined && !quantity(p.total) || p.hasMore === true && p.next === undefined || p.hasMore === false && p.next !== undefined || p.hasMore === null && (!p.scanLimited || p.next === undefined)) throw Error('Invalid read continuation');
+  if (p.consistency !== undefined && p.consistency !== 'SNAPSHOT' && p.consistency !== 'CURRENT' || p.endedAt !== undefined && !['ENDED_AT_UNSPECIFIED', 'ENDED_AT_END_OF_RANGE', 'ENDED_AT_RETENTION_FLOOR', 'ENDED_AT_INDEX_FLOOR'].includes(String(p.endedAt)) || p.historyFromBlock !== undefined && !quantity(p.historyFromBlock)) throw Error('Invalid read boundary');
   return p as unknown as PageInfo;
 }
 export function readObservedStats(value: unknown): ReadItem & { page: PageInfo } {
@@ -63,7 +65,10 @@ export function readTarget(path: string, filters: URLSearchParams, cursor?: stri
   return '/v2/explorer' + path + (query.size ? '?' + query.toString() : '');
 }
 export function continuationMessage(page: PageInfo): string {
-  if (page.hasMore === false) return 'End of the available records.';
-  if (page.scanLimited) return 'This page reached the read limit. Continue to look for more records.';
-  return 'More records are available.';
+  const current = page.consistency === 'CURRENT' ? ' Current values may change between pages. Keys already passed may be skipped.' : '';
+  if (page.hasMore === false && page.endedAt === 'ENDED_AT_RETENTION_FLOOR') return 'Older history has been pruned.' + (page.historyFromBlock ? ` Available history starts at block ${page.historyFromBlock}.` : '') + current;
+  if (page.hasMore === false && page.endedAt === 'ENDED_AT_INDEX_FLOOR') return 'Older history is not indexed yet.' + current;
+  if (page.hasMore === false) return 'End of the available records.' + current;
+  if (page.scanLimited) return 'This page reached the read limit. Continue to look for more records.' + current;
+  return 'More records are available.' + current;
 }

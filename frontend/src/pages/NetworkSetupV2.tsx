@@ -1,5 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { getConfig } from '../lib/runtimeConfig';
+import { PageHeader } from '../components/PageHeader';
+import { ChainInfoRow as InfoRow } from '../components/ChainInfoRow';
+import { StateMessage } from '../components/StateMessage';
 
 export interface NetworkSetup { protocol: 'ops-v2'; source: 'approved-config'; chainId: string; chainIdDecimal: string; genesisHash: string; privacyProxyPublicUrl: string }
 export async function networkSetup(): Promise<NetworkSetup> {
@@ -11,5 +14,15 @@ export async function networkSetup(): Promise<NetworkSetup> {
 }
 export function PublicNetworkSetup() {
   const { data, error } = useQuery({ queryKey: ['approvedNetworkSetup'], queryFn: networkSetup, staleTime: Infinity, retry: false });
-  return <section><h2>Approved network setup</h2><p>This describes the configured network. Live node status is available only through authenticated OPS reads.</p>{data ? <dl><dt>Chain ID</dt><dd>{data.chainIdDecimal} ({data.chainId})</dd><dt>Genesis hash</dt><dd className="break-all">{data.genesisHash}</dd><dt>OPS</dt><dd>{data.privacyProxyPublicUrl}</dd></dl> : <p>{error ? 'Network setup unavailable.' : 'Loading network setup…'}</p>}</section>;
+  return <section className="space-y-6">
+    <PageHeader title="Network setup" subtitle="Connection details from the approved network configuration" />
+    <div className="card p-5 divide-y divide-neutral-100">
+      {data ? <>
+        <InfoRow label="Chain ID" value={<span className="font-mono">{data.chainIdDecimal} ({data.chainId})</span>} />
+        <InfoRow label="Genesis hash" value={<span className="font-mono text-sm break-all">{data.genesisHash}</span>} />
+        <InfoRow label="OPS endpoint" value={<span className="font-mono text-sm break-all">{data.privacyProxyPublicUrl}</span>} />
+      </> : <StateMessage variant={error ? 'error' : 'loading'} title={error ? 'Network setup unavailable' : 'Loading network setup…'} />}
+    </div>
+    <p className="text-sm text-neutral-500">These are connection details, not live node status. Sign in to inspect the network data available to you.</p>
+  </section>;
 }

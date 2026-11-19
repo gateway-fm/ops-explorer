@@ -14,9 +14,48 @@ The token stays encrypted in this app's restricted operational SQL store. There
 are no user or membership rows, directory endpoints, browser access tokens,
 provider refresh credentials or BFF-issued identity tokens.
 
-The selected protected read families return `503 private_data_unavailable`.
-Legacy numeric/offset read handlers and their React pages are not mounted by
-this V2 entry. Unavailable reads do not become fabricated zero counts.
+Selected native read routes forward the current identity and app activation to
+the protected V2 data wire. Unavailable sources return explicit failures;
+legacy numeric/offset read handlers and their React containers are not mounted
+by this V2 entry. Unavailable reads do not become fabricated zero counts.
+
+The native entry reuses the established Explorer header/navigation, home feed,
+transaction overview/log panels and address tabs through presentation-only
+components. Their native adapters read the V2 wire and preserve exact quantity
+strings, masked values and opaque cursor continuation. Both `/tx/:hash` and
+`/transactions/:hash`, and `/address/:address` and `/addresses/:address`, open
+these adapted screens. Private search, menus, page results and cursors belong
+to the original app activation and are cleared on an account-context change.
+
+Signed-out, loading, expired and account-change entry screens reuse the original
+privacy sign-in presentation. A shared-state verification failure shows an
+error rather than claiming another account was selected. Ordinary sign-in
+mounts no private feeds or network diagnostics; the exact public `/chain-info`
+page separately displays approved connection details without protected reads.
+
+Native adapters also reuse the original block/detail tabs, transaction and
+transfer lists, account and token views, address portfolio, search, sync and API
+documentation presentations. Read results retain their exact quantities,
+opaque cursors and masked/null fields. Global ranks and percentages are omitted
+when the protected population cannot establish them. Address classification
+stays unknown while its required information is unavailable; a failed read
+does not establish an ordinary account. The current typed API has no NFT
+inventory route, and account statistics do not establish live account balances.
+
+Approved contract ABIs drive Read through the protected BFF RPC route. Write
+uses a connected user's signing wallet and the separately configured local
+JWT helper in native V2 mode. The helper verifies the original short-lived OPS
+token, actor, organization, network and exact RPC context; it does not issue an
+identity. Download a fresh own token from the OPS account page into the helper's
+selected token file. A renewed token needs a fresh helper context and may need
+an explicit RPC URL update in the wallet. This is not seamless wallet renewal.
+The UI never sends an unsigned transaction for node-side signing. After handing
+a request to the wallet it cannot cancel or automatically retry that request;
+an interrupted result must be reconciled before sending again.
+
+Disclosure cases use standing approved rules and the existing protected-data
+API, without customer approval. Event disclosure reads are unavailable;
+mixed cases show this limitation and retain their other supported resources.
 
 ## Approved source and deployment
 
@@ -78,6 +117,8 @@ link rather than transporting credentials through an iframe.
 | `GET /api/auth/callback` | Exact one-use `code`/`state`, encrypted current pending context and S256 verifier; one confidential Basic exchange, with OAuth form encoding exactly once. Original signed token verification precedes conditional activation. |
 | `GET /api/auth/status` | `{protocol:"ops-v2",authenticated:false}` or verified own `did`, `source_profile`, `session_id`, `expires_at`. The activation header is optional here; a mismatch returns 409 without another account's identity. |
 | `POST /api/auth/logout` | Empty JSON `{}` and exact activation header; conditionally revokes only this app context after known commit. It sends no auth-cookie deletion and does not revoke the OPS family. |
+| `GET /api/v2/self` | Returns the independently verified own identity, original expiry and mapped organizations. It has no subject selector or user directory. |
+| `POST /api/v2/rpc/{org}` | A bounded single-request allowlist for reads, estimates, fee data and transaction lookup through fixed OPS RPC. Own verified organization membership and the original app capture are checked; wallet sends and signing methods are excluded. |
 
 Every authenticated data request carries the captured app activation in
 `X-OPS-App-Session`. Source/epoch, the actual encrypted token bytes, cookie hashes,
@@ -141,7 +182,7 @@ The BFF cookie cannot renew Core identity. Renewal visits the real OPS browser
 flow. Azure may perform genuine provider refresh and, after the first explicit
 handoff, automatically return for the exact remembered client/actor/profile
 digest/OPS family. That noncredential UX choice has its original 24-hour expiry,
-at most 32 clients, and an explicit Forget action. It grants no authority and
+and at most 32 clients. It grants no authority and
 does not slide its expiry. Privado requires a genuine new proof and explicit
 holder confirmation; no JWT or cached proof is reconstructed from a cookie.
 Login/Continue is an identity/app handoff, never customer disclosure consent.

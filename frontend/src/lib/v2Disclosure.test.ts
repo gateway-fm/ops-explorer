@@ -43,5 +43,8 @@ describe('protected disclosure browser wire', () => {
     const record = { caseId: id, ruleId: 'audit', recipientActorId: actor, creatorActorId: actor, dataOrganizationId: id, scope: { targetActors: [actor], resources: ['transactions'], addresses: { mode: 'all-target-addresses', values: [] }, dataTime: { start: 1899999000, end: 1900000000 }, level: 'full' }, caseReference: 'Bank audit', purpose: 'Investigate', legalBasis: 'Internal control', status: 'open', version: 1, createdAt: 1900000000, expiresAt: 1900000300 };
     expect(parseCasePage({ items: [record], nextCursor: 'case-page', scanComplete: false }).items[0].scope.resources).toEqual(['transactions']);
     expect(() => parseCasePage({ items: [record], nextCursor: null, scanComplete: false })).toThrow();
+    const mixed = { ...record, scope: { ...record.scope, resources: ['events', 'transactions'] } };
+    expect(parseCasePage({ items: [mixed], nextCursor: '', scanComplete: true }).items[0].scope.resources).toEqual(['events', 'transactions']);
+    expect(() => parseDisclosureData(envelope('events', 'list', { items: [], nextCursor: null }), id, 'transactions')).toThrow();
   });
 });

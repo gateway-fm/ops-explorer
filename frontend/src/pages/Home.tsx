@@ -1,17 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
-import { Boxes, ArrowLeftRight, Users, Clock, Box, FileCode, FilePlus, Coins, ArrowRightLeft, Shield } from 'lucide-react';
+import { Boxes, ArrowLeftRight, Users, Clock } from 'lucide-react';
 import { api } from '../lib/api';
-import type { Block, Transaction, TxCategory } from '../lib/api';
-import { formatHash } from '../lib/utils';
-import { LiveTimeAgo } from '../components/LiveTimeAgo';
+import type { Transaction } from '../lib/api';
 import { AddressLink } from '../components/AddressLink';
 import { TransactionHistoryChart } from '../components/TransactionHistoryChart';
 import { SearchBar } from '../components/SearchBar';
-import { Skeleton } from '../components/ui/skeleton';
-import { branding } from '../lib/branding';
 import { features } from '../lib/features';
+import { HomePresentation, HomeStatCard, HomeStatCardSkeleton, HomeFeedSkeleton, HomeBlockRow, HomeTransactionRow } from '../components/HomePresentation';
 
 export function Home() {
   const { data: stats } = useQuery({
@@ -88,329 +84,25 @@ export function Home() {
     }
   }, [txs?.data]);
 
-  return (
-    <div className="space-y-4 sm:space-y-8">
-      {/* Hero Section */}
-      <div
-        className={`relative overflow-visible rounded-xl p-5 sm:p-8 shadow-card ${branding.colorHeroBg ? '' : 'bg-gradient-to-br from-primary-900 via-primary-700 to-primary'}`}
-        style={branding.colorHeroBg ? { background: branding.colorHeroBg } : undefined}
-      >
-        {/* Background decoration */}
-        <div className="absolute inset-0 opacity-[0.07] overflow-hidden rounded-xl">
-          <div className="absolute top-0 left-0 w-72 h-72 bg-white rounded-full -translate-x-1/2 -translate-y-1/2" />
-          <div className="absolute bottom-0 right-0 w-96 h-96 bg-white rounded-full translate-x-1/3 translate-y-1/3" />
-        </div>
-
-        <div className="relative z-10">
-          <h1 className="text-2xl sm:text-3xl font-bold text-white mb-4">
-            {branding.name}
-          </h1>
-
-          <SearchBar variant="hero" />
-        </div>
-      </div>
-
-      {/* Stats + Chart. When the chart is gated off (privacy mode, RD-1063),
-          drop the 2-col split and spread the stat tiles across the full width
-          instead of leaving the right half empty. */}
-      <div className={`grid gap-4 sm:gap-6 ${features().charts ? 'md:grid-cols-2' : ''}`}>
-        <div className={`grid grid-cols-2 gap-2 sm:gap-4 ${features().charts ? '' : 'md:grid-cols-4'}`}>
-          {stats ? (
-            <>
-              <StatCard
-                label="Total Blocks"
-                value={stats.totalBlocks?.toLocaleString() ?? '-'}
-                icon={<Boxes className="w-5 h-5" />}
-                color="blue"
-              />
-              <StatCard
-                label="Total Transactions"
-                value={stats.totalTransactions?.toLocaleString() ?? '-'}
-                icon={<ArrowLeftRight className="w-5 h-5" />}
-                color="green"
-              />
-              <StatCard
-                label="Total Addresses"
-                value={stats.totalAddresses?.toLocaleString() ?? '-'}
-                icon={<Users className="w-5 h-5" />}
-                color="purple"
-              />
-              <StatCard
-                label="Avg Block Time"
-                value={stats.avgBlockTime ? `${stats.avgBlockTime.toFixed(2)}s` : '-'}
-                icon={<Clock className="w-5 h-5" />}
-                color="amber"
-              />
-            </>
-          ) : (
-            <>
-              <StatCardSkeleton />
-              <StatCardSkeleton />
-              <StatCardSkeleton />
-              <StatCardSkeleton />
-            </>
-          )}
-        </div>
-        {/* RD-1063: hidden in privacy mode (charts disabled) for consistency —
-            tx-history itself is redaction-safe via the proxy. */}
-        {features().charts && <TransactionHistoryChart />}
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
-        {/* Latest Blocks */}
-        <div className="card">
-          <div className="px-3 sm:px-4 py-2 sm:py-3 border-b border-neutral-100 flex justify-between items-center">
-            <h2 className="font-semibold text-sm sm:text-base text-neutral-900">Latest Blocks</h2>
-            <Link to="/blocks" className="text-sm text-neutral-500 hover:text-primary transition-colors">View all</Link>
-          </div>
-          <div className="divide-y divide-neutral-100 feed-container">
-            {blocks?.data?.map((block) => (
-              <BlockRow
-                key={block.number}
-                block={block}
-                isNew={newBlocks.has(block.number)}
-              />
-            ))}
-            {!blocks && Array.from({ length: 10 }).map((_, i) => <BlockRowSkeleton key={i} />)}
-            {blocks && !blocks.data?.length && (
-              <div className="px-4 py-8 text-center text-neutral-400">No blocks yet</div>
-            )}
-          </div>
-        </div>
-
-        {/* Latest Transactions */}
-        <div className="card">
-          <div className="px-3 sm:px-4 py-2 sm:py-3 border-b border-neutral-100 flex justify-between items-center">
-            <h2 className="font-semibold text-sm sm:text-base text-neutral-900">Latest Transactions</h2>
-            <Link to="/transactions" className="text-sm text-neutral-500 hover:text-primary transition-colors">View all</Link>
-          </div>
-          <div className="divide-y divide-neutral-100 feed-container">
-            {txs?.data?.map((tx) => (
-              <TxRow
-                key={tx.hash}
-                tx={tx}
-                isNew={newTxs.has(tx.hash)}
-                addressInfo={txs.addressInfo}
-              />
-            ))}
-            {!txs && Array.from({ length: 10 }).map((_, i) => <TxRowSkeleton key={i} />)}
-            {txs && !txs.data?.length && (
-              <div className="px-4 py-8 text-center text-neutral-400">No transactions yet</div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const colorStyles = {
-  blue: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800',
-  green: 'bg-success-50 dark:bg-success-500/10 text-success-600 dark:text-success-500 border border-success-100 dark:border-success-500/20',
-  purple: 'bg-primary-50 dark:bg-primary-900/20 text-primary dark:text-primary-400 border border-primary-200 dark:border-primary-800',
-  amber: 'bg-warning-50 dark:bg-warning-500/10 text-warning-600 dark:text-warning-500 border border-warning-100 dark:border-warning-500/20',
-};
-
-function StatCard({ label, value, icon, color }: { label: string; value: string; icon: React.ReactNode; color: keyof typeof colorStyles }) {
-  return (
-    <div className="card p-3 sm:p-4" data-testid="stat-card">
-      <div className="flex items-center justify-between mb-2 sm:mb-3">
-        <span className="text-xs sm:text-sm text-neutral-500">{label}</span>
-        <div className={`p-1.5 sm:p-2 rounded-lg ${colorStyles[color]}`}>
-          {icon}
-        </div>
-      </div>
-      <div className="text-lg sm:text-2xl font-mono font-semibold text-neutral-900 truncate">{value}</div>
-    </div>
-  );
-}
-
-function StatCardSkeleton() {
-  return (
-    <div className="card p-3 sm:p-4">
-      <div className="flex items-center justify-between mb-2 sm:mb-3">
-        <Skeleton className="h-3 sm:h-4 w-20" />
-        <Skeleton className="h-7 w-7 sm:h-8 sm:w-8 rounded-lg" />
-      </div>
-      <Skeleton className="h-6 sm:h-8 w-24" />
-    </div>
-  );
-}
-
-// Format gas value for display
-function formatGasCompact(gas: number): string {
-  if (gas >= 1_000_000) {
-    return `${(gas / 1_000_000).toFixed(2)}M`;
-  }
-  if (gas >= 1_000) {
-    return `${(gas / 1_000).toFixed(1)}K`;
-  }
-  return gas.toString();
-}
-
-function BlockRowSkeleton() {
-  return (
-    <div className="px-3 sm:px-4 h-[52px] sm:h-[60px] flex items-center gap-3">
-      <Skeleton className="h-9 w-9 rounded-lg shrink-0" />
-      <div className="flex-1 min-w-0 space-y-1.5">
-        <Skeleton className="h-4 w-24" />
-        <Skeleton className="h-3 w-32" />
-      </div>
-      <div className="text-right shrink-0 space-y-1.5">
-        <Skeleton className="h-3 w-16 ml-auto" />
-        <Skeleton className="h-3 w-20 ml-auto" />
-      </div>
-    </div>
-  );
-}
-
-function BlockRow({ block, isNew }: { block: Block; isNew: boolean }) {
-  const gasPercent = block.gasLimit > 0 ? (block.gasUsed / block.gasLimit) * 100 : 0;
-
-  return (
-    <div data-testid="block-row" className={`px-3 sm:px-4 h-[52px] sm:h-[60px] flex items-center gap-3 hover:bg-primary-50/50 dark:hover:bg-primary-900/10 transition-colors ${isNew ? 'feed-item-new' : ''}`}>
-      <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 shrink-0">
-        <Box className="w-5 h-5" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <Link to={`/block/${block.number}`} className="font-mono text-sm sm:text-base text-primary hover:text-primary-600 transition-colors">
-            {block.number}
-          </Link>
-          <span className="text-neutral-400 text-xs hidden sm:inline"><LiveTimeAgo timestamp={block.timestamp} /></span>
-        </div>
-        <div className="text-xs sm:text-sm text-neutral-500 font-mono">
-          {formatHash(block.hash, 10)}
-        </div>
-      </div>
-      <div className="text-right text-xs sm:text-sm shrink-0">
-        <div className="text-neutral-700">{block.transactionCount} txns</div>
-        <div className="flex items-center gap-1.5 justify-end">
-          <span className="text-neutral-500">{formatGasCompact(block.gasUsed)}</span>
-          <div className="w-12 h-1.5 bg-neutral-200 rounded-full overflow-hidden hidden sm:block">
-            <div
-              className="h-full bg-blue-500 rounded-full transition-all"
-              style={{ width: `${Math.min(gasPercent, 100)}%` }}
-            />
-          </div>
-          <span className="text-neutral-400 text-xs">{gasPercent.toFixed(0)}%</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Transaction type display config
-const TX_TYPE_CONFIG: Record<TxCategory, { label: string; icon: React.ReactNode; bgColor: string; textColor: string }> = {
-  system_transaction: {
-    label: 'System',
-    icon: <Shield className="w-5 h-5" />,
-    bgColor: 'bg-neutral-100',
-    textColor: 'text-neutral-400',
-  },
-  contract_creation: {
-    label: 'Contract Creation',
-    icon: <FilePlus className="w-5 h-5" />,
-    bgColor: 'bg-purple-50 dark:bg-purple-900/20',
-    textColor: 'text-purple-600 dark:text-purple-400',
-  },
-  contract_call: {
-    label: 'Contract Call',
-    icon: <FileCode className="w-5 h-5" />,
-    bgColor: 'bg-blue-50 dark:bg-blue-900/20',
-    textColor: 'text-blue-600 dark:text-blue-400',
-  },
-  token_transfer: {
-    label: 'Token Transfer',
-    icon: <Coins className="w-5 h-5" />,
-    bgColor: 'bg-orange-50 dark:bg-orange-900/20',
-    textColor: 'text-orange-600 dark:text-orange-400',
-  },
-  coin_transfer: {
-    label: 'Coin Transfer',
-    icon: <ArrowRightLeft className="w-5 h-5" />,
-    bgColor: 'bg-green-50 dark:bg-green-900/20',
-    textColor: 'text-green-600 dark:text-green-400',
-  },
-};
-
-const DEFAULT_TX_CONFIG = {
-  label: 'Transfer',
-  icon: <ArrowRightLeft className="w-5 h-5" />,
-  bgColor: 'bg-neutral-100',
-  textColor: 'text-neutral-500',
-};
-
-// Get icon and colors based on transaction type (priority order)
-function getTxTypeConfig(categories?: TxCategory[]) {
-  if (!categories || categories.length === 0) {
-    return DEFAULT_TX_CONFIG;
-  }
-
-  // Priority: contract_creation > contract_call > token_transfer > coin_transfer
-  const priority: TxCategory[] = ['system_transaction', 'contract_creation', 'contract_call', 'token_transfer', 'coin_transfer'];
-  for (const cat of priority) {
-    if (categories.includes(cat)) {
-      return TX_TYPE_CONFIG[cat];
-    }
-  }
-
-  return DEFAULT_TX_CONFIG;
-}
-
-function TxRowSkeleton() {
-  return (
-    <div className="px-3 sm:px-4 h-[52px] sm:h-[60px] flex items-center gap-3">
-      <Skeleton className="h-9 w-9 rounded-lg shrink-0" />
-      <div className="min-w-0 flex-1 space-y-1.5">
-        <Skeleton className="h-4 w-32" />
-        <Skeleton className="h-3 w-40" />
-      </div>
-      <div className="text-right shrink-0 space-y-1.5">
-        <Skeleton className="h-3 w-20 ml-auto" />
-        <Skeleton className="h-3 w-14 ml-auto" />
-      </div>
-    </div>
-  );
+  return <HomePresentation
+    search={<SearchBar variant="hero" />}
+    stats={stats ? <>
+      <HomeStatCard label="Total Blocks" value={stats.totalBlocks?.toLocaleString() ?? '-'} icon={<Boxes className="w-5 h-5" />} color="blue" />
+      <HomeStatCard label="Total Transactions" value={stats.totalTransactions?.toLocaleString() ?? '-'} icon={<ArrowLeftRight className="w-5 h-5" />} color="green" />
+      <HomeStatCard label="Total Addresses" value={stats.totalAddresses?.toLocaleString() ?? '-'} icon={<Users className="w-5 h-5" />} color="purple" />
+      <HomeStatCard label="Avg Block Time" value={stats.avgBlockTime ? `${stats.avgBlockTime.toFixed(2)}s` : '-'} icon={<Clock className="w-5 h-5" />} color="amber" />
+    </> : <>{Array.from({length:4},(_,i)=><HomeStatCardSkeleton key={i} />)}</>}
+    chart={features().charts ? <TransactionHistoryChart /> : undefined}
+    blocks={<>{blocks?.data?.map(block=><HomeBlockRow key={block.number} block={block} isNew={newBlocks.has(block.number)} />)}{!blocks && Array.from({length:10},(_,i)=><HomeFeedSkeleton key={i} />)}{blocks && !blocks.data?.length && <div className="px-4 py-8 text-center text-neutral-400">No blocks yet</div>}</>}
+    transactions={<>{txs?.data?.map(tx=><TxRow key={tx.hash} tx={tx} isNew={newTxs.has(tx.hash)} addressInfo={txs.addressInfo} />)}{!txs && Array.from({length:10},(_,i)=><HomeFeedSkeleton key={i} />)}{txs && !txs.data?.length && <div className="px-4 py-8 text-center text-neutral-400">No transactions yet</div>}</>}
+  />;
 }
 
 function TxRow({ tx, isNew, addressInfo }: { tx: Transaction; isNew: boolean; addressInfo?: Record<string, import('../lib/api').RowAddressInfo> }) {
-  const { icon, bgColor, textColor, label } = getTxTypeConfig(tx.txCategories);
   const fromReason = tx.addressMetadata?.[tx.from?.toLowerCase()];
   const toReason = tx.to ? tx.addressMetadata?.[tx.to.toLowerCase()] : undefined;
-  const fromInfo = addressInfo?.[tx.from?.toLowerCase()];
-  const toInfo = tx.to ? addressInfo?.[tx.to.toLowerCase()] : undefined;
-
-  return (
-    <div data-testid="tx-row" className={`px-3 sm:px-4 h-[52px] sm:h-[60px] flex items-center gap-3 hover:bg-primary-50/50 dark:hover:bg-primary-900/10 transition-colors ${isNew ? 'feed-item-new' : ''}`}>
-      <div className={`p-2 rounded-lg ${bgColor} ${textColor} shrink-0`}>
-        {icon}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <Link to={`/tx/${tx.hash}`} className="font-mono text-primary hover:text-primary-600 transition-colors text-xs sm:text-sm">
-            {formatHash(tx.hash, 10)}
-          </Link>
-          {tx.blockTimestamp && (
-            <span className="text-neutral-400 text-xs hidden sm:inline"><LiveTimeAgo timestamp={tx.blockTimestamp} /></span>
-          )}
-        </div>
-        <div className="text-xs sm:text-sm text-neutral-500 truncate">
-          <AddressLink address={tx.from} chars={8} className="text-neutral-500 hover:text-neutral-700" reason={fromReason} info={fromInfo} />
-          {tx.to && (
-            <>
-              {' → '}
-              <AddressLink address={tx.to} chars={8} className="text-neutral-500 hover:text-neutral-700" reason={toReason} info={toInfo} />
-            </>
-          )}
-        </div>
-      </div>
-      <div className="text-right text-xs sm:text-sm shrink-0">
-        <div className={`${textColor} font-medium`}>{label}</div>
-        <div className={tx.status === 1 ? 'text-success-600' : 'text-error-600'}>
-          {tx.status === 1 ? 'Success' : 'Failed'}
-        </div>
-      </div>
-    </div>
-  );
+  return <HomeTransactionRow tx={tx} isNew={isNew}
+    from={<AddressLink address={tx.from} chars={8} className="text-neutral-500 hover:text-neutral-700" reason={fromReason} info={addressInfo?.[tx.from?.toLowerCase()]} />}
+    to={tx.to ? <AddressLink address={tx.to} chars={8} className="text-neutral-500 hover:text-neutral-700" reason={toReason} info={addressInfo?.[tx.to.toLowerCase()]} /> : undefined}
+  />;
 }

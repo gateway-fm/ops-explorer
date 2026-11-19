@@ -2,12 +2,18 @@ import { getConfig } from './runtimeConfig';
 
 export const isV2 = () => import.meta.env.VITE_AUTH_PROTOCOL === 'ops-v2' || getConfig('VITE_AUTH_PROTOCOL') === 'ops-v2';
 export interface AppIdentity { actor: string; profile: string; activation: string; expires: number }
-export interface SessionState { identity: AppIdentity | null; loading: boolean; changed: boolean; error: string | null }
+export interface OwnOrganization { id:string; slug:string; name:string; isOrgAdmin:boolean; isOrgReadonlyAdmin:boolean }
+export interface OwnSelf { actorId:string; principalKind:string; sourceProfile:string; sourceProfileDigest:string; expiresAt:number; organizations:OwnOrganization[] }
+export interface NativeRPCRequest { jsonrpc:'2.0'; id:string|number; method:string; params:unknown[] }
+export interface NativeRPCResponse { jsonrpc:'2.0'; id:string|number; result?:unknown; error?:{code:number;message:string;data?:unknown} }
+export interface SessionState { identity: AppIdentity | null; loading: boolean; changed: boolean; error: string | null; reason?: 'expired' }
 export interface AppOperation {
   readonly identity: Readonly<AppIdentity>;
   readonly signal: AbortSignal;
   check(): void;
   request<T>(endpoint: string, options?: RequestInit): Promise<T>;
+  self(): Promise<OwnSelf>;
+  rpc(organization: string, request: NativeRPCRequest): Promise<NativeRPCResponse>;
   dispose(): void;
 }
 export class WalletHTTPError extends Error {
@@ -17,7 +23,7 @@ export class WalletHTTPError extends Error {
 export class ReadHTTPError extends Error {
   readonly status: number;
   readonly code: string;
-  constructor(status: number, code: string) { super(code === 'cursor_stale' ? 'The page belongs to an older session or data revision. Start again from the first page.' : code === 'too_broad' ? 'This request is too broad. Narrow the filters and try again.' : code === 'denied' ? 'Your current permissions do not allow this read.' : code === 'not_found' ? 'This record is unavailable.' : 'Private data is temporarily unavailable.'); this.status = status; this.code = code; }
+  constructor(status: number, code: string) { super(code === 'invalid_request' ? 'Check the request filters and values, then try again.' : code === 'history_pruned' ? 'Older history has been pruned. Start from the first page or choose a newer range.' : code === 'cursor_stale' ? 'The page belongs to an older session or data revision. Start again from the first page.' : code === 'too_broad' ? 'This request is too broad. Narrow the filters and try again.' : code === 'denied' ? 'Your current permissions do not allow this read.' : code === 'not_found' ? 'This record is unavailable.' : 'Private data is temporarily unavailable.'); this.status = status; this.code = code; }
 }
 export class DisclosureHTTPError extends Error {
   readonly status: number;
@@ -59,7 +65,7 @@ function disclosureEndpoint(endpoint: string, method: string): boolean {
   return true;
 }
 function readFailure(raw: string): string | null {
-  try { const v: unknown = JSON.parse(raw); if (!v || typeof v !== 'object' || Array.isArray(v) || Object.keys(v).join() !== 'error') return null; const e = (v as { error: unknown }).error; if (!e || typeof e !== 'object' || Array.isArray(e) || Object.keys(e).join() !== 'code') return null; const code = (e as { code: unknown }).code; return typeof code === 'string' && ['invalid_request', 'unauthenticated', 'denied', 'not_found', 'cursor_stale', 'too_broad', 'unavailable'].includes(code) ? code : null; } catch { return null; }
+  try { const v: unknown = JSON.parse(raw); if (!v || typeof v !== 'object' || Array.isArray(v) || Object.keys(v).join() !== 'error') return null; const e = (v as { error: unknown }).error; if (!e || typeof e !== 'object' || Array.isArray(e) || Object.keys(e).join() !== 'code') return null; const code = (e as { code: unknown }).code; return typeof code === 'string' && ['invalid_request', 'unauthenticated', 'denied', 'not_found', 'cursor_stale', 'history_pruned', 'too_broad', 'unavailable'].includes(code) ? code : null; } catch { return null; }
 }
 const walletEndpoint = (path: string) => /^\/eth\/(?:addresses(?:\/0x[0-9a-f]{40})?|link\/(?:challenge|verify))$/.test(path);
 async function boundedBody(response: Response, max: number, check: () => void): Promise<string> {
@@ -134,14 +140,14 @@ export class AppSession {
   subscribe = (f: () => void) => { this.listeners.add(f); return () => { this.listeners.delete(f); }; };
   onClear(f: () => void) { this.clearPrivate = f; }
   private publish(next: SessionState) { this.state = next; this.listeners.forEach(f => f()); }
-  private clear(changed = false, error: string | null = null) {
+  private clear(changed = false, error: string | null = null, reason?: 'expired') {
     ++this.epoch; ++this.operation;
     // Capture before abort/subscription/query callbacks can start another owner.
     const owner = { epoch: this.epoch, operation: this.operation };
     for (const request of this.requests) request.abort(); this.requests.clear();
     this.retireScopes();
     // Unmount first, then clear data/cursors before a new identity is published.
-    this.publish({ identity: null, loading: false, changed, error });
+    this.publish({ identity: null, loading: false, changed, error, ...(reason ? {reason} : {}) });
     this.clearPrivate();
     return owner;
   }
@@ -160,6 +166,31 @@ export class AppSession {
         check();
         if (!walletEndpoint(endpoint)) throw Error('Invalid wallet endpoint');
         return this.scopedRequest<T>(endpoint, { ...options, signal: AbortSignal.any([abort.signal, ...(options.signal ? [options.signal] : [])]) }, check, 1 << 20);
+      },
+      self: async () => {
+        check();
+        const raw = await this.scopedRequest<unknown>('/v2/self', {method:'GET',signal:AbortSignal.any([abort.signal,AbortSignal.timeout(25000)])},check,512<<10,'native');
+        check();
+        if (!raw || typeof raw!=='object' || Array.isArray(raw)) throw Error('Invalid own identity');
+        const value=raw as OwnSelf;
+        if (!exactKeys(value,['actorId','principalKind','sourceProfile','sourceProfileDigest','expiresAt','organizations']) || value.actorId!==identity!.actor || value.sourceProfile!==identity!.profile || typeof value.principalKind!=='string' || !/^sha256:[0-9a-f]{64}$/.test(value.sourceProfileDigest) || !Number.isSafeInteger(value.expiresAt) || value.expiresAt<=this.now() || !Array.isArray(value.organizations) || value.organizations.length>256) throw Error('Invalid own identity');
+        const seen=new Set<string>();
+        for (const org of value.organizations) {
+          if (!org || !exactKeys(org,['id','slug','name','isOrgAdmin','isOrgReadonlyAdmin']) || !validUUID(org.id) || seen.has(org.id) || typeof org.slug!=='string' || typeof org.name!=='string' || typeof org.isOrgAdmin!=='boolean' || typeof org.isOrgReadonlyAdmin!=='boolean') throw Error('Invalid own organizations');
+          seen.add(org.id);
+        }
+        return value;
+      },
+      rpc: async (organization: string, request: NativeRPCRequest) => {
+        check();
+        const id=request.id;
+        if (!validUUID(organization) || !exactKeys(request,['jsonrpc','id','method','params']) || request.jsonrpc!=='2.0' || !(typeof id==='string' && id.length<=128 && !/[\u0000-\u001f\u007f]/.test(id) || typeof id==='number' && Number.isSafeInteger(id)) || !['eth_call','eth_estimateGas','eth_chainId','net_version','eth_getTransactionCount','eth_gasPrice','eth_maxPriorityFeePerGas','eth_feeHistory','eth_getTransactionReceipt','eth_getTransactionByHash','eth_getBlockByNumber','eth_getBalance','eth_getCode'].includes(request.method) || !Array.isArray(request.params) || request.params.length>16) throw Error('Invalid native RPC request');
+        const body=JSON.stringify(request);
+        if(new TextEncoder().encode(body).length>(256<<10))throw Error('RPC request is too large');
+        const value=await this.scopedRequest<NativeRPCResponse>('/v2/rpc/'+organization,{method:'POST',headers:{'Content-Type':'application/json'},body,signal:AbortSignal.any([abort.signal,AbortSignal.timeout(25000)])},check,2<<20,'native');
+        check();
+        if(!value || !exactKeys(value,['jsonrpc','id','result','error']) || value.jsonrpc!=='2.0' || value.id!==id || Object.hasOwn(value,'result')===Object.hasOwn(value,'error') || value.error && (!Number.isSafeInteger(value.error.code) || typeof value.error.message!=='string'))throw Error('Invalid native RPC response');
+        return value;
       },
       dispose: () => { abort.abort(); this.scopes.delete(abort); },
     });
@@ -268,9 +299,9 @@ export class AppSession {
     const headers = new Headers(options.headers); if (method === 'POST') headers.set('Content-Type', 'application/json');
     return this.scopedRequest<T>(endpoint, { ...options, method, headers }, undefined, 2 << 20, 'disclosure');
   }
-  private async scopedRequest<T>(endpoint: string, options: RequestInit, operationCheck?: () => void, maxBytes?: number, mode?: 'read' | 'disclosure'): Promise<T> {
+  private async scopedRequest<T>(endpoint: string, options: RequestInit, operationCheck?: () => void, maxBytes?: number, mode?: 'read' | 'disclosure' | 'native'): Promise<T> {
     const identity = this.state.identity, epoch = this.epoch;
-    if (!this.live || !identity || identity.expires <= this.now()) { this.clear(false); throw Error('Sign in required'); }
+    if (!this.live || !identity || identity.expires <= this.now()) { this.clear(false, null, identity && identity.expires <= this.now() ? 'expired' : undefined); throw Error('Sign in required'); }
     const notice = this.captureNotice();
     if (!notice || !this.current(epoch, identity.activation)) throw Error('App context changed');
     const owner = { epoch, operation: this.operation };
@@ -303,7 +334,7 @@ export class AppSession {
         if (/^\s*\{\s*"error"\s*:\s*"wallet state conflict"\s*\}\s*$/.test(raw)) throw new WalletHTTPError(409);
       }
       if (res.status === 409 || res.status === 401) { this.clear(res.status === 409); throw Error('App context changed'); }
-      if (!res.ok && maxBytes) { const raw = await boundedBody(res, 1024, check); check(); if (mode === 'read') throw new ReadHTTPError(res.status, readFailure(raw) ?? 'unavailable'); if (mode === 'disclosure') throw new DisclosureHTTPError(res.status); throw new WalletHTTPError(res.status); }
+      if (!res.ok && maxBytes) { const raw = await boundedBody(res, 1024, check); check(); if (mode === 'read') throw new ReadHTTPError(res.status, readFailure(raw) ?? 'unavailable'); if (mode === 'native') throw Error(res.status===403?'Your current permissions do not allow this request.':'The contract request could not be completed.'); if (mode === 'disclosure') throw new DisclosureHTTPError(res.status); throw new WalletHTTPError(res.status); }
       if (!res.ok) throw Error(`API error: ${res.status}`);
       const value: unknown = maxBytes ? JSON.parse(await boundedBody(res, maxBytes, check)) : await res.json();
       check();
@@ -357,7 +388,7 @@ export class AppSession {
       window.location.assign(destination.href);
     } finally { this.fence(owner, notice); }
   }
-  expire() { if (this.state.identity && this.state.identity.expires <= this.now()) this.clear(); }
+  expire() { if (this.state.identity && this.state.identity.expires <= this.now()) this.clear(false, null, 'expired'); }
   tick() {
     const identity = this.state.identity;
     if (this.live && identity && identity.expires > this.now() && identity.expires <= this.now() + 5 && this.renewalAttempted !== identity.activation && document.visibilityState === 'visible') {

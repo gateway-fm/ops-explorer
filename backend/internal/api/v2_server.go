@@ -67,6 +67,12 @@ func NewV2(session *authv2.Service, provider *V2ReadClient, port int) (*Server, 
 		})
 	}
 	s.router.Group(func(r chi.Router) { r.Use(v2ReadDeadline); r.Use(session.Protected); s.setupV2ReadRoutes(r) })
+	s.router.Group(func(r chi.Router) {
+		r.Use(v2ReadDeadline)
+		r.Use(session.Protected)
+		r.Get("/api/v2/self", s.handleV2NativeSelf)
+		r.Post("/api/v2/rpc/{org}", s.handleV2NativeRPC)
+	})
 	return s, nil
 }
 

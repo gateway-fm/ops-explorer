@@ -1,7 +1,10 @@
 export const disclosureResources = ['addresses', 'transactions', 'activity_logs', 'activity_summary', 'sanctions_report', 'compliance_report'] as const;
 export type DisclosureResource = typeof disclosureResources[number];
+// Standing-rule metadata also declares Events. The protected-data API has no
+// Events reader, so this is deliberately not a DisclosureResource action.
+export type DisclosureScopeResource = DisclosureResource | 'events';
 export type DisclosureLevel = 'redacted' | 'pseudonymous' | 'full';
-export interface DisclosureScope { targetActors: string[]; resources: DisclosureResource[]; addresses: { mode: 'all-target-addresses' | 'list'; values: string[] }; dataTime: { start: number; end: number }; level: DisclosureLevel }
+export interface DisclosureScope { targetActors: string[]; resources: DisclosureScopeResource[]; addresses: { mode: 'all-target-addresses' | 'list'; values: string[] }; dataTime: { start: number; end: number }; level: DisclosureLevel }
 export interface DisclosureCase { caseId: string; ruleId: string; recipientActorId: string; creatorActorId: string; dataOrganizationId: string; scope: DisclosureScope; caseReference: string; purpose: string; legalBasis: string; status: 'open' | 'revoked'; version: number; createdAt: number; expiresAt: number }
 export interface CasePage { items: DisclosureCase[]; nextCursor: string; scanComplete: boolean }
 export interface DataAddress { addressId: string; display: string; address?: string; isMine?: boolean }
@@ -35,7 +38,7 @@ function pattern(value: unknown, re: RegExp, max: number): string { const s = te
 function scope(value: unknown): DisclosureScope {
   const v = object(value), addresses = object(v.addresses), time = object(v.dataTime);
   if (addresses.mode !== 'all-target-addresses' && addresses.mode !== 'list') return invalid();
-  const out: DisclosureScope = { targetActors: list(v.targetActors, 256, actor), resources: list(v.resources, 6, resource), addresses: { mode: addresses.mode, values: list(addresses.values, 1024, item => pattern(item, addressPattern, 42)) }, dataTime: { start: integer(time.start), end: integer(time.end) }, level: level(v.level) };
+  const out: DisclosureScope = { targetActors: list(v.targetActors, 256, actor), resources: list(v.resources, 7, item => item === 'events' ? 'events' : resource(item)), addresses: { mode: addresses.mode, values: list(addresses.values, 1024, item => pattern(item, addressPattern, 42)) }, dataTime: { start: integer(time.start), end: integer(time.end) }, level: level(v.level) };
   if (!out.targetActors.length || !out.resources.length || out.dataTime.start > out.dataTime.end) return invalid(); return out;
 }
 export function parseDisclosureCase(value: unknown): DisclosureCase {
