@@ -74,3 +74,33 @@ func TestV2DisclosureRejectsLegacyAndAmbiguousInputs(t *testing.T) {
 		}
 	}
 }
+
+func TestV2DisclosureEventsUsesExistingBoundedReadForwarding(t *testing.T) {
+	const id = "11111111-1111-4111-8111-111111111111"
+	const raw = `{"v":1,"resource":"events","view":"list","limit":25,"cursor":"opaque-events-cursor","targetActorIds":["ops:p1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"],"dataTime":{"start":1900000000,"end":1900000100}}`
+	for _, prefix := range []string{"/api", "/api/v1", "/api/v2"} {
+		request := httptest.NewRequest("POST", prefix+"/disclosure/cases/"+id+"/read", strings.NewReader(raw))
+		request.Header.Set("Content-Type", "application/json")
+		method, path, body, err := disclosureOperation(request)
+		if err != nil || method != "POST" || path != "/api/v1/disclosure/cases/"+id+"/read" || string(body) != raw {
+			t.Fatalf("lost exact Events case request: %q %q %q %v", method, path, body, err)
+		}
+	}
+	for _, input := range []struct{ path, body, media, encoding string }{
+		{"/api/disclosure/cases/" + id + "/read?resource=events", raw, "application/json", ""},
+		{"/api/grant/" + id + "/events", raw, "application/json", ""},
+		{"/api/disclosure/cases/" + id + "/read", raw, "text/plain", ""},
+		{"/api/disclosure/cases/" + id + "/read", raw, "application/json", "gzip"},
+		{"/api/disclosure/cases/" + id + "/read", `{"v":1,`, "application/json", ""},
+		{"/api/disclosure/cases/" + id + "/read", strings.Repeat(" ", disclosureRequestLimit+1), "application/json", ""},
+	} {
+		request := httptest.NewRequest("POST", input.path, strings.NewReader(input.body))
+		request.Header.Set("Content-Type", input.media)
+		if input.encoding != "" {
+			request.Header.Set("Content-Encoding", input.encoding)
+		}
+		if _, _, _, err := disclosureOperation(request); err == nil {
+			t.Fatalf("accepted invalid Events forwarding input %q %q", input.path, input.media)
+		}
+	}
+}

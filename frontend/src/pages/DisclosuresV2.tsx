@@ -5,9 +5,11 @@ import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent, type
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { appSession } from '../lib/v2Session';
 import { ownWallets, type OwnWallet } from '../lib/v2Wallet';
-import { disclosureResources, displayDisclosureTime, parseCasePage, parseDisclosureCase, parseDisclosureData, type CasePage, type DataActivity, type DataAddress, type DataCompliance, type DataEnvelope, type DataPage, type DataSanctions, type DataSummary, type DataTransaction, type DisclosureCase, type DisclosureLevel, type DisclosureResource } from '../lib/v2Disclosure';
+import { disclosureResources, displayDisclosureTime, parseCasePage, parseDisclosureCase, parseDisclosureData, type CasePage, type DataActivity, type DataAddress, type DataCompliance, type DataEvent, type DataFinancePage, type DataEnvelope, type DataPage, type DataSanctions, type DataSummary, type DataTransaction, type DisclosureCase, type DisclosureLevel, type DisclosureResource } from '../lib/v2Disclosure';
 
-const labels: Record<DisclosureResource, string> = { addresses: 'Addresses', transactions: 'Transactions', activity_logs: 'Activity', activity_summary: 'Activity summary', sanctions_report: 'Sanctions', compliance_report: 'Compliance' };
+import { readNarrowing } from '../lib/v2DisclosureFinance';
+
+const labels: Record<DisclosureResource, string> = { addresses: 'Addresses', transactions: 'Transactions', activity_logs: 'Activity', activity_summary: 'Activity summary', sanctions_report: 'Sanctions', compliance_report: 'Compliance', events: 'Events' };
 function failure(error: unknown): string { return error instanceof Error ? error.message : 'The request did not complete. Refresh before trying again.'; }
 function useIdentity() { return useSyncExternalStore(appSession.subscribe, appSession.snapshot).identity; }
 function useRemote<T>(endpoint: string, parse: (value: unknown) => T, body?: string, wallet = false) {
@@ -47,7 +49,7 @@ function CreateCase({ onCreated }: { onCreated: () => void }) {
   const identity = useIdentity(), navigate = useNavigate(), ticket = useRef(0), attempt = useRef<{ signature: string; body: string }>(undefined);
   const now = Math.floor(Date.now() / 1000);
   const [rule, setRule] = useState(''), [targets, setTargets] = useState(''), [addresses, setAddresses] = useState(''), [reference, setReference] = useState(''), [purpose, setPurpose] = useState(''), [legal, setLegal] = useState('');
-  const [from, setFrom] = useState(localDate(now - 3600)), [through, setThrough] = useState(localDate(now)), [minutes, setMinutes] = useState(15), [selected, setSelected] = useState<DisclosureResource[]>([...disclosureResources]), [level, setLevel] = useState<DisclosureLevel>('pseudonymous');
+  const [from, setFrom] = useState(localDate(now - 3600)), [through, setThrough] = useState(localDate(now)), [minutes, setMinutes] = useState(15), [selected, setSelected] = useState<DisclosureResource[]>(disclosureResources.filter(resource => resource !== 'events')), [level, setLevel] = useState<DisclosureLevel>('pseudonymous');
   const [busy, setBusy] = useState(false), [error, setError] = useState<string>();
   useEffect(() => () => { ++ticket.current; }, []);
   const submit = async (event: FormEvent) => {
@@ -75,6 +77,7 @@ function CreateCase({ onCreated }: { onCreated: () => void }) {
     <label className="block text-sm font-medium text-neutral-700">Legal basis<input required maxLength={1024} value={legal} onChange={e => setLegal(e.target.value)} className="input mt-1" /></label>
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3"><label>From (local time)<input required type="datetime-local" value={from} onChange={e => setFrom(e.target.value)} className="input mt-1" /></label><label>Through (local time)<input required type="datetime-local" value={through} onChange={e => setThrough(e.target.value)} className="input mt-1" /></label><label>Case expires in minutes<input required type="number" min={1} max={43200} value={minutes} onChange={e => setMinutes(Number(e.target.value))} className="input mt-1" /></label></div>
     <fieldset><legend>Data</legend><div className="flex flex-wrap gap-4">{disclosureResources.map(r => <label key={r}><input type="checkbox" checked={selected.includes(r)} onChange={e => setSelected(old => e.target.checked ? [...old, r] : old.filter(x => x !== r))} /> {labels[r]}</label>)}</div></fieldset>
+    {selected.includes('events') && <p className="text-neutral-500">Events needs explicit authority in the approved rule and case. It covers same-organization emitters in transactions whose sender or recipient is a target wallet. {level === 'full' ? 'Full Events reveals the whole event payload and may include other parties’ data.' : 'Topics, raw data and hashes will be withheld.'}</p>}
     <label>Detail level<select value={level} onChange={e => setLevel(e.target.value as DisclosureLevel)} className="input mt-1"><option value="redacted">Redacted</option><option value="pseudonymous">Pseudonymous</option><option value="full">Full</option></select></label>
     {error && <p role="alert" className="rounded-lg border border-error-200 bg-error-50 p-3 text-sm text-error-700">{error}</p>}<button className="btn-primary" disabled={busy} type="submit">{busy ? 'Opening case…' : 'Open case'}</button>
   </form></details>;
@@ -94,8 +97,7 @@ function CasePanel({ caseId }: { caseId: string }) {
       <InfoRow label="Expires" value={displayDisclosureTime(result.data.expiresAt)} />
       <InfoRow label="Detail level" value={result.data.scope.level} />
     </div></DisclosurePanelPresentation>
-    <div className="flex flex-wrap gap-2" role="group" aria-label="Case data">{result.data.scope.resources.map(r => r === 'events' ? <button className="btn-secondary" key={r} disabled>Events — unavailable</button> : <button className={resource === r ? 'btn-primary' : 'btn-secondary'} aria-pressed={resource === r} key={r} disabled={result.data?.status !== 'open'} onClick={() => setResource(r)}>{labels[r]}</button>)}<button className="btn-secondary" onClick={() => { setResource(undefined); result.reload(); }}>Refresh case</button></div>
-    {result.data.scope.resources.includes('events') && <p className="text-sm text-neutral-500">Protected event reads are unavailable in the current API.</p>}
+    <div className="flex flex-wrap gap-2" role="group" aria-label="Case data">{result.data.scope.resources.map(r => <button className={resource === r ? 'btn-primary' : 'btn-secondary'} aria-pressed={resource === r} key={r} disabled={result.data?.status !== 'open'} onClick={() => setResource(r)}>{labels[r]}</button>)}<button className="btn-secondary" onClick={() => { setResource(undefined); result.reload(); }}>Refresh case</button></div>
     {resource && <ResourcePanel key={resource + result.data.version} record={result.data} resource={resource} />}
     <CaseAudit caseId={caseId} />
     {result.data.status === 'open' && <details className="card p-5"><summary className="cursor-pointer font-medium text-error-600">Revoke this case</summary><div className="mt-4 space-y-3"><p className="text-sm text-neutral-500">Revocation ends access through this case.</p><label className="block text-sm font-medium text-neutral-700">Revocation reason<input className="input mt-1" aria-label="Revocation reason" value={reason} maxLength={1024} onChange={e => setReason(e.target.value)} /></label><button className="btn-secondary text-error-600" disabled={busy || !reason.trim()} onClick={() => void revoke()}>Revoke case</button>{error && <p role="alert" className="rounded-lg border border-error-200 bg-error-50 p-3 text-sm text-error-700">{error}</p>}</div></details>}
@@ -104,28 +106,76 @@ function CasePanel({ caseId }: { caseId: string }) {
 
 interface ParsedRead { display: DataEnvelope; raw: unknown }
 function ResourcePanel({ record, resource, addressId }: { record: DisclosureCase; resource: DisclosureResource; addressId?: string }) {
-  const [cursor, setCursor] = useState<string | null>(null), identity = useIdentity();
-  const view = ['addresses', 'transactions', 'activity_logs'].includes(resource) ? 'list' : 'report';
-  const body = JSON.stringify({ v: 1, resource, view, ...(view === 'list' ? { limit: 50, ...(cursor ? { cursor } : {}) } : {}), ...(addressId ? { addressId } : {}) });
-  const endpoint = addressId && resource === 'transactions' ? `/grant/${record.caseId}/${addressId}/transactions${query(cursor)}` : resource === 'activity_logs' ? `/grant/${record.caseId}/activity${query(cursor)}` : `/disclosure/cases/${record.caseId}/read`;
-  const result = useRemote<ParsedRead>(endpoint, raw => ({ display: parseDisclosureData(raw, record.caseId, resource), raw }), endpoint.includes('/grant/') ? undefined : body);
-  const data = result.data?.display, page = data && data.view === 'list' ? data.result as DataPage<DataAddress | DataTransaction | DataActivity> : null;
-  const download = () => { if (!result.data || !identity || appSession.snapshot().identity?.activation !== identity.activation) return; const blob = new Blob([JSON.stringify(result.data.raw, null, 2)], { type: 'application/json' }), url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = `disclosure-${record.caseId}-${resource}.json`; a.click(); URL.revokeObjectURL(url); };
-  return <section className="card p-5 space-y-3"><h3 className="text-lg font-medium">{labels[resource]}</h3><Status {...result} />{data && <><p>{data.coverage.status === 'RETAINED_AT_READ' ? 'These results cover retained records available when the request was prepared.' : 'These results cover recorded activity up to the selected audit snapshot.'} Prepared {displayDisclosureTime(data.coverage.preparedAt)}.</p>
+  const identity = useIdentity(), originalExpiry = useRef(identity?.expires ?? 0), revision = useRef(0), live = useRef(true), pending = useRef<AbortController | null>(null);
+  const [readView, setReadView] = useState<'list' | 'report'>(['addresses', 'transactions', 'activity_logs', 'events'].includes(resource) ? 'list' : 'report');
+  const [target, setTarget] = useState(''), [from, setFrom] = useState(''), [through, setThrough] = useState('');
+  const [state, setState] = useState<{ data?: ParsedRead; history: ParsedRead[]; index: number; trimmed: boolean; loading: boolean; error?: string }>({ history: [], index: 0, trimmed: false, loading: false });
+  const clear = () => { ++revision.current; pending.current?.abort(); setState({ history: [], index: 0, trimmed: false, loading: false }); };
+  const owned = () => !!identity && record.status === 'open' && record.recipientActorId === identity.actor && record.scope.resources.includes(resource) && appSession.snapshot().identity?.activation === identity.activation && appSession.snapshot().identity?.actor === identity.actor && Math.min(originalExpiry.current, record.expiresAt) > Date.now() / 1000;
+  const read = async (cursor = '', view = readView) => {
+    if (!owned()) { clear(); return; }
+    const current = ++revision.current, abort = new AbortController(); pending.current?.abort(); pending.current = abort;
+    setState(old => ({ ...old, data: undefined, loading: true, error: undefined, ...(!cursor ? { history: [], index: 0, trimmed: false } : {}) }));
+    try {
+      const narrowed = readNarrowing(record.scope, target, from, through);
+      const body = JSON.stringify({ v: 1, resource, view, ...(view === 'list' ? { limit: 50, ...(cursor ? { cursor } : {}) } : {}), ...(addressId ? { addressId } : {}), ...narrowed.body });
+      const endpoint = addressId && resource === 'transactions' ? `/grant/${record.caseId}/${addressId}/transactions${query(cursor || null)}` : resource === 'activity_logs' ? `/grant/${record.caseId}/activity${query(cursor || null)}` : `/disclosure/cases/${record.caseId}/read`;
+      const raw = await appSession.disclosure<unknown>(endpoint, endpoint.includes('/grant/') ? { signal: abort.signal } : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: abort.signal });
+      if (!live.current || current !== revision.current) return;
+      if (!owned()) { clear(); return; }
+      const display = parseDisclosureData(raw, record.caseId, resource, { record, view, dataTime: narrowed.dataTime, limit: 50, sessionExpiresAt: originalExpiry.current });
+      const data = { raw, display }, history = cursor ? [...state.history.slice(0, state.index + 1), data] : [data];
+      setState({ data, history: history.slice(-10), index: Math.min(history.length, 10) - 1, trimmed: history.length > 10 || !!cursor && state.trimmed, loading: false });
+    } catch (error) {
+      if (live.current && current === revision.current) setState({ history: [], index: 0, trimmed: false, loading: false, error: failure(error) });
+    }
+  };
+  useEffect(() => { live.current = true; void read(); return () => { live.current = false; ++revision.current; pending.current?.abort(); }; }, []);
+  useEffect(() => {
+    if (!state.history.length) return;
+    const deadline = Math.min(originalExpiry.current, record.expiresAt, ...state.history.map(page => page.display.effectiveUntil));
+    const timer = setTimeout(clear, Math.min(2147483647, Math.max(1, deadline * 1000 - Date.now())));
+    return () => clearTimeout(timer);
+  }, [state.history, record.expiresAt]);
+  const cached = (index: number) => {
+    const data = state.history[index];
+    if (!owned() || !data || data.display.effectiveUntil <= Date.now() / 1000) { clear(); return; }
+    setState(old => ({ ...old, index, data }));
+  };
+  const data = state.data?.display, page = data?.view === 'list' ? data.result as DataPage<DataAddress | DataTransaction | DataActivity | DataEvent | DataFinancePage['items'][number]> : undefined;
+  const download = () => {
+    if (!state.data || !owned() || state.data.display.effectiveUntil <= Date.now() / 1000) { clear(); return; }
+    const blob = new Blob([JSON.stringify(state.data.raw, null, 2)], { type: 'application/json' }), url = URL.createObjectURL(blob), a = document.createElement('a');
+    try {
+      if (!owned() || state.data.display.effectiveUntil <= Date.now() / 1000) { clear(); return; }
+      a.href = url; a.download = `disclosure-${record.caseId}-${resource}-${data?.view === 'list' ? 'page' : 'summary'}.json`; a.click();
+    } finally { URL.revokeObjectURL(url); }
+  };
+  const narrow = resource === 'events' || resource === 'compliance_report';
+  return <section className="card p-5 space-y-3"><h3 className="text-lg font-medium">{resource === 'compliance_report' ? readView === 'list' ? 'Admission decisions' : 'Compliance summary report' : labels[resource]}</h3>
+    {resource === 'events' && <p className="text-sm text-neutral-500">Events from transactions covered by this case, emitted by contracts attributed to the data organization. This covers transactions whose sender or recipient is a target wallet; events mentioning a target only in their payload are outside this population. {record.scope.level === 'full' ? 'Full Events reveals the whole event payload and may include other parties’ data.' : 'Topics, raw data and hashes are withheld at this privacy level.'}</p>}
+    {resource === 'compliance_report' && <label>Compliance view<select aria-label="Compliance view" className="input mt-1" value={readView} disabled={state.loading} onChange={event => { clear(); const view = event.target.value as 'list' | 'report'; setReadView(view); void read('', view); }}><option value="report">Summary report</option><option value="list">Admission decisions</option></select></label>}
+    {narrow && <fieldset className="space-y-3 rounded-lg border border-neutral-200 p-3"><legend>Narrow this read</legend><div className="grid gap-3 sm:grid-cols-3"><label>Target actor<select aria-label="Target actor" className="input mt-1" value={target} onChange={event => { clear(); setTarget(event.target.value); }}><option value="">All targets in this case</option>{record.scope.targetActors.map(actor => <option key={actor} value={actor}>{actor}</option>)}</select></label><label>From (UTC, inclusive)<input aria-label="From (UTC, inclusive)" type="datetime-local" step="1" className="input mt-1" value={from} onChange={event => { clear(); setFrom(event.target.value); }} /></label><label>Through (UTC, inclusive)<input aria-label="Through (UTC, inclusive)" type="datetime-local" step="1" className="input mt-1" value={through} onChange={event => { clear(); setThrough(event.target.value); }} /></label></div><button className="btn-secondary" disabled={state.loading} onClick={() => void read()}>Read permitted data</button></fieldset>}
+    <Status {...state} />{data && <><p>{data.coverage.status === 'RETAINED_AT_READ' ? 'These results cover retained records available when the request was prepared.' : 'These results cover recorded activity up to the selected audit snapshot.'} Prepared {displayDisclosureTime(data.coverage.preparedAt)}. Available in this session until {displayDisclosureTime(Math.min(data.effectiveUntil, originalExpiry.current))}.</p>
     {resource === 'addresses' && page && <ul>{(page.items as DataAddress[]).map(a => <li key={a.addressId}><Link className="text-primary hover:underline break-all" to={`/disclosures/cases/${record.caseId}/addresses/${a.addressId}`}>{a.display}</Link>{a.isMine ? ' · Your wallet' : ''}</li>)}</ul>}
     {resource === 'transactions' && page && <Transactions rows={page.items as DataTransaction[]} record={record} addressId={addressId} />}
+    {resource === 'events' && page && <Events rows={page.items as DataEvent[]} />}
     {resource === 'activity_logs' && page && <Table headings={['Time', 'Method', 'Status', 'Actor']}>{(page.items as DataActivity[]).map(a => <tr key={a.recordId}><Cell>{displayDisclosureTime(a.time)}</Cell><Cell>{a.method}</Cell><Cell>{a.statusCode}</Cell><Cell>{a.actorId}</Cell></tr>)}</Table>}
     {resource === 'activity_summary' && <Summary data={data.result as DataSummary} />}
     {resource === 'sanctions_report' && <Sanctions data={data.result as DataSanctions} />}
-    {resource === 'compliance_report' && <Compliance data={data.result as DataCompliance} />}
-    {page && page.items.length === 0 && <p>No records on this page.</p>}
-    <div className="flex flex-wrap gap-2"><button className="btn-secondary" onClick={() => { setCursor(null); result.reload(); }}>Refresh results</button>{page && <button className="btn-secondary" disabled={!page.nextCursor} onClick={() => setCursor(page.nextCursor)}>Next page</button>}<button className="btn-secondary" onClick={download}>Download results</button></div>
+    {resource === 'compliance_report' && data.view === 'report' && <><Compliance data={data.result as DataCompliance} /><button className="btn-secondary" onClick={() => { clear(); setReadView('list'); void read('', 'list'); }}>View admission decisions</button></>}
+    {resource === 'compliance_report' && page && <><p>Matching retained admission decisions: <strong>{(data.result as DataFinancePage).matchingRetainedCount}</strong> as of <time>{(data.result as DataFinancePage).observedAt}</time>. Each page is a live retained read; counts can change.</p><Evidence rows={page.items as DataFinancePage['items']} /></>}
+    {page && page.items.length === 0 && <p>{resource === 'events' ? 'No eligible events on this page.' : 'No records on this page.'}</p>}
+    {page && <p className="text-xs text-neutral-500">{state.trimmed ? 'Earlier pages were released; the latest 10 pages are kept in this tab.' : 'Up to 10 loaded pages are kept in this tab until expiry.'} Previous shows an already loaded page.</p>}
+    <div className="flex flex-wrap gap-2"><button className="btn-secondary" onClick={() => void read()}>Refresh results</button>{page && <><button className="btn-secondary" disabled={state.index === 0} onClick={() => cached(state.index - 1)}>Previous page</button><button className="btn-secondary" disabled={!page.nextCursor && state.index + 1 >= state.history.length} onClick={() => { if (state.index + 1 < state.history.length) cached(state.index + 1); else if (page.nextCursor) void read(page.nextCursor); }}>{resource === 'events' && page.items.length === 0 ? 'Continue' : 'Next page'}</button></>}<button className="btn-secondary" onClick={download}>{page ? 'Download this page' : 'Download summary report'}</button></div>
   </>}</section>;
 }
+function Events({ rows }: { rows: DataEvent[] }) { return <Table headings={['Block', 'Transaction index', 'Log index', 'Time', 'Emitter', 'Payload']}>{rows.map(event => <tr key={event.eventId}><Cell>{event.blockNumber}</Cell><Cell>{event.transactionIndex}</Cell><Cell>{event.logIndex}</Cell><Cell>{displayDisclosureTime(event.blockTime)}</Cell><Cell>{event.emitter}</Cell><Cell>{event.payload === 'withheld' ? 'Payload withheld' : <details><summary className="cursor-pointer text-primary">Raw payload</summary><dl className="mt-2 space-y-2 text-xs"><dt>Transaction hash</dt><dd className="break-all font-mono">{event.transactionHash}</dd><dt>Block hash</dt><dd className="break-all font-mono">{event.blockHash}</dd><dt>Topics</dt><dd>{event.topics?.length ? <ol>{event.topics.map((topic, i) => <li key={i} className="break-all font-mono">{topic}</li>)}</ol> : 'No topics'}</dd><dt>Data</dt><dd><pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all font-mono">{event.data}</pre></dd></dl></details>}</Cell></tr>)}</Table>; }
+function Evidence({ rows }: { rows: DataFinancePage['items'] }) { return <Table headings={['Time', 'Check', 'Decision', 'Mode', 'Coverage']}>{rows.map(e => <tr key={e.id}><Cell>{displayDisclosureTime(e.time)}</Cell><Cell>{e.kind}</Cell><Cell>{e.decision}</Cell><Cell>{e.monitored ? 'Monitor' : 'Enforce'}</Cell><Cell>{e.coverage}</Cell></tr>)}</Table>; }
 function Transactions({ rows, record, addressId }: { rows: DataTransaction[]; record: DisclosureCase; addressId?: string }) { return <Table headings={['Block', 'Time', 'From', 'To', 'Value', 'Status', '']}>{rows.map((t, i) => <tr key={t.transactionHash ?? `${t.blockNumber}:${t.transactionIndex}:${i}`}><Cell>{t.blockNumber}</Cell><Cell>{displayDisclosureTime(t.blockTime)}</Cell><Cell>{t.from}</Cell><Cell>{t.to ?? 'Contract creation'}</Cell><Cell>{t.value ?? 'Private'}</Cell><Cell>{t.status === 1 ? 'Success' : 'Failed'}</Cell><Cell>{(addressId || t.addressId) && t.transactionHash && record.scope.level === 'full' && <Link className="text-primary hover:underline" to={`/disclosures/cases/${record.caseId}/addresses/${addressId || t.addressId}/transactions/${t.transactionHash}`}>Details</Link>}</Cell></tr>)}</Table>; }
 function Summary({ data }: { data: DataSummary }) { return <><p>Total {data.total} · Successful {data.successful} · Failed {data.failed}</p><Table headings={['Method', 'Total', 'Successful', 'Failed']}>{data.methodBreakdown.map(m => <tr key={m.method}><Cell>{m.method}</Cell><Cell>{m.total}</Cell><Cell>{m.successful}</Cell><Cell>{m.failed}</Cell></tr>)}</Table></>; }
 function Sanctions({ data }: { data: DataSanctions }) { return <><p>{data.status === 'hit' ? 'Approved-list match found' : data.status === 'clear' ? 'No approved-list match in the checked addresses' : 'No eligible addresses to check'} · {data.scopedAddressCount} addresses · Checked {displayDisclosureTime(data.checkedAt)}</p><ul>{data.matches.map(m => <li key={m.sourceId}>{m.address.display}{m.reason ? ` · ${m.reason}` : ''}</li>)}</ul></>; }
-function Compliance({ data }: { data: DataCompliance }) { return <div className="space-y-3"><Summary data={data.activity} /><Sanctions data={data.sanctions} /><p>KYC: not evaluated by this report.</p><Table headings={['Time', 'Check', 'Decision', 'Mode', 'Coverage']}>{data.evidence.map(e => <tr key={e.id}><Cell>{displayDisclosureTime(e.time)}</Cell><Cell>{e.kind}</Cell><Cell>{e.decision}</Cell><Cell>{e.monitored ? 'Monitor' : 'Enforce'}</Cell><Cell>{e.coverage}</Cell></tr>)}</Table></div>; }
+function Compliance({ data }: { data: DataCompliance }) { return <div className="space-y-3"><Summary data={data.activity} /><Sanctions data={data.sanctions} /><p>KYC: not evaluated by this report.</p><p>Matching retained admission decisions: <strong>{data.finance.matchingRetainedCount}</strong> as of <time>{data.finance.observedAt}</time>. This summary includes aggregate counts. Open admission decisions to read individual records with these same filters.</p></div>; }
 function CaseAudit({ caseId }: { caseId: string }) { const [cursor, setCursor] = useState<string | null>(null), result = useRemote(`/disclosure/cases/${caseId}/audit${query(cursor)}`, value => { const v = value as { items: { eventId: string; time: number; action: string; outcome: string }[]; nextCursor: string }; if (!v || !Array.isArray(v.items) || v.items.length > 100 || typeof v.nextCursor !== 'string') throw Error('Invalid case history'); return v; }); return <details className="card p-5"><summary className="cursor-pointer font-medium text-primary">Case history</summary><Status {...result} />{result.data && <><Table headings={['Time', 'Action', 'Outcome']}>{result.data.items.map(e => <tr key={e.eventId}><Cell>{displayDisclosureTime(e.time)}</Cell><Cell>{e.action}</Cell><Cell>{e.outcome}</Cell></tr>)}</Table><button className="btn-secondary mt-3" disabled={!result.data.nextCursor} onClick={() => setCursor(result.data!.nextCursor)}>Next history page</button></>}</details>; }
 
 export function DisclosureAddressV2() { const identity = useIdentity(), { caseId = '', addressId = '' } = useParams(); return identity ? <AddressPanel key={identity.activation + caseId + addressId} caseId={caseId} addressId={addressId} /> : null; }

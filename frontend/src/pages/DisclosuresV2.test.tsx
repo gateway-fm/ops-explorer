@@ -25,7 +25,7 @@ describe('standing-rule case creation', () => {
     const details = await screen.findByRole('link', { name: 'Details' });
     expect(details.getAttribute('href')).toBe(`/disclosures/cases/${id}/addresses/${alias}/transactions/${hash}`);
     expect(screen.queryByRole('button', { name: 'Addresses' })).toBeNull();
-    if(resources.includes('events'))expect(screen.getByRole('button',{name:'Events — unavailable'})).toBeDisabled();
+    if(resources.includes('events'))expect(screen.getByRole('button',{name:'Events'})).toBeEnabled();
     expect(mock.disclosure.mock.calls.every(([, options])=>!options?.body||JSON.parse(String(options.body)).resource!=='events')).toBe(true);
   });
   it('supports rules restricted to named wallets and preserves the request after an uncertain result', async () => {

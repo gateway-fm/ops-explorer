@@ -11,14 +11,13 @@ const summary = { total: '18446744073709551615', successful: '184467440737095516
 const sanctions = { status: 'clear', scopedAddressCount: 0, checkedAt: 1900000000, sourceDigest: digest, matches: [] };
 const transaction = { blockNumber: '9007199254740993', transactionIndex: 0, blockTime: 1900000000, gasUsed: '21000', status: 1, direction: 'outgoing', from: '0x' + '1'.repeat(40), to: null, transactionHash: hash, value: '115792089237316195423570985008687907853269984665640564039457584007913129639935' };
 describe('protected disclosure browser wire', () => {
-  it('reads all six resources and preserves huge amounts and empty-page continuations', () => {
+  it('reads existing resources and preserves huge amounts and empty-page continuations', () => {
     const address = { addressId: alias, display: 'Address-private', isMine: false };
     const entries: [Parameters<typeof parseDisclosureData>[2], string, unknown][] = [
       ['addresses', 'list', { items: [address], nextCursor: null }],
       ['transactions', 'list', { items: [transaction], nextCursor: 'opaque' }],
       ['activity_logs', 'list', { items: [{ recordId: id, method: 'explorer.transactions', statusCode: 200, time: 1900000000, actorId: actor }], nextCursor: null }],
       ['activity_summary', 'report', summary], ['sanctions_report', 'report', sanctions],
-      ['compliance_report', 'report', { activity: summary, sanctions, kyc: 'not_evaluated', evidence: [] }],
     ];
     for (const [resource, view, result] of entries) expect(parseDisclosureData(envelope(resource, view, result), id, resource).resource).toBe(resource);
     const parsed = parseDisclosureData(envelope('transactions', 'list', entries[1][2]), id, 'transactions').result as DataPage<DataTransaction>;

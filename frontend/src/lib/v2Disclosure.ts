@@ -1,8 +1,9 @@
-export const disclosureResources = ['addresses', 'transactions', 'activity_logs', 'activity_summary', 'sanctions_report', 'compliance_report'] as const;
+import { validateEventsPage } from './v2DisclosureEvents';
+import { validateComplianceSummary, validateEvidencePage } from './v2DisclosureFinance';
+
+export const disclosureResources = ['addresses', 'transactions', 'activity_logs', 'activity_summary', 'sanctions_report', 'compliance_report', 'events'] as const;
 export type DisclosureResource = typeof disclosureResources[number];
-// Standing-rule metadata also declares Events. The protected-data API has no
-// Events reader, so this is deliberately not a DisclosureResource action.
-export type DisclosureScopeResource = DisclosureResource | 'events';
+export type DisclosureScopeResource = DisclosureResource;
 export type DisclosureLevel = 'redacted' | 'pseudonymous' | 'full';
 export interface DisclosureScope { targetActors: string[]; resources: DisclosureScopeResource[]; addresses: { mode: 'all-target-addresses' | 'list'; values: string[] }; dataTime: { start: number; end: number }; level: DisclosureLevel }
 export interface DisclosureCase { caseId: string; ruleId: string; recipientActorId: string; creatorActorId: string; dataOrganizationId: string; scope: DisclosureScope; caseReference: string; purpose: string; legalBasis: string; status: 'open' | 'revoked'; version: number; createdAt: number; expiresAt: number }
@@ -12,10 +13,13 @@ export interface DataTransaction { blockNumber: string; transactionIndex: number
 export interface DataActivity { recordId: string; method: string; statusCode: number; time: number; actorId?: string; ipAddress?: string }
 export interface DataSummary { total: string; successful: string; failed: string; methodBreakdown: { method: string; total: string; successful: string; failed: string }[] }
 export interface DataSanctions { status: 'clear' | 'hit' | 'not-applicable'; scopedAddressCount: number; checkedAt: number; matches: { address: DataAddress; sourceId: string; reason?: string }[] }
+export interface DataEvent { eventId: string; blockNumber: string; transactionIndex: number; logIndex: number; blockTime: number; emitter: string; payload: 'disclosed' | 'withheld'; transactionHash?: string; blockHash?: string; topics?: string[]; data?: string }
 export interface DataEvidence { id: string; time: number; kind: string; decision: string; monitored: boolean; coverage: string; transactionHash?: string; reason?: string }
-export interface DataCompliance { activity: DataSummary; sanctions: DataSanctions; kyc: 'not_evaluated'; evidence: DataEvidence[] }
+export interface DataCompliance { v: 2; activity: DataSummary; sanctions: DataSanctions; kyc: 'not_evaluated'; finance: { matchingRetainedCount: string; observedAt: string; coverage: 'RETAINED_AT_READ'; detailResource: 'compliance_report'; detailView: 'list' } }
+export interface DataFinancePage extends DataPage<DataEvidence> { v: 2; matchingRetainedCount: string; observedAt: string; pagination: 'live-keyset' }
+export interface DataEventsPage extends DataPage<DataEvent> { v: 1; population: 'EVENTS_FROM_DISCLOSED_TRANSACTIONS' }
 export interface DataPage<T> { items: T[]; nextCursor: string | null }
-export interface DataEnvelope { v: 1; readId: string; caseId: string; resource: DisclosureResource; view: 'list' | 'resolve' | 'detail' | 'report'; level: DisclosureLevel; effectiveUntil: number; coverage: { status: 'COMPLETE_AT_CUT' | 'RETAINED_AT_READ'; preparedAt: number }; result: DataPage<DataAddress | DataTransaction | DataActivity> | { item: DataAddress | DataTransaction } | DataSummary | DataSanctions | DataCompliance }
+export interface DataEnvelope { v: 1; readId: string; caseId: string; resource: DisclosureResource; view: 'list' | 'resolve' | 'detail' | 'report'; level: DisclosureLevel; effectiveUntil: number; dataTime?: { start: number; end: number }; coverage: { status: 'COMPLETE_AT_CUT' | 'RETAINED_AT_READ'; preparedAt: number }; result: DataPage<DataAddress | DataTransaction | DataActivity> | DataFinancePage | DataEventsPage | { item: DataAddress | DataTransaction } | DataSummary | DataSanctions | DataCompliance }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const actorPattern = /^ops:p1:[A-Za-z0-9_-]{43}$/;
@@ -61,18 +65,42 @@ function transaction(value: unknown, selected: DisclosureLevel, detail = false):
 function activity(value: unknown, selected: DisclosureLevel): DataActivity { const v = object(value); if (selected !== 'full' && (v.actorId !== undefined || v.ipAddress !== undefined)) return invalid(); return { recordId: identifier(v.recordId), method: text(v.method, 100), statusCode: integer(v.statusCode, 599), time: integer(v.time), actorId: optional(v.actorId, actor), ipAddress: optional(v.ipAddress, x => text(x, 45)) }; }
 function summary(value: unknown): DataSummary { const v = object(value); return { total: quantity(v.total), successful: quantity(v.successful), failed: quantity(v.failed), methodBreakdown: list(v.methodBreakdown, 512, item => { const m = object(item); return { method: text(m.method, 100), total: quantity(m.total), successful: quantity(m.successful), failed: quantity(m.failed) }; }) }; }
 function sanctions(value: unknown, selected: DisclosureLevel): DataSanctions { const v = object(value); if (v.status !== 'clear' && v.status !== 'hit' && v.status !== 'not-applicable') return invalid(); return { status: v.status, scopedAddressCount: integer(v.scopedAddressCount, 4096), checkedAt: integer(v.checkedAt), matches: list(v.matches, 4096, item => { const match = object(item); if (selected !== 'full' && match.reason !== undefined) return invalid(); return { address: address(match.address, selected), sourceId: identifier(match.sourceId), reason: optional(match.reason, x => text(x, 1 << 20)) }; }) }; }
-function compliance(value: unknown, selected: DisclosureLevel): DataCompliance { const v = object(value); if (v.kyc !== 'not_evaluated') return invalid(); return { activity: summary(v.activity), sanctions: sanctions(v.sanctions, selected), kyc: 'not_evaluated', evidence: list(v.evidence, 100, item => { const e = object(item); if (e.population !== 'ADMISSION_DECISION' || typeof e.monitored !== 'boolean' || selected !== 'full' && (e.transactionHash !== undefined || e.reason !== undefined || e.quote !== undefined || e.recordId !== undefined)) return invalid(); return { id: quantity(e.id), time: integer(e.time), kind: text(e.kind, 64), decision: text(e.decision, 16), monitored: e.monitored, coverage: text(e.coverage, 64), transactionHash: optional(e.transactionHash, x => pattern(x, hashPattern, 66)), reason: optional(e.reason, x => text(x, 2048)) }; }) }; }
-export function parseDisclosureData(value: unknown, caseId: string, expected: DisclosureResource): DataEnvelope {
+export interface ReadExpectation { record?: DisclosureCase; view?: DataEnvelope['view']; dataTime?: DisclosureScope['dataTime']; limit?: number; sessionExpiresAt?: number }
+export function parseDisclosureData(value: unknown, caseId: string, expected: DisclosureResource, options: ReadExpectation = {}): DataEnvelope {
   const v = object(value), selected = level(v.level), actual = resource(v.resource), coverage = object(v.coverage);
-  if (v.v !== 1 || v.caseId !== caseId || actual !== expected || !['list', 'resolve', 'detail', 'report'].includes(String(v.view))) return invalid();
-  const retained = ['addresses', 'transactions', 'sanctions_report', 'compliance_report'].includes(actual);
+  if (v.v !== 1 || v.caseId !== caseId || actual !== expected || !['list', 'resolve', 'detail', 'report'].includes(String(v.view)) || options.view && v.view !== options.view) return invalid();
+  const retained = ['addresses', 'transactions', 'sanctions_report', 'compliance_report', 'events'].includes(actual);
   if (retained ? coverage.status !== 'RETAINED_AT_READ' || coverage.sourceCutDigest !== undefined || !digestPattern.test(String(coverage.sourceBasisDigest)) : coverage.status !== 'COMPLETE_AT_CUT' || coverage.sourceBasisDigest !== undefined || !digestPattern.test(String(coverage.sourceCutDigest))) return invalid();
+  const until = integer(v.effectiveUntil), prepared = integer(coverage.preparedAt);
+  let dataTime: DisclosureScope['dataTime'] | undefined;
+  if (actual === 'events' || actual === 'compliance_report') {
+    const exact = (value: Record<string, unknown>, keys: string[]) => { if (Object.keys(value).length !== keys.length || keys.some(key => !Object.prototype.hasOwnProperty.call(value, key))) return invalid(); };
+    exact(v, ['v', 'readId', 'caseId', 'resource', 'view', 'level', 'dataTime', 'effectiveUntil', 'coverage', 'result']);
+    exact(coverage, ['status', 'populations', 'sourceBasisDigest', 'preparedAt']);
+    const time = object(v.dataTime); exact(time, ['start', 'end']);
+    dataTime = { start: integer(time.start), end: integer(time.end) };
+    if (dataTime.start > dataTime.end || prepared >= until) return invalid();
+    const populations = actual === 'events' ? ['CURRENT_PROVED_ASSOCIATIONS', 'RETAINED_SAME_ORG_EVENTS_FROM_DISCLOSED_TRANSACTIONS'] : v.view === 'list' ? ['RETAINED_ADMISSION_DECISIONS_AS_OF_SNAPSHOT'] : ['CURRENT_APPROVED_SANCTIONS', 'CURRENT_PROVED_ASSOCIATIONS', 'RETAINED_ADMISSION_DECISIONS_AS_OF_SNAPSHOT', 'RETAINED_AND_POSITIVELY_ATTRIBUTED_WALLET_HISTORY', 'SEALED_REQUEST_COMPLETIONS_AS_OF_CHAIN_HEAD'];
+    if (JSON.stringify(coverage.populations) !== JSON.stringify(populations)) return invalid();
+  }
+  if (options.record) {
+    const record = options.record, requested = options.dataTime ?? record.scope.dataTime;
+    if (record.caseId !== caseId || selected !== record.scope.level || !record.scope.resources.includes(actual) || until > record.expiresAt || until <= Date.now() / 1000 ||
+      dataTime && (dataTime.start !== requested.start || dataTime.end !== requested.end || dataTime.start < record.scope.dataTime.start || dataTime.end > record.scope.dataTime.end)) return invalid();
+  }
+  if (options.sessionExpiresAt !== undefined && (!Number.isSafeInteger(options.sessionExpiresAt) || options.sessionExpiresAt <= Date.now() / 1000)) return invalid();
   let result: DataEnvelope['result']; const body = object(v.result);
-  if (v.view === 'list') { const parse: (item: unknown) => DataAddress | DataTransaction | DataActivity = actual === 'addresses' ? (x: unknown) => address(x, selected) : actual === 'transactions' ? (x: unknown) => transaction(x, selected) : actual === 'activity_logs' ? (x: unknown) => activity(x, selected) : invalid(); result = { items: list(body.items, 100, parse), nextCursor: body.nextCursor === null ? null : text(body.nextCursor, 2048) }; }
+  if (actual === 'events' && v.view === 'list') {
+    validateEventsPage(body, selected, dataTime!, options.limit ?? 100); result = body as unknown as DataEventsPage;
+  } else if (actual === 'compliance_report') {
+    if (v.view === 'list') { validateEvidencePage(body, selected, dataTime!, options.limit ?? 100, prepared); result = body as unknown as DataFinancePage; }
+    else if (v.view === 'report') { validateComplianceSummary(body, options.record?.scope ?? { targetActors: [], resources: [], addresses: { mode: 'all-target-addresses', values: [] }, dataTime: dataTime!, level: selected }, prepared); result = body as unknown as DataCompliance; }
+    else return invalid();
+  } else if (v.view === 'list') { const parse: (item: unknown) => DataAddress | DataTransaction | DataActivity = actual === 'addresses' ? (x: unknown) => address(x, selected) : actual === 'transactions' ? (x: unknown) => transaction(x, selected) : actual === 'activity_logs' ? (x: unknown) => activity(x, selected) : invalid(); result = { items: list(body.items, options.limit ?? 100, parse), nextCursor: body.nextCursor === null ? null : text(body.nextCursor, 2048) }; }
   else if (v.view === 'resolve' && actual === 'addresses') result = { item: address(body.item, selected) };
   else if (v.view === 'detail' && actual === 'transactions') result = { item: transaction(body.item, selected, true) };
-  else if (v.view === 'report') result = actual === 'activity_summary' ? summary(body) : actual === 'sanctions_report' ? sanctions(body, selected) : actual === 'compliance_report' ? compliance(body, selected) : invalid();
+  else if (v.view === 'report') result = actual === 'activity_summary' ? summary(body) : actual === 'sanctions_report' ? sanctions(body, selected) : invalid();
   else return invalid();
-  return { v: 1, readId: identifier(v.readId), caseId, resource: actual, view: v.view as DataEnvelope['view'], level: selected, effectiveUntil: integer(v.effectiveUntil), coverage: { status: coverage.status as DataEnvelope['coverage']['status'], preparedAt: integer(coverage.preparedAt) }, result };
+  return { v: 1, readId: identifier(v.readId), caseId, resource: actual, view: v.view as DataEnvelope['view'], level: selected, effectiveUntil: until, ...(dataTime ? { dataTime } : {}), coverage: { status: coverage.status as DataEnvelope['coverage']['status'], preparedAt: prepared }, result };
 }
 export function displayDisclosureTime(seconds: number): string { return new Date(seconds * 1000).toLocaleString(); }
