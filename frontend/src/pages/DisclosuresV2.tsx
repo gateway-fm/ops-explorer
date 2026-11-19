@@ -24,7 +24,7 @@ function useRemote<T>(endpoint: string, parse: (value: unknown) => T, body?: str
   return { ...state, reload: () => setVersion(n => n + 1) };
 }
 function Status({ loading, error }: { loading: boolean; error?: string }) { return <>{loading && <p role="status" className="text-sm text-neutral-500">Loading…</p>}{error && <p role="alert" className="rounded-lg border border-error-200 bg-error-50 p-3 text-sm text-error-700">{error}</p>}</>; }
-function Table({ headings, children }: { headings: string[]; children: ReactNode }) { return <div className="table-container"><table className="table"><thead><tr>{headings.map(h => <th className="px-4 py-3" key={h}>{h}</th>)}</tr></thead><tbody>{children}</tbody></table></div>; }
+function Table({ headings, children }: { headings: string[]; children: ReactNode }) { return <div className="table-container"><table className={headings.length > 4 ? 'table min-w-[48rem]' : 'table'}><thead><tr>{headings.map(h => <th className="px-4 py-3" key={h}>{h}</th>)}</tr></thead><tbody>{children}</tbody></table></div>; }
 function Cell({ children }: { children?: ReactNode }) { return <td className="px-4 py-3 align-top break-all text-sm">{children ?? '—'}</td>; }
 function query(cursor: string | null) { return cursor ? `?limit=50&cursor=${encodeURIComponent(cursor)}` : '?limit=50'; }
 
