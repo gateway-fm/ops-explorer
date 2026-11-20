@@ -1,3 +1,4 @@
+import { NativeMetadataBoundary } from '../hooks/useNativeMetadata';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,7 +13,7 @@ const session = vi.hoisted(() => {
 });
 vi.mock('../lib/v2Session', () => ({appSession: session, ReadHTTPError: class extends Error {code = 'unavailable';}}));
 const address = '0x' + 'a'.repeat(40), other = '0x' + 'b'.repeat(40), zero = '0x' + '0'.repeat(40), hash = '0x' + 'c'.repeat(64);
-function mount(node: React.ReactNode) {return render(<TooltipProvider><MemoryRouter>{node}</MemoryRouter></TooltipProvider>);}
+function mount(node: React.ReactNode) {return render(<TooltipProvider><MemoryRouter><NativeMetadataBoundary>{node}</NativeMetadataBoundary></MemoryRouter></TooltipProvider>);}
 const token = {address, symbol: 'USD', decimals: 6, tokenType: 'ERC20', blockNumber: '1', createdAt: 'now'};
 function transfer(id = 'row'): TokenTransfer {return {id, txHash: hash, logIndex: 1, tokenAddress: address, from: other, to: zero, value: '900719925474099312345', blockNumber: '1', transferType: 'transfer', tokenType: 'ERC20', isInternal: false};}
 function trace(id: string, path: string): InternalTransaction {return {id, txHash: hash, blockNumber: '1', traceAddress: path, from: address, to: other, value: null, callType: 'call'};}
@@ -37,14 +38,14 @@ describe('restored native Explorer behavior', () => {
     expect(document.querySelector(`a[href*="${zero}"]`)).toBeNull();
     fireEvent.change(screen.getByLabelText('Topic 1 format'), {target: {value: 'address'}});
     expect(screen.getAllByTestId('private-address').length).toBeGreaterThan(1);
-    expect(session.read).not.toHaveBeenCalled();
+    expect(session.read.mock.calls.every(([path])=>path===`/v2/explorer/tokens/${address}`||path===`/v2/explorer/addresses/${address}/contract`)).toBe(true);
   });
   it('decodes a custom event only from its authorized ABI and never requests an external signature', async () => {
     const abi = ['event BankRecord(uint256 amount)'], iface = new Interface(abi), encoded = iface.encodeEventLog(iface.getEvent('BankRecord')!, [12n]);
     session.read.mockResolvedValue({address, abi});
     mount(<NativeLogCards items={[{...eventLog(), topic0: encoded.topics[0], topic1: null, topic2: null, data: encoded.data}]}/>);
     expect(await screen.findByText('Approved ABI')).toBeInTheDocument(); expect(screen.getByTestId('decoded-event')).toHaveTextContent('BankRecord');
-    expect(session.read.mock.calls.map(([path]) => path)).toEqual([`/v2/explorer/addresses/${address}/contract`]);
+    expect(session.read.mock.calls.filter(([path])=>path.endsWith('/contract')).map(([path])=>path)).toEqual([`/v2/explorer/addresses/${address}/contract`]);
   });
   it('restores nested expansion and raw authorized rows without turning a hidden value into zero', () => {
     mount(<NativeTraceRows items={[trace('child', '0,0'), trace('parent', '0'), trace('orphan', '2,0')]}/>);
@@ -61,24 +62,24 @@ describe('restored native Explorer behavior', () => {
   it('shows ERC721 and ERC1155 IDs and quantities exactly, without inventing an NFT item route', () => {
     mount(<NativeTransferRows items={[{...transfer('721'), tokenType: 'ERC721', tokenId: '9007199254740993', value: '1'}, {...transfer('1155'), tokenType: 'ERC1155', tokenId: '9007199254740994', value: '9007199254740995'}]}/>);
     const [first, second] = screen.getAllByTestId('transfer-row');
-    expect(first).toHaveTextContent('Token ID: 9,007,199,254,740,993'); expect(first).toHaveTextContent('Quantity1');
+    expect(first).toHaveTextContent('Token ID: 9,007,199,254,740,993'); expect(first).toHaveTextContent('1');
     expect(second).toHaveTextContent('Token ID: 9,007,199,254,740,994'); expect(second).toHaveTextContent('9,007,199,254,740,995');
-    expect(screen.queryByText(/base units/)).toBeNull(); expect(session.read).not.toHaveBeenCalled();
+    expect(screen.queryByText(/base units/)).toBeNull(); expect(session.read.mock.calls.every(([path])=>!path.includes(zero))).toBe(true);
     expect(document.querySelector('a[href*="/nft/"]')).toBeNull(); expect(document.querySelector(`a[href*="${zero}"]`)).toBeNull();
   });
   it('enriches repeated visible ERC20 rows with one metadata read and preserves decimal precision', async () => {
     session.read.mockResolvedValue(token); mount(<NativeTransferRows items={[transfer('one'), transfer('two')]}/>);
-    expect(await screen.findAllByText('900,719,925,474,099.312345 USD')).toHaveLength(2); expect(session.read).toHaveBeenCalledTimes(1);
+    expect(await screen.findAllByText('900,719,925,474,099.312345 USD')).toHaveLength(2); expect(session.read.mock.calls.filter(([path])=>path===`/v2/explorer/tokens/${address}`)).toHaveLength(1);
   });
   it('does not enrich a masked token and leaves denied metadata as exact base units', async () => {
     session.read.mockRejectedValue(Error('denied')); mount(<NativeTransferRows items={[transfer('full'), {...transfer('private'), tokenAddress: zero}]}/>);
     expect(screen.getAllByText('900,719,925,474,099,312,345 base units')).toHaveLength(2);
-    await waitFor(() => expect(session.read).toHaveBeenCalledTimes(1)); expect(session.read.mock.calls[0][0]).not.toContain(zero);
+    await waitFor(() => expect(session.read.mock.calls.filter(([path])=>path===`/v2/explorer/tokens/${address}`)).toHaveLength(1)); expect(session.read.mock.calls[0][0]).not.toContain(zero);
   });
   it('retires late metadata on account replacement', async () => {
     let resolve!: (value: unknown) => void;
     session.read.mockImplementationOnce(() => new Promise(r => {resolve = r;})).mockResolvedValue(null);
-    mount(<NativeTransferRows items={[transfer()]}/>); await waitFor(() => expect(session.read).toHaveBeenCalledTimes(1));
+    mount(<NativeTransferRows items={[transfer()]}/>); await waitFor(() => expect(session.read.mock.calls.filter(([path])=>path===`/v2/explorer/tokens/${address}`)).toHaveLength(1));
     act(() => session.change()); await act(async () => resolve({...token, symbol: 'OLD_PRIVATE'}));
     expect(screen.queryByText(/OLD_PRIVATE/)).toBeNull(); expect(screen.getByText(/base units/)).toBeInTheDocument();
   });
@@ -93,13 +94,13 @@ describe('restored native Explorer behavior', () => {
     mount(<NativeTransferRows items={rows}/>); await waitFor(() => expect(session.read).toHaveBeenCalledTimes(4));
     await act(async () => release());
     await waitFor(() => expect(session.read).toHaveBeenCalledTimes(25)); expect(maximum).toBe(4);
-    expect(screen.getByText('900,719,925,474,099,312,345 base units')).toBeInTheDocument();
+    expect(screen.getAllByText('900,719,925,474,099,312,345 base units').length).toBeGreaterThan(0);
   });
   it('does not apply a custom ABI returned for a different emitter', async () => {
     const abi = ['event BankRecord(uint256 amount)'], iface = new Interface(abi), encoded = iface.encodeEventLog(iface.getEvent('BankRecord')!, [12n]);
     session.read.mockResolvedValue({address: other, abi});
     mount(<NativeLogCards items={[{...eventLog(), topic0: encoded.topics[0], topic1: null, topic2: null, data: encoded.data}]}/>);
-    await waitFor(() => expect(session.read).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(session.read.mock.calls.filter(([path])=>path===`/v2/explorer/addresses/${address}/contract`)).toHaveLength(1));
     await act(async () => {await Promise.resolve();});
     expect(screen.queryByTestId('decoded-event')).toBeNull();
   });

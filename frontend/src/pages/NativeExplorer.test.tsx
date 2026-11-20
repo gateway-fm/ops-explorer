@@ -11,12 +11,12 @@ import { useNativeRead } from '../hooks/useNativeRead';
 import { decodeTransactions } from '../lib/nativeReadModels';
 import { exactUnits } from '../lib/nativePresentation';
 const session = vi.hoisted(() => {
-  let state: {identity:{activation:string}|null} = {identity:{activation:'first'}};
+  let state: {identity:{activation:string;actor:string;profile:string;expires:number}|null} = {identity:{activation:'first',actor:'ops:test',profile:'azure',expires:9999999999}};
   const listeners = new Set<() => void>();
   return {
     snapshot: () => state,
     subscribe: (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener); },
-    change: (value:string|null) => {state={identity:value?{activation:value}:null};listeners.forEach(listener=>listener());},
+    change: (value:string|null) => {state={identity:value?{activation:value,actor:'ops:test',profile:'azure',expires:9999999999}:null};listeners.forEach(listener=>listener());},
     captureOperation: vi.fn(() => {const original=state.identity;const controller=new AbortController();return {signal:controller.signal,check:()=>{if(!state.identity||state.identity!==original)throw Error('App context changed');},dispose:()=>controller.abort(),request:vi.fn(()=>{throw Error('Wallet operation cannot perform reads');})};}),
     read: vi.fn(),
   };
@@ -45,7 +45,7 @@ describe('native Explorer original presentation',()=>{
   });
   it('continues an empty scan-limited page using its opaque cursor and resets on activation change',async()=>{
     const next='opaque+/=cursor';session.read.mockResolvedValue({items:[],page:{...page,hasMore:null,scanLimited:true,next}});
-    const {result}=renderHook(()=>useNativePage('/transactions',decodeTransactions));
+    const {result}=renderHook(()=>useNativePage('/transactions',decodeTransactions),{wrapper:({children})=><MemoryRouter>{children}</MemoryRouter>});
     await waitFor(()=>expect(result.current.data?.page.next).toBe(next));
     render(<NativeContinuation {...result.current} page={result.current.data?.page}/>);
     fireEvent.click(screen.getByRole('button',{name:'Continue'}));

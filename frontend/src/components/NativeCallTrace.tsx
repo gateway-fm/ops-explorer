@@ -1,3 +1,4 @@
+import { NativeNames } from './NativeNames';
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import { appSession } from '../lib/v2Session';
 import { nativeTraceForest, type NativeTraceNode } from '../lib/nativeTrace';
@@ -27,7 +28,7 @@ export function NativeTraceRows({items}: {items: InternalTransaction[]}) {
   const identity = useSyncExternalStore(appSession.subscribe, appSession.snapshot).identity;
   const [raw, setRaw] = useState(false);
   const forest = useMemo(() => nativeTraceForest(items), [items]);
-  return <div className="card"><div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-neutral-100"><div><span className="text-sm font-medium text-neutral-700">Call Trace</span><p className="text-xs text-neutral-400">Visible page; missing or hidden parents are not reconstructed.</p></div><button className="text-xs text-neutral-500 hover:text-neutral-700 bg-neutral-100 hover:bg-neutral-200 px-2 py-1 rounded" onClick={() => setRaw(v => !v)}>{raw ? 'Tree view' : 'Raw JSON'}</button></div>
+  return <NativeNames items={items.flatMap(trace=>[trace.from,trace.to].filter((address):address is string=>!!address).map(address=>({address,metadata:trace.addressMetadata})))}><div className="card"><div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-neutral-100"><div><span className="text-sm font-medium text-neutral-700">Call Trace</span><p className="text-xs text-neutral-400">Visible page; missing or hidden parents are not reconstructed.</p></div><button className="text-xs text-neutral-500 hover:text-neutral-700 bg-neutral-100 hover:bg-neutral-200 px-2 py-1 rounded" onClick={() => setRaw(v => !v)}>{raw ? 'Tree view' : 'Raw JSON'}</button></div>
     {raw ? <div className="code-block p-3 text-xs max-h-[32rem] overflow-auto m-3"><pre className="whitespace-pre-wrap break-all">{JSON.stringify(items, null, 2)}</pre></div> : <div className="py-1">{items.length ? forest.map(node => <TraceNode key={`${identity?.activation}:${node.trace.id}`} node={node}/>) : <EmptyRow>No internal calls on this visible page.</EmptyRow>}</div>}
-  </div>;
+  </div></NativeNames>;
 }

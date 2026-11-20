@@ -1,3 +1,4 @@
+import { DisclosureBanner, DisclosureTransactionRows, DisclosureTransactionDetail } from '../components/DisclosureTransactions';
 import { PageHeader } from '../components/PageHeader';
 import { InfoRow } from '../components/TransactionDetailPresentation';
 import { DisclosurePanelPresentation } from '../components/DisclosurePanelPresentation';
@@ -84,9 +85,10 @@ function CreateCase({ onCreated }: { onCreated: () => void }) {
   </form></details>;
 }
 
-export function DisclosureCaseV2() { const identity = useIdentity(), { caseId = '' } = useParams(); return identity ? <CasePanel key={identity.activation + caseId} caseId={caseId} /> : null; }
+export function DisclosureCaseV2() { const identity = useIdentity(), { caseId = '' } = useParams(); return identity ? <CasePanel key={identity.actor + identity.profile + identity.activation + caseId} caseId={caseId} /> : null; }
 function CasePanel({ caseId }: { caseId: string }) {
   const result = useRemote('/disclosure/cases/' + encodeURIComponent(caseId), parseDisclosureCase), [resource, setResource] = useState<DisclosureResource>(), [reason, setReason] = useState(''), [error, setError] = useState<string>(), [busy, setBusy] = useState(false);
+  useEffect(() => { const refresh = () => { setResource(undefined); result.reload(); }; window.addEventListener('focus', refresh); return () => window.removeEventListener('focus', refresh); }, []);
   const revoke = async () => { if (busy || !reason.trim()) return; setBusy(true); setError(undefined); try { await appSession.disclosure('/disclosure/cases/' + caseId + '/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }) }); setResource(undefined); result.reload(); } catch (e) { setError(failure(e)); } finally { setBusy(false); } };
   return <section className="space-y-5">
     <PageHeader title={result.data?.caseReference ?? 'Disclosure case'} subtitle="Access through an approved disclosure case"><Link className="btn-secondary" to="/disclosures">All disclosures</Link></PageHeader>
@@ -99,15 +101,15 @@ function CasePanel({ caseId }: { caseId: string }) {
       <InfoRow label="Detail level" value={result.data.scope.level} />
     </div></DisclosurePanelPresentation>
     <div className="flex flex-wrap gap-2" role="group" aria-label="Case data">{result.data.scope.resources.map(r => <button className={resource === r ? 'btn-primary' : 'btn-secondary'} aria-pressed={resource === r} key={r} disabled={result.data?.status !== 'open'} onClick={() => setResource(r)}>{labels[r]}</button>)}<button className="btn-secondary" onClick={() => { setResource(undefined); result.reload(); }}>Refresh case</button></div>
-    {resource && <ResourcePanel key={resource + result.data.version} record={result.data} resource={resource} />}
+    {resource && result.data.status === 'open' && <ResourcePanel key={resource + result.data.version} record={result.data} resource={resource} />}
     <CaseAudit caseId={caseId} />
     {result.data.status === 'open' && <details className="card p-5"><summary className="cursor-pointer font-medium text-error-600">Revoke this case</summary><div className="mt-4 space-y-3"><p className="text-sm text-neutral-500">Revocation ends access through this case.</p><label className="block text-sm font-medium text-neutral-700">Revocation reason<input className="input mt-1" aria-label="Revocation reason" value={reason} maxLength={1024} onChange={e => setReason(e.target.value)} /></label><button className="btn-secondary text-error-600" disabled={busy || !reason.trim()} onClick={() => void revoke()}>Revoke case</button>{error && <p role="alert" className="rounded-lg border border-error-200 bg-error-50 p-3 text-sm text-error-700">{error}</p>}</div></details>}
   </>}</section>;
 }
 
 interface ParsedRead { display: DataEnvelope; raw: unknown }
-function ResourcePanel({ record, resource, addressId }: { record: DisclosureCase; resource: DisclosureResource; addressId?: string }) {
-  const identity = useIdentity(), originalExpiry = useRef(identity?.expires ?? 0), revision = useRef(0), live = useRef(true), pending = useRef<AbortController | null>(null);
+function ResourcePanel({ record, resource, addressId, sessionExpiresAt }: { record: DisclosureCase; resource: DisclosureResource; addressId?: string; sessionExpiresAt?: number }) {
+  const identity = useIdentity(), originalExpiry = useRef(sessionExpiresAt ?? identity?.expires ?? 0), revision = useRef(0), live = useRef(true), pending = useRef<AbortController | null>(null);
   const [readView, setReadView] = useState<'list' | 'report'>(['addresses', 'transactions', 'activity_logs', 'events'].includes(resource) ? 'list' : 'report');
   const [target, setTarget] = useState(''), [from, setFrom] = useState(''), [through, setThrough] = useState('');
   const [state, setState] = useState<{ data?: ParsedRead; history: ParsedRead[]; index: number; trimmed: boolean; loading: boolean; error?: string }>({ history: [], index: 0, trimmed: false, loading: false });
@@ -143,7 +145,7 @@ function ResourcePanel({ record, resource, addressId }: { record: DisclosureCase
     if (!owned() || !data || data.display.effectiveUntil <= Date.now() / 1000) { clear(); return; }
     setState(old => ({ ...old, index, data }));
   };
-  const data = state.data?.display, page = data?.view === 'list' ? data.result as DataPage<DataAddress | DataTransaction | DataActivity | DataEvent | DataFinancePage['items'][number]> : undefined;
+  const data = owned() ? state.data?.display : undefined, page = data?.view === 'list' ? data.result as DataPage<DataAddress | DataTransaction | DataActivity | DataEvent | DataFinancePage['items'][number]> : undefined;
   const download = () => {
     if (!state.data || !owned() || state.data.display.effectiveUntil <= Date.now() / 1000) { clear(); return; }
     const blob = new Blob([JSON.stringify(state.data.raw, null, 2)], { type: 'application/json' }), url = URL.createObjectURL(blob), a = document.createElement('a');
@@ -159,7 +161,7 @@ function ResourcePanel({ record, resource, addressId }: { record: DisclosureCase
     {narrow && <fieldset className="space-y-3 rounded-lg border border-neutral-200 p-3"><legend>Narrow this read</legend><div className="grid gap-3 sm:grid-cols-3"><label>Target actor<select aria-label="Target actor" className="input mt-1" value={target} onChange={event => { clear(); setTarget(event.target.value); }}><option value="">All targets in this case</option>{record.scope.targetActors.map(actor => <option key={actor} value={actor}>{actor}</option>)}</select></label><label>From (UTC, inclusive)<input aria-label="From (UTC, inclusive)" type="datetime-local" step="1" className="input mt-1" value={from} onChange={event => { clear(); setFrom(event.target.value); }} /></label><label>Through (UTC, inclusive)<input aria-label="Through (UTC, inclusive)" type="datetime-local" step="1" className="input mt-1" value={through} onChange={event => { clear(); setThrough(event.target.value); }} /></label></div><button className="btn-secondary" disabled={state.loading} onClick={() => void read()}>Read permitted data</button></fieldset>}
     <Status {...state} />{data && <><p>{data.coverage.status === 'RETAINED_AT_READ' ? 'These results cover retained records available when the request was prepared.' : 'These results cover recorded activity up to the selected audit snapshot.'} Prepared {displayDisclosureTime(data.coverage.preparedAt)}. Available in this session until {displayDisclosureTime(Math.min(data.effectiveUntil, originalExpiry.current))}.</p>
     {resource === 'addresses' && page && <ul>{(page.items as DataAddress[]).map(a => <li key={a.addressId}><Link className="text-primary hover:underline break-all" to={`/disclosures/cases/${record.caseId}/addresses/${a.addressId}`}>{a.display}</Link>{a.isMine ? ' · Your wallet' : ''}</li>)}</ul>}
-    {resource === 'transactions' && page && <Transactions rows={page.items as DataTransaction[]} record={record} addressId={addressId} />}
+    {resource === 'transactions' && page && <><DisclosureBanner record={record} envelope={data} expires={originalExpiry.current}/><DisclosureTransactionRows rows={page.items as DataTransaction[]} record={record} addressId={addressId} /></>}
     {resource === 'events' && page && <DisclosureEventCards rows={page.items as DataEvent[]} level={record.scope.level} />}
     {resource === 'activity_logs' && page && <Table headings={['Time', 'Method', 'Status', 'Actor']}>{(page.items as DataActivity[]).map(a => <tr key={a.recordId}><Cell>{displayDisclosureTime(a.time)}</Cell><Cell>{a.method}</Cell><Cell>{a.statusCode}</Cell><Cell>{a.actorId}</Cell></tr>)}</Table>}
     {resource === 'activity_summary' && <Summary data={data.result as DataSummary} />}
@@ -172,13 +174,73 @@ function ResourcePanel({ record, resource, addressId }: { record: DisclosureCase
   </>}</section>;
 }
 function Evidence({ rows }: { rows: DataFinancePage['items'] }) { return <Table headings={['Time', 'Check', 'Decision', 'Mode', 'Coverage']}>{rows.map(e => <tr key={e.id}><Cell>{displayDisclosureTime(e.time)}</Cell><Cell>{e.kind}</Cell><Cell>{e.decision}</Cell><Cell>{e.monitored ? 'Monitor' : 'Enforce'}</Cell><Cell>{e.coverage}</Cell></tr>)}</Table>; }
-function Transactions({ rows, record, addressId }: { rows: DataTransaction[]; record: DisclosureCase; addressId?: string }) { return <Table headings={['Block', 'Time', 'From', 'To', 'Value', 'Status', '']}>{rows.map((t, i) => <tr key={t.transactionHash ?? `${t.blockNumber}:${t.transactionIndex}:${i}`}><Cell>{t.blockNumber}</Cell><Cell>{displayDisclosureTime(t.blockTime)}</Cell><Cell>{t.from}</Cell><Cell>{t.to ?? 'Contract creation'}</Cell><Cell>{t.value ?? 'Private'}</Cell><Cell>{t.status === 1 ? 'Success' : 'Failed'}</Cell><Cell>{(addressId || t.addressId) && t.transactionHash && record.scope.level === 'full' && <Link className="text-primary hover:underline" to={`/disclosures/cases/${record.caseId}/addresses/${addressId || t.addressId}/transactions/${t.transactionHash}`}>Details</Link>}</Cell></tr>)}</Table>; }
+
 function Summary({ data }: { data: DataSummary }) { return <><p>Total {data.total} · Successful {data.successful} · Failed {data.failed}</p><Table headings={['Method', 'Total', 'Successful', 'Failed']}>{data.methodBreakdown.map(m => <tr key={m.method}><Cell>{m.method}</Cell><Cell>{m.total}</Cell><Cell>{m.successful}</Cell><Cell>{m.failed}</Cell></tr>)}</Table></>; }
 function Sanctions({ data }: { data: DataSanctions }) { return <><p>{data.status === 'hit' ? 'Approved-list match found' : data.status === 'clear' ? 'No approved-list match in the checked addresses' : 'No eligible addresses to check'} · {data.scopedAddressCount} addresses · Checked {displayDisclosureTime(data.checkedAt)}</p><ul>{data.matches.map(m => <li key={m.sourceId}>{m.address.display}{m.reason ? ` · ${m.reason}` : ''}</li>)}</ul></>; }
 function Compliance({ data }: { data: DataCompliance }) { return <div className="space-y-3"><Summary data={data.activity} /><Sanctions data={data.sanctions} /><p>KYC: not evaluated by this report.</p><p>Matching retained admission decisions: <strong>{data.finance.matchingRetainedCount}</strong> as of <time>{data.finance.observedAt}</time>. This summary includes aggregate counts. Open admission decisions to read individual records with these same filters.</p></div>; }
 function CaseAudit({ caseId }: { caseId: string }) { const [cursor, setCursor] = useState<string | null>(null), result = useRemote(`/disclosure/cases/${caseId}/audit${query(cursor)}`, value => { const v = value as { items: { eventId: string; time: number; action: string; outcome: string }[]; nextCursor: string }; if (!v || !Array.isArray(v.items) || v.items.length > 100 || typeof v.nextCursor !== 'string') throw Error('Invalid case history'); return v; }); return <details className="card p-5"><summary className="cursor-pointer font-medium text-primary">Case history</summary><Status {...result} />{result.data && <><Table headings={['Time', 'Action', 'Outcome']}>{result.data.items.map(e => <tr key={e.eventId}><Cell>{displayDisclosureTime(e.time)}</Cell><Cell>{e.action}</Cell><Cell>{e.outcome}</Cell></tr>)}</Table><button className="btn-secondary mt-3" disabled={!result.data.nextCursor} onClick={() => setCursor(result.data!.nextCursor)}>Next history page</button></>}</details>; }
 
-export function DisclosureAddressV2() { const identity = useIdentity(), { caseId = '', addressId = '' } = useParams(); return identity ? <AddressPanel key={identity.activation + caseId + addressId} caseId={caseId} addressId={addressId} /> : null; }
-function AddressPanel({ caseId, addressId }: { caseId: string; addressId: string }) { const record = useRemote('/disclosure/cases/' + encodeURIComponent(caseId), parseDisclosureCase), result = useRemote(`/grant/${caseId}/resolve/${encodeURIComponent(addressId)}`, value => parseDisclosureData(value, caseId, 'addresses')); const address = result.data ? (result.data.result as { item: DataAddress }).item : undefined; return <section className="space-y-5"><PageHeader title="Disclosed Address" subtitle="Address data available through this case"><Link className="btn-secondary" to={'/disclosures/cases/' + caseId}>Back to case</Link></PageHeader><Status {...record} /><Status {...result} />{address && <DisclosurePanelPresentation title="Address"><InfoRow label="Address" value={<code className="break-all">{address.display}</code>} /></DisclosurePanelPresentation>}{record.data?.scope.resources.includes('transactions') && <ResourcePanel record={record.data} resource="transactions" addressId={addressId} />}</section>; }
-export function DisclosureTransactionV2() { const identity = useIdentity(), { caseId = '', addressId = '', hash = '' } = useParams(); return identity ? <TransactionPanel key={identity.activation + caseId + addressId + hash} caseId={caseId} addressId={addressId} hash={hash} /> : null; }
-function TransactionPanel({ caseId, addressId, hash }: { caseId: string; addressId: string; hash: string }) { const result = useRemote(`/grant/${caseId}/${encodeURIComponent(addressId)}/transactions/${encodeURIComponent(hash)}`, value => parseDisclosureData(value, caseId, 'transactions')), tx = result.data ? (result.data.result as { item: DataTransaction }).item : undefined; return <section className="space-y-5"><PageHeader title="Transaction Details" subtitle="Transaction data available through this case"><Link className="btn-secondary" to={`/disclosures/cases/${caseId}`}>Back to case</Link></PageHeader><Status {...result} />{tx && <><DisclosurePanelPresentation title="Transaction"><div className="divide-y divide-neutral-100">{[['Hash', tx.transactionHash], ['From', tx.from], ['To', tx.to ?? 'Contract creation'], ['Value', tx.value], ['Block', tx.blockNumber], ['Gas used', tx.gasUsed], ['Gas limit', tx.gasLimit], ['Gas price', tx.gasPrice], ['Nonce', tx.nonce]].map(([label, value]) => <InfoRow key={label} label={label!} value={<span className="break-all font-mono text-xs">{value ?? 'Unavailable in this disclosure'}</span>} />)}</div></DisclosurePanelPresentation><DisclosurePanelPresentation title="Input Data"><pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all p-4 font-mono text-xs">{tx.input ?? 'Unavailable in this disclosure'}</pre></DisclosurePanelPresentation></>}</section>; }
+export function DisclosureAddressV2() { const identity = useIdentity(), { caseId = '', addressId = '' } = useParams(); return identity ? <AddressPanel key={identity.actor + identity.profile + identity.activation + caseId + addressId} caseId={caseId} addressId={addressId} /> : null; }
+function AddressPanel({ caseId, addressId }: { caseId: string; addressId: string }) {
+  const identity=useIdentity(), originalExpiry=useRef(identity?.expires??0), deadline=useRef(originalExpiry.current), revision=useRef(0), pending=useRef<AbortController|undefined>(undefined), timer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined);
+  const [version,setVersion]=useState(0), [state,setState]=useState<{record?:DisclosureCase;data?:DataEnvelope;loading:boolean;error?:string}>({loading:true});
+  const current=()=>!!identity&&appSession.snapshot().identity?.activation===identity.activation&&appSession.snapshot().identity?.actor===identity.actor&&appSession.snapshot().identity?.profile===identity.profile&&deadline.current>Date.now()/1000;
+  // Removing record/data synchronously also unmounts and aborts its child list.
+  const refresh=()=>{++revision.current;pending.current?.abort();setState({loading:true});setVersion(value=>value+1);};
+  useEffect(()=>{window.addEventListener('focus',refresh);return()=>window.removeEventListener('focus',refresh);},[]);
+  useEffect(()=>{
+    const owned=++revision.current, abort=new AbortController();pending.current=abort;let live=true;
+    const check=()=>{if(!live||owned!==revision.current||abort.signal.aborted||!current())throw Error('The original disclosure context expired or changed.');};
+    const arm=()=>{if(timer.current)clearTimeout(timer.current);timer.current=setTimeout(()=>{++revision.current;abort.abort();setState({loading:false,error:'The original disclosure access expired. Return to the case to request current data.'});},Math.max(1,Math.min(2147483647,deadline.current*1000-Date.now())));};
+    setState({loading:true});arm();
+    void(async()=>{
+      try{
+        check();const rawRecord=await appSession.disclosure<unknown>('/disclosure/cases/'+encodeURIComponent(caseId),{signal:abort.signal});check();
+        const record=parseDisclosureCase(rawRecord);
+        if(record.caseId!==caseId||record.status!=='open'||record.recipientActorId!==identity?.actor||!record.scope.resources.includes('addresses'))throw Error('This case no longer permits disclosed address reads.');
+        deadline.current=Math.min(deadline.current,record.expiresAt);check();arm();
+        const raw=await appSession.disclosure<unknown>(`/grant/${caseId}/resolve/${encodeURIComponent(addressId)}`,{signal:abort.signal});check();
+        const data=parseDisclosureData(raw,caseId,'addresses',{record,view:'resolve',sessionExpiresAt:originalExpiry.current}),address=(data.result as {item:DataAddress}).item;
+        // A previous rendering key may authorize the request alias; Go returns
+        // the active-key alias. Scope is checked by the case-bound endpoint.
+        if(address.address&&record.scope.addresses.mode==='list'&&!record.scope.addresses.values.includes(address.address))throw Error('The address does not match the requested case scope.');
+        deadline.current=Math.min(deadline.current,data.effectiveUntil);check();arm();setState({record,data,loading:false});
+      }catch(error){if(live&&owned===revision.current&&!abort.signal.aborted)setState({loading:false,error:failure(error)});}
+    })();
+    return()=>{live=false;++revision.current;abort.abort();if(timer.current)clearTimeout(timer.current);};
+  },[version,identity?.activation,identity?.actor,identity?.profile,caseId,addressId]);
+  const data=current()?state.data:undefined,address=data?(data.result as {item:DataAddress}).item:undefined;
+  return <section className="space-y-5"><PageHeader title="Disclosed Address" subtitle="Address data available through this case"><Link className="btn-secondary" to={'/disclosures/cases/'+caseId}>Back to case</Link></PageHeader><button className="btn-secondary" onClick={refresh}>Refresh case and address</button><Status {...state}/>{address&&state.record&&data&&<><DisclosureBanner record={state.record} envelope={data} expires={deadline.current}/><DisclosurePanelPresentation title="Address"><InfoRow label="Address" value={<code className="break-all">{address.display}</code>}/></DisclosurePanelPresentation>{state.record.scope.resources.includes('transactions')&&<ResourcePanel record={state.record} resource="transactions" addressId={addressId} sessionExpiresAt={deadline.current}/>}</>}</section>;
+}
+
+export function DisclosureTransactionV2() { const identity = useIdentity(), { caseId = '', addressId = '', hash = '' } = useParams(); return identity ? <TransactionPanel key={identity.actor + identity.profile + identity.activation + caseId + addressId + hash} caseId={caseId} addressId={addressId} hash={hash} /> : null; }
+function TransactionPanel({ caseId, addressId, hash }: { caseId: string; addressId: string; hash: string }) {
+  const identity=useIdentity(), originalExpiry=useRef(identity?.expires??0), deadline=useRef(originalExpiry.current), revision=useRef(0), pending=useRef<AbortController|undefined>(undefined), timer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined);
+  const [version,setVersion]=useState(0), [state,setState]=useState<{record?:DisclosureCase;data?:DataEnvelope;loading:boolean;error?:string}>({loading:true});
+  const current=()=>!!identity&&appSession.snapshot().identity?.activation===identity.activation&&appSession.snapshot().identity?.actor===identity.actor&&appSession.snapshot().identity?.profile===identity.profile&&deadline.current>Date.now()/1000;
+  const refresh=()=>{++revision.current;pending.current?.abort();setState({loading:true});setVersion(value=>value+1);};
+  useEffect(()=>{window.addEventListener('focus',refresh);return()=>window.removeEventListener('focus',refresh);},[]);
+  useEffect(()=>{
+    const owned=++revision.current, abort=new AbortController();pending.current=abort;let live=true;
+    const check=()=>{if(!live||owned!==revision.current||abort.signal.aborted||!current())throw Error('The original disclosure context expired or changed.');};
+    const arm=()=>{if(timer.current)clearTimeout(timer.current);timer.current=setTimeout(()=>{++revision.current;abort.abort();setState({loading:false,error:'The original disclosure access expired. Return to the case to request current data.'});},Math.max(1,Math.min(2147483647,deadline.current*1000-Date.now())));};
+    setState({loading:true});arm();
+    void(async()=>{
+      try{
+        check();const rawRecord=await appSession.disclosure<unknown>('/disclosure/cases/'+encodeURIComponent(caseId),{signal:abort.signal});check();
+        const record=parseDisclosureCase(rawRecord);
+        if(record.caseId!==caseId||record.status!=='open'||record.recipientActorId!==identity?.actor||record.scope.level!=='full'||!record.scope.resources.includes('transactions'))throw Error('This case no longer permits full transaction details.');
+        deadline.current=Math.min(deadline.current,record.expiresAt);check();arm();
+        const raw=await appSession.disclosure<unknown>(`/grant/${caseId}/${encodeURIComponent(addressId)}/transactions/${encodeURIComponent(hash)}`,{signal:abort.signal});check();
+        const data=parseDisclosureData(raw,caseId,'transactions',{record,view:'detail',sessionExpiresAt:originalExpiry.current}),tx=(data.result as {item:DataTransaction}).item;
+        // Go selects a representative target-wallet alias (sender first), which may
+        // differ from the authorized recipient alias in the requested endpoint.
+        if(tx.transactionHash!==hash||tx.blockTime<record.scope.dataTime.start||tx.blockTime>record.scope.dataTime.end||record.scope.addresses.mode==='list'&&!record.scope.addresses.values.includes(tx.from)&&!record.scope.addresses.values.includes(tx.to??''))throw Error('The transaction does not match the requested case scope.');
+        deadline.current=Math.min(deadline.current,data.effectiveUntil);check();arm();setState({record,data,loading:false});
+      }catch(error){if(live&&owned===revision.current&&!abort.signal.aborted)setState({loading:false,error:failure(error)});}
+    })();
+    return()=>{live=false;++revision.current;abort.abort();if(timer.current)clearTimeout(timer.current);};
+  },[version,identity?.activation,identity?.actor,identity?.profile,caseId,addressId,hash]);
+  const data=current()?state.data:undefined,tx=data?(data.result as {item:DataTransaction}).item:undefined;
+  return <section className="space-y-5"><PageHeader title="Transaction Details" subtitle="Transaction data available through this case"><Link className="btn-secondary" to={`/disclosures/cases/${caseId}`}>Back to case</Link></PageHeader><button className="btn-secondary" onClick={refresh}>Refresh case and transaction</button><Status {...state}/>{tx&&state.record&&data&&<><DisclosureBanner record={state.record} envelope={data} expires={deadline.current}/><DisclosureTransactionDetail tx={tx}/></>}</section>;
+}

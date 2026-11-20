@@ -1,3 +1,5 @@
+import { NativeNames } from '../components/NativeNames';
+import { useCanonicalIdentifier } from '../lib/nativeRoute';
 import { useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { TransactionDetailPresentation, TransactionOverview, TransactionInput, InfoRow, TxCategoryBadges, type TransactionTab } from '../components/TransactionDetailPresentation';
@@ -11,7 +13,8 @@ import { getNetworkCurrency } from '../lib/utils';
 import { StateMessage } from '../components/StateMessage';
 
 export function TransactionNative() {
-  const {hash = ''} = useParams<{hash: string}>();
+  const {hash: rawIdentifier = ''} = useParams<{hash: string}>();
+  const hash = useCanonicalIdentifier(rawIdentifier, 'hash') ?? '';
   const location = useLocation();
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -29,8 +32,8 @@ export function TransactionNative() {
   if (read.loading || read.error) return <NativeReadState {...read}/>;
   const tx = read.data;
   if (!tx) return <StateMessage variant="empty" title="Transaction unavailable" detail="It may be outside your current access or the retained index."/>;
-  const setTab = (tab: TransactionTab) => { navigate(`/tx/${hash}${tab === 'overview' ? '' : `?tab=${tab}`}`); };
-  return <TransactionDetailPresentation activeTab={activeTab} setActiveTab={setTab} logsVisible traceVisible logCount={logs.data ? `${logs.data.items.length} on page` : 'view'} traceCount={internal.data ? `${internal.data.items.length} on page` : 'view'}>
+  const setTab = (tab: TransactionTab) => { const query=new URLSearchParams(params);if(tab==='overview')query.delete('tab');else query.set('tab',tab);navigate({pathname:`/tx/${hash}`,search:query.toString(),hash:location.hash},{state:location.state}); };
+  return <NativeNames items={[tx.from,tx.to,tx.contractAddress].filter((address):address is string=>!!address).map(address=>({address,metadata:tx.addressMetadata}))}><TransactionDetailPresentation activeTab={activeTab} setActiveTab={setTab} logsVisible traceVisible logCount={logs.data ? `${logs.data.items.length} on page` : 'view'} traceCount={internal.data ? `${internal.data.items.length} on page` : 'view'}>
     {activeTab === 'overview' && <TransactionOverview showMore={showMore} onToggle={() => setShowMore(!showMore)} input={<TransactionInput data={tx.inputData}/>} extra={<>
       <InfoRow label="Transaction Type" value={tx.txType}/><InfoRow label="Nonce" value={exactQuantity(tx.nonce)}/><InfoRow label="Position in Block" value={tx.txIndex === null ? 'Pending / unknown' : tx.txIndex}/><InfoRow label="Gas Limit" value={exactQuantity(tx.gasLimit)}/><InfoRow label="Gas Used" value={exactQuantity(tx.gasUsed)}/>{tx.maxFeePerGas !== undefined && <InfoRow label="Max Fee Per Gas" value={`${exactQuantity(tx.maxFeePerGas)} wei`}/>} {tx.maxPriorityFeePerGas !== undefined && <InfoRow label="Max Priority Fee Per Gas" value={`${exactQuantity(tx.maxPriorityFeePerGas)} wei`}/>} </>}>
       <InfoRow label="Transaction Hash" value={<span className="flex items-center gap-1"><span className="font-mono text-sm break-all text-neutral-900">{tx.hash}</span><CopyButton text={tx.hash}/></span>}/>
@@ -45,5 +48,5 @@ export function TransactionNative() {
     </TransactionOverview>}
     {activeTab === 'logs' && <><NativeReadState {...logs} reset={logs.reset}/>{logs.data && <><NativeLogCards items={logs.data.items}/><NativeContinuation {...logs} page={logs.data.page}/></>}</>}
     {activeTab === 'trace' && <><NativeReadState {...internal} reset={internal.reset}/>{internal.data && <><NativeTraceRows items={internal.data.items}/><NativeContinuation {...internal} page={internal.data.page}/></>}</>}
-  </TransactionDetailPresentation>;
+  </TransactionDetailPresentation></NativeNames>;
 }

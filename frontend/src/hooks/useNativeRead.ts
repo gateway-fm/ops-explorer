@@ -17,7 +17,7 @@ export function useNativeRead<T>(endpoint: string | null, decode: (raw: unknown)
   const [attempt, setAttempt] = useState(0);
   const refresh = useCallback(() => setAttempt(value => value + 1), []);
   useEffect(() => { if (refreshMs <= 0 || !identity) return; const timer = window.setInterval(refresh, refreshMs); return () => window.clearInterval(timer); }, [refreshMs, refresh, identity]);
-  const key = `${identity?.activation ?? ''}:${endpoint ?? ''}`;
+  const key = `${identity?.actor ?? ''}:${identity?.profile ?? ''}:${identity?.activation ?? ''}:${endpoint ?? ''}`;
   const [result, setResult] = useState<NativeRead<T> & { key: string }>({ key, loading: true });
 
   useEffect(() => {

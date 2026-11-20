@@ -1,3 +1,4 @@
+import { NativeNames } from './NativeNames';
 import { useMemo } from 'react';
 import { decodeContract } from '../lib/nativeReadModels';
 import { decodeNativeEvent, type NativeEvent } from '../lib/nativeEvent';
@@ -24,8 +25,8 @@ export function NativeLogCards({items}: {items: Log[]}) {
   // format asks for that visible emitter's currently authorized registry ABI.
   const contracts = useNativeMetadata(items.filter(log => !localEvents.get(log.id) && log.topic0 && log.address !== zeroAddress && !['no_access', 'participant_override'].includes(log.addressMetadata?.[log.address] ?? '')).map(log => contractPath(log.address)), decodeContract);
   if (!items.length) return <EmptyRow>No logs on this visible page.</EmptyRow>;
-  return <div className="space-y-4">{items.map(log => {
+  return <NativeNames items={items.map(log=>({address:log.address,metadata:log.addressMetadata}))}><div className="space-y-4">{items.map(log => {
     const contract = contracts[contractPath(log.address)];
     return <NativeLogCard key={log.id} log={log} local={localEvents.get(log.id) ?? null} abi={contract?.address === log.address ? contract.abi : undefined}/>;
-  })}</div>;
+  })}</div></NativeNames>;
 }

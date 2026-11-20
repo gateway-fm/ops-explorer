@@ -80,7 +80,7 @@ describe('named native Explorer screens',()=>{
   const iface=new Interface(abi),org='11111111-1111-1111-1111-111111111111';
   session.self.mockResolvedValue({organizations:[{id:org,name:'Example'}]});session.rpc.mockResolvedValue({result:iface.encodeFunctionResult('balanceOf(address)',['900719925474099312345678901234567890'])});
   renderPage(<NativeContractPanel address={address} contract={{address,abi}} code="0x"/>);
-  fireEvent.click(await screen.findByRole('button',{name:'balanceOf(address)'}));fireEvent.change(screen.getByLabelText('balanceOf(address) owner'),{target:{value:address}});fireEvent.click(screen.getByRole('button',{name:'Query'}));
+  fireEvent.click(screen.getByRole('tab',{name:'Read'}));fireEvent.click(await screen.findByRole('button',{name:'balanceOf(address)'}));fireEvent.change(screen.getByLabelText('balanceOf(address) owner'),{target:{value:address}});fireEvent.click(screen.getByRole('button',{name:'Query'}));
   expect(await screen.findByTestId('fn-result')).toHaveTextContent('900719925474099312345678901234567890');
   expect(session.rpc.mock.calls[0]?.[0]).toBe(org);expect(session.rpc.mock.calls[0]?.[1]).toMatchObject({method:'eth_call',params:[{to:address,data:iface.encodeFunctionData('balanceOf(address)',[address])},'latest']});
  });

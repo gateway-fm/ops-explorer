@@ -1,5 +1,7 @@
 interface NewItemsNoticeProps {
-  count: number;
+  count?: number;
+  changed?: boolean;
+  observedWindow?: boolean;
   type: 'block' | 'transaction';
   onClick: () => void;
   // When true, render the count as "N+" — used when the live window can
@@ -7,11 +9,11 @@ interface NewItemsNoticeProps {
   approximate?: boolean;
 }
 
-export function NewItemsNotice({ count, type, onClick, approximate = false }: NewItemsNoticeProps) {
-  if (count <= 0) return null;
+export function NewItemsNotice({ count, type, onClick, approximate = false, changed = false, observedWindow = false }: NewItemsNoticeProps) {
+  if (!changed && (count === undefined || count <= 0)) return null;
 
-  const countLabel = approximate ? `${count.toLocaleString()}+` : count.toLocaleString();
-  const label = `${countLabel} new ${type}${count === 1 ? '' : 's'}`;
+  const countLabel = approximate ? `${count?.toLocaleString()}+` : count?.toLocaleString();
+  const label = changed && count === undefined ? 'Visible list changed' : observedWindow ? `${countLabel} newly observed ${type}${count === 1 ? '' : 's'} in this window` : `${countLabel} new ${type}${count === 1 ? '' : 's'}`;
 
   return (
     <button
@@ -19,7 +21,7 @@ export function NewItemsNotice({ count, type, onClick, approximate = false }: Ne
       data-testid="new-items-notice"
       className="w-full px-4 py-2.5 text-sm font-medium text-primary-700 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 border-b border-primary-200 dark:border-primary-800 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors cursor-pointer text-center"
     >
-      {label} — click to load
+      {label} — {changed ? 'refresh' : 'click to load'}
     </button>
   );
 }

@@ -1,3 +1,7 @@
+import { useEffect, useState } from 'react';
+import { useVisibleTransactionsNotice } from '../hooks/useVisibleTransactionsNotice';
+import { NewItemsNotice } from '../components/NewItemsNotice';
+import { NativeNames } from '../components/NativeNames';
 import { useSearchParams } from 'react-router-dom';
 import { PageHeader } from '../components/PageHeader';
 import { NativeAddress } from '../components/NativeAddress';
@@ -12,15 +16,18 @@ export function TransactionsNative() {
   const [params,setParams]=useSearchParams(); const category=params.get('category')??'';
   const filters=new URLSearchParams(); if(categories.some(c=>c.id===category)&&category)filters.set('category',category);
   const txs=useNativePage('/transactions/paginated',decodeTransactions,25,filters.toString());
-  return <div className="space-y-6"><PageHeader title="Transactions"/><ExplorerTabs tabs={categories} active={category} onChange={id=>{const q=new URLSearchParams();if(id)q.set('category',id);setParams(q);}}/><VisiblePageNote/><NativeReadState {...txs} reset={txs.reset}/>{txs.data&&<><NativeTransactionsTable items={txs.data.items} footer={<NativeContinuation {...txs} page={txs.data.page}/>}/>{!txs.data.items.length&&<EmptyRow>No visible transactions on this page. Continue when more records are available.</EmptyRow>}</>}</div>;
+  const [refreshing,setRefreshing]=useState(false);
+  useEffect(()=>{setRefreshing(false);},[txs.data]);
+  const live=useVisibleTransactionsNotice(txs.endpoint,txs.data,txs.index===0&&!refreshing);
+  return <div className="space-y-6"><PageHeader title="Transactions"/><ExplorerTabs tabs={categories} active={category} onChange={id=>{const q=new URLSearchParams();if(id)q.set('category',id);setParams(q);}}/><VisiblePageNote/>{live.notice&&<NewItemsNotice changed observedWindow count={live.notice.count} type="transaction" onClick={()=>{live.clear();setRefreshing(true);txs.reset();}}/>}<NativeReadState {...txs} reset={txs.reset}/>{txs.data&&<><NativeTransactionsTable items={txs.data.items} footer={<NativeContinuation {...txs} page={txs.data.page}/>}/>{!txs.data.items.length&&<EmptyRow>No visible transactions on this page. Continue when more records are available.</EmptyRow>}</>}</div>;
 }
 export function AccountsNative() {
   const accounts=useNativePage('/accounts',decodeAccounts);
-  return <div className="space-y-6"><PageHeader title="Accounts" subtitle="Addresses visible to your current access"/><VisiblePageNote/><NativeReadState {...accounts} reset={accounts.reset}/>{accounts.data&&<div className="card"><ExplorerTable headings={['Address','Type','Transactions','Token transfers','First seen','Last seen']}>{accounts.data.items.map(account=><tr key={account.address} data-testid="account-row"><td><NativeAddress address={account.address} full/></td><td>{account.isContract===undefined?'Unavailable':account.isContract?'Contract':'EOA'}</td><td>{exactQuantity(account.txCount)}</td><td>{exactQuantity(account.tokenTransferCount)}</td><td>{exactTimestamp(account.firstSeen)}</td><td>{exactTimestamp(account.lastSeen)}</td></tr>)}</ExplorerTable>{!accounts.data.items.length&&<EmptyRow>No visible accounts on this page.</EmptyRow>}<NativeContinuation {...accounts} page={accounts.data.page}/></div>}</div>;
+  return <div className="space-y-6"><PageHeader title="Accounts" subtitle="Addresses visible to your current access"/><VisiblePageNote/><NativeReadState {...accounts} reset={accounts.reset}/>{accounts.data&&<NativeNames items={accounts.data.items.map(account=>({address:account.address}))}><div className="card"><ExplorerTable headings={['Address','Type','Transactions','Token transfers','First seen','Last seen']}>{accounts.data.items.map(account=><tr key={account.address} data-testid="account-row"><td><NativeAddress address={account.address} full/></td><td>{account.isContract===undefined?'Unavailable':account.isContract?'Contract':'EOA'}</td><td>{exactQuantity(account.txCount)}</td><td>{exactQuantity(account.tokenTransferCount)}</td><td>{exactTimestamp(account.firstSeen)}</td><td>{exactTimestamp(account.lastSeen)}</td></tr>)}</ExplorerTable>{!accounts.data.items.length&&<EmptyRow>No visible accounts on this page.</EmptyRow>}<NativeContinuation {...accounts} page={accounts.data.page}/></div></NativeNames>}</div>;
 }
 export function TransfersNative() {
   const transfers=useNativePage('/transfers',decodeTransfers);
-  return <div className="space-y-6"><PageHeader title="Token Transfers"/><VisiblePageNote/><NativeReadState {...transfers} reset={transfers.reset}/>{transfers.data&&<div className="card"><div className="p-4"><NativeTransferRows items={transfers.data.items}/></div><NativeContinuation {...transfers} page={transfers.data.page}/></div>}</div>;
+  return <div className="space-y-6"><PageHeader title="Token Transfers"/><VisiblePageNote/><NativeReadState {...transfers} reset={transfers.reset}/>{transfers.data&&<div className="card"><NativeTransferRows items={transfers.data.items}/><NativeContinuation {...transfers} page={transfers.data.page}/></div>}</div>;
 }
 export function LogsNative() {
   const [params,setParams]=useSearchParams();

@@ -1,3 +1,4 @@
+import { normalizeRouteIdentifier } from '../lib/nativeRoute';
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeftRight, ArrowRightLeft, BookOpen, Boxes, Check, ChevronDown, Coins, Copy, Eye, Info, LogOut, LogIn, Loader2, RefreshCw, Shield, Users, Wallet } from 'lucide-react';
@@ -16,9 +17,9 @@ import type { ReactNode } from 'react';
 type Suggestion = ReturnType<typeof decodeSearchSuggestions>[number];
 const suggestionPath = (row: Suggestion) => row.type === 'block' ? `/block/${row.value}` : row.type === 'transaction' ? `/tx/${row.value}` : row.type === 'token' ? `/token/${row.value}` : `/address/${row.value}${row.type === 'contract' ? '?tab=contract' : ''}`;
 function directPath(raw: string): string | undefined {
-  if (/^0x[0-9a-fA-F]{64}$/.test(raw)) return `/tx/${raw.toLowerCase()}`;
-  if (/^0x[0-9a-fA-F]{40}$/.test(raw)) return `/address/${raw.toLowerCase()}`;
-  if (/^(0|[1-9][0-9]{0,18})$/.test(raw) && BigInt(raw) <= 9223372036854775807n) return `/block/${raw}`;
+  const hash = normalizeRouteIdentifier(raw, 'hash'); if (hash) return `/tx/${hash}`;
+  const address = normalizeRouteIdentifier(raw, 'address'); if (address) return `/address/${address}`;
+  const block = normalizeRouteIdentifier(raw, 'block'); if (block) return `/block/${block}`;
 }
 
 function useNativeSearch(keyboardShortcut = false, enabled = true) {

@@ -1,3 +1,4 @@
+import { NativeMetadataBoundary } from './hooks/useNativeMetadata';
 import { useSyncExternalStore } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Outlet, Routes, Route, useParams, useLocation, Navigate } from 'react-router-dom';
@@ -21,12 +22,13 @@ import { DisclosuresV2, DisclosureCaseV2, DisclosureAddressV2, DisclosureTransac
 
 const queries = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, staleTime: 1000 } } });
 function Layout() {
+  const location = useLocation();
   const state = useSyncExternalStore(appSession.subscribe, appSession.snapshot);
   // The whole private screen, including search and menus, belongs to this
   // activation. A batched account adoption must not reuse the prior query.
-  return state.identity ? <NativeExplorerLayout key={state.identity.activation}><Outlet /></NativeExplorerLayout> : null;
+  return state.identity ? <NativeExplorerLayout key={state.identity.activation}><NativeMetadataBoundary ownerKey={location.key}><Outlet /></NativeMetadataBoundary></NativeExplorerLayout> : null;
 }
-function TokenAlias() { const {address} = useParams(); return <Navigate to={`/tokens/${address}`} replace/>; }
+function TokenAlias() { const {address} = useParams(), location = useLocation(); return <Navigate to={{pathname:`/tokens/${address}`,search:location.search,hash:location.hash}} state={location.state} replace/>; }
 
 // Only this explicit approved-network page is public. Private routed pages
 // remain unmounted until the original application identity is verified.
