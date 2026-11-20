@@ -14,6 +14,8 @@ import { decodeToken, decodeAddressStats, decodeBalance, decodeCode, decodeContr
 import { exactQuantity, exactUnits, exactTimestamp } from '../lib/nativePresentation';
 import { getNetworkCurrency } from '../lib/utils';
 import { StateMessage } from '../components/StateMessage';
+import { ScopedCountValue } from '../components/ScopedCountValue';
+import { scopedCountText } from '../lib/nativeCounts';
 
 const suffixTab: Record<string, AddressTab> = {stats:'details',transactions:'transactions',transfers:'transfers',balances:'tokens',internal:'internal',balance:'coin-history',logs:'logs',code:'contract',contract:'contract','is-contract':'details'};
 const tabs: AddressTab[] = ['details','transactions','transfers','tokens','internal','coin-history','logs','contract'];
@@ -43,16 +45,16 @@ export function AddressNative() {
   const setTab = (tab: AddressTab) => { const query=new URLSearchParams(params); if(tab==='details')query.delete('tab');else query.set('tab',tab); navigate({pathname:`/address/${address}`,search:query.toString(),hash:location.hash},{state:location.state}); };
   return <NativeNames items={contract.data?.creator?[{address:contract.data.creator}]:[]}><div className="space-y-6">
     <AddressBackButton onClick={() => navigate(-1)}/><AddressHero address={address} isContract={isContract} contract={contract.data ?? null} token={heroToken?.address === address ? heroToken : null}/>
-    <AddressTabs active={active} onChange={setTab} isContract={isContract || active === 'contract'} txCount={stats.txCount === undefined ? undefined : exactQuantity(stats.txCount)} tokenTransferCount={stats.tokenTransferCount === undefined ? undefined : exactQuantity(stats.tokenTransferCount)} internalTxCount={stats.internalTxCount === undefined ? undefined : exactQuantity(stats.internalTxCount)}/>
+    <AddressTabs active={active} onChange={setTab} isContract={isContract || active === 'contract'} txCount={stats.counts?.transactions ? scopedCountText(stats.counts.transactions) : undefined} tokenTransferCount={stats.counts?.tokenTransfers ? scopedCountText(stats.counts.tokenTransfers) : undefined} internalTxCount={stats.counts?.internalTransactions ? scopedCountText(stats.counts.internalTransactions) : undefined}/>
     <section>
       <NativeReadState {...info}/>
       {active === 'details' && <><NativeReadState {...balance}/><AddressDetailsPanel rows={[
         {label:'Balance',value:<span className="font-mono tabular-nums">{balance.data ? `${exactUnits(balance.data.balance)} ${getNetworkCurrency()}` : 'Unavailable'}</span>},
-        {label:'Transactions',value:exactQuantity(stats.txCount)}, {label:'Token transfers',value:exactQuantity(stats.tokenTransferCount)}, {label:'Internal txns',value:exactQuantity(stats.internalTxCount)},
+        {label:'Transactions',value:<ScopedCountValue count={stats.counts?.transactions}/>}, {label:'Token transfers',value:<ScopedCountValue count={stats.counts?.tokenTransfers}/>}, {label:'Internal txns',value:<ScopedCountValue count={stats.counts?.internalTransactions}/>},
         ...(stats.firstSeen === undefined ? [] : [{label:'First seen',value:exactTimestamp(stats.firstSeen)}]), ...(stats.lastSeen === undefined ? [] : [{label:'Last seen',value:exactTimestamp(stats.lastSeen)}]),
         ...(contract.data?.creator ? [{label:'Creator',value:<NativeAddress address={contract.data.creator}/>}]:[]),
         ...(contract.data?.creationTx ? [{label:'Creation transaction',value:<Link className="font-mono text-primary break-all" to={`/tx/${contract.data.creationTx}`}>{contract.data.creationTx}</Link>}]:[]),
-      ]}/><p className="mt-3 text-xs text-neutral-500">Counts are shown only when supplied for your current access. Unavailable is not zero.</p></>}
+      ]}/><p className="mt-3 text-xs text-neutral-500">Counts include your permitted rows. ≥ means more may exist; tap or focus a count for its retained range and update time. Unavailable is not zero.</p></>}
       {active === 'transactions' && <><NativeReadState {...txs} reset={txs.reset} loadingView={<DetailRowsSkeleton/>}/>{txs.data && <><NativeTransactionsTable items={txs.data.items} currentAddress={address} footer={<NativeContinuation {...txs} page={txs.data.page}/>}/>{!txs.data.items.length && <EmptyRow>No direct transactions on this visible page. Continue if more records are available.</EmptyRow>}</>}</>}
       {active === 'transfers' && <><NativeReadState {...transfers} reset={transfers.reset} loadingView={<DetailRowsSkeleton/>}/>{transfers.data && <PanelShell><NativeTransferRows items={transfers.data.items} currentAddress={address}/><NativeContinuation {...transfers} page={transfers.data.page}/></PanelShell>}</>}
       {active === 'logs' && <><NativeReadState {...logs} reset={logs.reset} loadingView={<DetailRowsSkeleton rows={3}/>}/>{logs.data && <><NativeLogCards items={logs.data.items}/><NativeContinuation {...logs} page={logs.data.page}/></>}</>}

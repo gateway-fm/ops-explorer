@@ -1,0 +1,224 @@
+[
+  {
+    "address": {
+      "counts": {
+        "transactions": {
+          "status": "exact",
+          "value": "9007199254740993",
+          "population": "ORDINARY_VISIBLE_ROWS",
+          "consistency": "SNAPSHOT",
+          "observedAt": "2026-11-20T11:12:13.123456789Z",
+          "range": {
+            "fromBlock": "100",
+            "throughBlock": "123",
+            "headHash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "coverage": "complete_range"
+        }
+      },
+      "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "txCount": "9007199254740993"
+    },
+    "coverage": "complete_range",
+    "stats": {
+      "counts": {
+        "transactions": {
+          "status": "exact",
+          "value": "9007199254740993",
+          "population": "ORDINARY_VISIBLE_ROWS",
+          "consistency": "SNAPSHOT",
+          "observedAt": "2026-11-20T11:12:13.123456789Z",
+          "range": {
+            "fromBlock": "100",
+            "throughBlock": "123",
+            "headHash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "coverage": "complete_range"
+        }
+      },
+      "totalTransactions": "9007199254740993",
+      "privacyEnabled": true,
+      "observedTransactions": "3",
+      "observedBlocks": "2",
+      "observedParticipantAddresses": "7",
+      "page": {
+        "hasMore": false,
+        "scanLimited": false,
+        "population": "LIVE_RETAINED_INDEXED_ROWS_CURRENT_RIGHTS",
+        "coverage": "OBSERVED_VISIBLE_PAGE"
+      }
+    },
+    "token": {
+      "counts": {
+        "tokenTransfers": {
+          "status": "exact",
+          "value": "9007199254740993",
+          "population": "ORDINARY_VISIBLE_ROWS",
+          "consistency": "SNAPSHOT",
+          "observedAt": "2026-11-20T11:12:13.123456789Z",
+          "range": {
+            "fromBlock": "100",
+            "throughBlock": "123",
+            "headHash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "coverage": "complete_range"
+        }
+      },
+      "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "symbol": "EX",
+      "decimals": 6,
+      "tokenType": "ERC20",
+      "transferCount": "9007199254740993",
+      "blockNumber": "123",
+      "createdAt": "2026-11-20T11:12:13.123456789Z"
+    }
+  },
+  {
+    "address": {
+      "counts": {
+        "transactions": {
+          "status": "exact",
+          "value": "9007199254740993",
+          "population": "ORDINARY_VISIBLE_ROWS",
+          "consistency": "SNAPSHOT",
+          "observedAt": "2026-11-20T11:12:13.123456789Z",
+          "range": {
+            "fromBlock": "100",
+            "throughBlock": "123",
+            "headHash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "coverage": "history_pruned"
+        }
+      },
+      "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "txCount": "9007199254740993"
+    },
+    "coverage": "history_pruned",
+    "stats": {
+      "counts": {
+        "transactions": {
+          "status": "exact",
+          "value": "9007199254740993",
+          "population": "ORDINARY_VISIBLE_ROWS",
+          "consistency": "SNAPSHOT",
+          "observedAt": "2026-11-20T11:12:13.123456789Z",
+          "range": {
+            "fromBlock": "100",
+            "throughBlock": "123",
+            "headHash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "coverage": "history_pruned"
+        }
+      },
+      "totalTransactions": "9007199254740993",
+      "privacyEnabled": true,
+      "observedTransactions": "3",
+      "observedBlocks": "2",
+      "observedParticipantAddresses": "7",
+      "page": {
+        "hasMore": false,
+        "scanLimited": false,
+        "population": "LIVE_RETAINED_INDEXED_ROWS_CURRENT_RIGHTS",
+        "coverage": "OBSERVED_VISIBLE_PAGE"
+      }
+    },
+    "token": {
+      "counts": {
+        "tokenTransfers": {
+          "status": "exact",
+          "value": "9007199254740993",
+          "population": "ORDINARY_VISIBLE_ROWS",
+          "consistency": "SNAPSHOT",
+          "observedAt": "2026-11-20T11:12:13.123456789Z",
+          "range": {
+            "fromBlock": "100",
+            "throughBlock": "123",
+            "headHash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "coverage": "history_pruned"
+        }
+      },
+      "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "symbol": "EX",
+      "decimals": 6,
+      "tokenType": "ERC20",
+      "transferCount": "9007199254740993",
+      "blockNumber": "123",
+      "createdAt": "2026-11-20T11:12:13.123456789Z"
+    }
+  },
+  {
+    "address": {
+      "counts": {
+        "transactions": {
+          "status": "exact",
+          "value": "9007199254740993",
+          "population": "ORDINARY_VISIBLE_ROWS",
+          "consistency": "SNAPSHOT",
+          "observedAt": "2026-11-20T11:12:13.123456789Z",
+          "range": {
+            "fromBlock": "100",
+            "throughBlock": "123",
+            "headHash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "coverage": "index_floor"
+        }
+      },
+      "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "txCount": "9007199254740993"
+    },
+    "coverage": "index_floor",
+    "stats": {
+      "counts": {
+        "transactions": {
+          "status": "exact",
+          "value": "9007199254740993",
+          "population": "ORDINARY_VISIBLE_ROWS",
+          "consistency": "SNAPSHOT",
+          "observedAt": "2026-11-20T11:12:13.123456789Z",
+          "range": {
+            "fromBlock": "100",
+            "throughBlock": "123",
+            "headHash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "coverage": "index_floor"
+        }
+      },
+      "totalTransactions": "9007199254740993",
+      "privacyEnabled": true,
+      "observedTransactions": "3",
+      "observedBlocks": "2",
+      "observedParticipantAddresses": "7",
+      "page": {
+        "hasMore": false,
+        "scanLimited": false,
+        "population": "LIVE_RETAINED_INDEXED_ROWS_CURRENT_RIGHTS",
+        "coverage": "OBSERVED_VISIBLE_PAGE"
+      }
+    },
+    "token": {
+      "counts": {
+        "tokenTransfers": {
+          "status": "exact",
+          "value": "9007199254740993",
+          "population": "ORDINARY_VISIBLE_ROWS",
+          "consistency": "SNAPSHOT",
+          "observedAt": "2026-11-20T11:12:13.123456789Z",
+          "range": {
+            "fromBlock": "100",
+            "throughBlock": "123",
+            "headHash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "coverage": "index_floor"
+        }
+      },
+      "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "symbol": "EX",
+      "decimals": 6,
+      "tokenType": "ERC20",
+      "transferCount": "9007199254740993",
+      "blockNumber": "123",
+      "createdAt": "2026-11-20T11:12:13.123456789Z"
+    }
+  }
+]

@@ -1,4 +1,5 @@
 import { readItem, readPage, readObservedStats, searchSuggestionTarget, type ReadItem } from './v2Reads';
+import { readScopedCounts, verifyFlatCount } from './nativeCounts';
 import type { AddressStats, Balance, Block, Code, Contract, InternalTransaction, Log, NativeBalance, Page, Token, TokenHolder, TokenTransfer, Transaction, SyncStatus, IndexerProgress, Catchup } from './v2ReadTypes';
 
 const address = /^0x[0-9a-f]{40}$/;
@@ -62,8 +63,11 @@ export function decodeLatestBlock(raw: unknown): { number: string } {
 }
 export function decodeAddressStats(raw: unknown): AddressStats | null {
   if (raw === null) return null;
-  const item = readItem(raw);closed(item,['address','txCount','internalTxCount','tokenTransferCount','firstSeen','lastSeen','isContract','updatedAt']);
-  check(text(item, 'address', address));optionalBool(item,['isContract']);optionalText(item,['txCount','internalTxCount','tokenTransferCount','firstSeen','lastSeen'],quantity);optionalText(item,['updatedAt']);return item as unknown as AddressStats;
+  const item = readItem(raw);closed(item,['address','txCount','internalTxCount','tokenTransferCount','firstSeen','lastSeen','isContract','updatedAt','counts']);
+  check(text(item, 'address', address));optionalBool(item,['isContract']);optionalText(item,['txCount','internalTxCount','tokenTransferCount','firstSeen','lastSeen'],quantity);optionalText(item,['updatedAt']);
+  const counts=item.counts===undefined?undefined:readScopedCounts(item.counts,['transactions','internalTransactions','tokenTransfers']);
+  verifyFlatCount(item.txCount,counts?.transactions);verifyFlatCount(item.internalTxCount,counts?.internalTransactions);verifyFlatCount(item.tokenTransferCount,counts?.tokenTransfers);
+  return {...item,...(counts===undefined?{}:{counts})} as unknown as AddressStats;
 }
 export function decodeBalance(raw: unknown): NativeBalance | null {
   if (raw === null) return null;
@@ -83,11 +87,14 @@ export function decodeContract(raw: unknown): Contract | null {
 }
 function token(raw: unknown): Token {
   const item = readItem(raw);
-  closed(item,['address','symbol','name','decimals','tokenType','totalSupply','holderCount','transferCount','usdPrice','iconUrl','l1Address','blockNumber','creationTx','offChainUpdatedAt','createdAt']);
+  closed(item,['address','symbol','name','decimals','tokenType','totalSupply','holderCount','transferCount','usdPrice','iconUrl','l1Address','blockNumber','creationTx','offChainUpdatedAt','createdAt','counts']);
   check(text(item,'address',address) && text(item,'symbol') && text(item,'tokenType') && text(item,'blockNumber',quantity) && Number.isInteger(item.decimals) && Number(item.decimals) >= 0 && Number(item.decimals) <= 255);
   check(text(item,'createdAt'));optionalText(item,['name','iconUrl','offChainUpdatedAt']);optionalText(item,['l1Address'],address);optionalText(item,['creationTx'],hash);optionalText(item,['usdPrice'],decimal);
+  check(item.usdPrice===undefined || (item.usdPrice as string).length<=128);
   for (const key of ['totalSupply','holderCount','transferCount']) check(item[key] === undefined || text(item,key,quantity));
-  return item as unknown as Token;
+  const counts=item.counts===undefined?undefined:readScopedCounts(item.counts,['holders','tokenTransfers']);
+  verifyFlatCount(item.holderCount,counts?.holders);verifyFlatCount(item.transferCount,counts?.tokenTransfers);
+  return {...item,...(counts===undefined?{}:{counts})} as unknown as Token;
 }
 export const decodeToken = (raw: unknown) => raw === null ? null : token(raw);
 export const decodeTokens = (raw: unknown) => page(raw, token);

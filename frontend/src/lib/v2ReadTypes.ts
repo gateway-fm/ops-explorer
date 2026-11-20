@@ -1,5 +1,6 @@
 // V2 ordinary read wire. Chain quantities remain strings; pagination never
 // infers a total or exhaustion from a short or empty visible page.
+import type { ScopedCounts } from './nativeCounts';
 export type Quantity = string; // canonical /^(0|[1-9][0-9]*)$/, bounded uint256
 export type Decimal = string; // bounded canonical nonnegative decimal, no exponent
 export type Hex = string; // canonical lowercase 0x bytes; shape checked by field
@@ -67,6 +68,7 @@ export interface Token {
   totalSupply?:Quantity; holderCount?:Quantity; transferCount?:Quantity;
   usdPrice?:Decimal; iconUrl?:string; l1Address?:Address; blockNumber:Quantity;
   creationTx?:Hash; offChainUpdatedAt?:string; createdAt:string;
+  counts?:ScopedCounts;
 }
 export interface TokenHolder {
   address:Address; balance:Quantity; percentage?:Decimal; isContract?:boolean;
@@ -78,12 +80,14 @@ export interface AddressStats {
   address:Address; txCount?:Quantity; internalTxCount?:Quantity;
   tokenTransferCount?:Quantity; firstSeen?:Quantity; lastSeen?:Quantity;
   isContract?:boolean; updatedAt?:string;
+  counts?:ScopedCounts;
 }
 export interface ChainStats {
   totalBlocks?:Quantity; totalTransactions?:Quantity; totalAddresses?:Quantity;
   totalTokens?:Quantity; avgBlockTime?:Decimal; privacyEnabled:true;
   observedTransactions:Quantity; observedBlocks:Quantity;
   observedParticipantAddresses:Quantity; page:PageInfo;
+  counts?:ScopedCounts;
 }
 export interface TxHistoryPoint { timestamp:Quantity; count:Quantity }
 export interface Contract {

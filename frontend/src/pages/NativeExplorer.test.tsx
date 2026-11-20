@@ -4,6 +4,7 @@ import type { ReactNode, Context } from 'react';
 import type { AuthContextType } from '../lib/authContext';
 import { V2App } from '../V2App';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { TooltipProvider } from '../components/ui/tooltip';
 import { AddressNative } from './AddressNative';
 import { TransactionNative } from './TransactionNative';
 import { NativeContinuation, useNativePage } from '../components/NativeReadPanels';
@@ -30,7 +31,7 @@ beforeEach(()=>{vi.stubGlobal('localStorage',{getItem:()=>null,setItem:()=>{},re
 describe('native Explorer original presentation',()=>{
   it('does not invent success, zero values or links for masked addresses',async()=>{
     session.read.mockImplementation(async(path:string)=>path.includes('/transfers')?{items:[],page}:tx);
-    render(<MemoryRouter initialEntries={[`/tx/${hash}`]}><Routes><Route path="/tx/:hash" element={<TransactionNative/>}/></Routes></MemoryRouter>);
+    render(<TooltipProvider><MemoryRouter initialEntries={[`/tx/${hash}`]}><Routes><Route path="/tx/:hash" element={<TransactionNative/>}/></Routes></MemoryRouter></TooltipProvider>);
     expect(await screen.findByText('Transaction Details')).toBeInTheDocument();
     expect(screen.getByTestId('tx-status')).toHaveTextContent('Pending / unknown');
     expect(screen.getByText('9,007,199,254,740,993,123')).toHaveAttribute('href','/block/9007199254740993123');
@@ -122,20 +123,22 @@ describe('native Explorer original presentation',()=>{
       if(path.endsWith('/code')){if(mode==='failed')throw Error('Unavailable');return {address,code:'0x'};}
       return null;
     });
-    render(<MemoryRouter initialEntries={[`/address/${address}`]}><Routes><Route path="/address/:address" element={<AddressNative/>}/></Routes></MemoryRouter>);
+    render(<TooltipProvider><MemoryRouter initialEntries={[`/address/${address}`]}><Routes><Route path="/address/:address" element={<AddressNative/>}/></Routes></MemoryRouter></TooltipProvider>);
     expect(await screen.findByText(label)).toBeInTheDocument();
     if(mode==='failed')expect(screen.queryByText('EOA')).toBeNull();
-    expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0);
+    const row=[...document.querySelectorAll('dt')].find(node=>node.textContent==='Transactions')!.parentElement!;
+    expect(row).toHaveTextContent('—');
+    expect(row.querySelector('[title]')).toHaveAttribute('title',expect.stringContaining('Count unavailable'));
   });
   it('retains an authorized current balance when stats are unindexed and explains unavailable coin history',async()=>{
     session.read.mockImplementation(async(path:string)=>path.endsWith('/balance')?{address,balance:'100000000000000001',blockNumber:'9007199254740993'}:path.endsWith('/code')?{address,code:'0x'}:null);
-    render(<MemoryRouter initialEntries={[`/address/${address}?tab=coin-history`]}><Routes><Route path="/address/:address" element={<AddressNative/>}/></Routes></MemoryRouter>);
+    render(<TooltipProvider><MemoryRouter initialEntries={[`/address/${address}?tab=coin-history`]}><Routes><Route path="/address/:address" element={<AddressNative/>}/></Routes></MemoryRouter></TooltipProvider>);
     expect(await screen.findByText(/0.100000000000000001 ETH/)).toBeInTheDocument();expect(screen.getByText(/Per-block coin balance history isn't indexed/)).toBeInTheDocument();
     expect(screen.getByRole('link',{name:'9,007,199,254,740,993'})).toHaveAttribute('href','/block/9007199254740993');expect(session.read.mock.calls.every(([path])=>!String(path).includes('history'))).toBe(true);
   });
   it('shows a failed stats read as an error with retry instead of a successful empty address frame',async()=>{
     session.read.mockImplementation(async(path:string)=>{if(path.endsWith('/stats'))throw Error('Denied');return null;});
-    render(<MemoryRouter initialEntries={[`/address/${address}`]}><Routes><Route path="/address/:address" element={<AddressNative/>}/></Routes></MemoryRouter>);
+    render(<TooltipProvider><MemoryRouter initialEntries={[`/address/${address}`]}><Routes><Route path="/address/:address" element={<AddressNative/>}/></Routes></MemoryRouter></TooltipProvider>);
     expect(await screen.findByTestId('app-error')).toBeInTheDocument();expect(screen.getByRole('button',{name:'Try again'})).toBeInTheDocument();expect(screen.queryByTestId('tab-details')).toBeNull();
   });
 

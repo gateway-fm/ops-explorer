@@ -1,4 +1,5 @@
 import type { Page, PageInfo } from './v2ReadTypes';
+import { readScopedCounts, verifyFlatCount, type ScopedCounts } from './nativeCounts';
 
 export type ReadItem = Record<string, unknown>;
 const object = (v: unknown): v is ReadItem => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -47,12 +48,15 @@ function readPageInfo(value: unknown, observed = false): PageInfo {
   if (p.consistency !== undefined && p.consistency !== 'SNAPSHOT' && p.consistency !== 'CURRENT' || p.endedAt !== undefined && !['ENDED_AT_UNSPECIFIED', 'ENDED_AT_END_OF_RANGE', 'ENDED_AT_RETENTION_FLOOR', 'ENDED_AT_INDEX_FLOOR'].includes(String(p.endedAt)) || p.historyFromBlock !== undefined && !quantity(p.historyFromBlock)) throw Error('Invalid read boundary');
   return p as unknown as PageInfo;
 }
-export function readObservedStats(value: unknown): ReadItem & { page: PageInfo } {
+export function readObservedStats(value: unknown): ReadItem & { page: PageInfo; counts?:ScopedCounts } {
   const item = readItem(value);
-  if (Object.keys(item).sort().join() !== 'observedBlocks,observedParticipantAddresses,observedTransactions,page,privacyEnabled' || item.privacyEnabled !== true || !quantity(item.observedTransactions) || !quantity(item.observedBlocks) || !quantity(item.observedParticipantAddresses)) throw Error('Invalid observed statistics');
+  const allowed=['observedBlocks','observedParticipantAddresses','observedTransactions','page','privacyEnabled','counts','totalTransactions','totalAddresses','totalTokens','totalBlocks'];
+  if (Object.keys(item).some(key=>!allowed.includes(key)) || item.privacyEnabled !== true || !quantity(item.observedTransactions) || !quantity(item.observedBlocks) || !quantity(item.observedParticipantAddresses)) throw Error('Invalid observed statistics');
+  const counts=item.counts===undefined?undefined:readScopedCounts(item.counts,['transactions','accounts','tokens','blocks']);
+  verifyFlatCount(item.totalTransactions,counts?.transactions);verifyFlatCount(item.totalAddresses,counts?.accounts);verifyFlatCount(item.totalTokens,counts?.tokens);verifyFlatCount(item.totalBlocks,counts?.blocks);
   const page = readPageInfo(item.page, true);
   if (page.coverage !== 'OBSERVED_VISIBLE_PAGE' || page.total !== undefined) throw Error('Invalid observed coverage');
-  return { ...item, page };
+  return { ...item, page, ...(counts===undefined?{}:{counts}) };
 }
 export function readObservedHistory(value: unknown): Page<ReadItem> {
   const page = readPageValue(value, true);

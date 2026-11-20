@@ -8,8 +8,9 @@ import { NativeAddress } from '../components/NativeAddress';
 import { ExplorerTable, ExplorerTabs, VisiblePageNote } from '../components/ExplorerReadPresentation';
 import { NativeContinuation, NativeReadState, NativeTransactionsTable, NativeTransferRows, NativeLogCards, useNativePage } from '../components/NativeReadPanels';
 import { decodeAccounts, decodeTransactions, decodeTransfers, decodeLogs } from '../lib/nativeReadModels';
-import { exactQuantity, exactTimestamp } from '../lib/nativePresentation';
+import { exactTimestamp } from '../lib/nativePresentation';
 import { EmptyRow } from '../components/AddressPresentation';
+import { ScopedCountValue } from '../components/ScopedCountValue';
 
 const categories=[{id:'',label:'All'},{id:'coin_transfer',label:'Coin transfers'},{id:'contract_call',label:'Contract calls'},{id:'contract_creation',label:'Contract creation'},{id:'token_transfer',label:'Token transfers'}];
 export function TransactionsNative() {
@@ -23,7 +24,7 @@ export function TransactionsNative() {
 }
 export function AccountsNative() {
   const accounts=useNativePage('/accounts',decodeAccounts);
-  return <div className="space-y-6"><PageHeader title="Accounts" subtitle="Addresses visible to your current access"/><VisiblePageNote/><NativeReadState {...accounts} reset={accounts.reset}/>{accounts.data&&<NativeNames items={accounts.data.items.map(account=>({address:account.address}))}><div className="card"><ExplorerTable headings={['Address','Type','Transactions','Token transfers','First seen','Last seen']}>{accounts.data.items.map(account=><tr key={account.address} data-testid="account-row"><td><NativeAddress address={account.address} full/></td><td>{account.isContract===undefined?'Unavailable':account.isContract?'Contract':'EOA'}</td><td>{exactQuantity(account.txCount)}</td><td>{exactQuantity(account.tokenTransferCount)}</td><td>{exactTimestamp(account.firstSeen)}</td><td>{exactTimestamp(account.lastSeen)}</td></tr>)}</ExplorerTable>{!accounts.data.items.length&&<EmptyRow>No visible accounts on this page.</EmptyRow>}<NativeContinuation {...accounts} page={accounts.data.page}/></div></NativeNames>}</div>;
+  return <div className="space-y-6"><PageHeader title="Accounts" subtitle="Addresses visible to your current access"/><VisiblePageNote/><NativeReadState {...accounts} reset={accounts.reset}/>{accounts.data&&<NativeNames items={accounts.data.items.map(account=>({address:account.address}))}><div className="card"><ExplorerTable headings={['Address','Type','Transactions','Token transfers','First seen','Last seen']}>{accounts.data.items.map(account=><tr key={account.address} data-testid="account-row"><td><NativeAddress address={account.address} full/></td><td>{account.isContract===undefined?'Unavailable':account.isContract?'Contract':'EOA'}</td><td><ScopedCountValue count={account.counts?.transactions}/></td><td><ScopedCountValue count={account.counts?.tokenTransfers}/></td><td>{exactTimestamp(account.firstSeen)}</td><td>{exactTimestamp(account.lastSeen)}</td></tr>)}</ExplorerTable>{!accounts.data.items.length&&<EmptyRow>No visible accounts on this page.</EmptyRow>}<NativeContinuation {...accounts} page={accounts.data.page}/></div></NativeNames>}</div>;
 }
 export function TransfersNative() {
   const transfers=useNativePage('/transfers',decodeTransfers);

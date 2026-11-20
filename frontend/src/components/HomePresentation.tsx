@@ -35,7 +35,7 @@ const colorStyles = {
   amber: 'bg-warning-50 dark:bg-warning-500/10 text-warning-600 dark:text-warning-500 border border-warning-100 dark:border-warning-500/20',
 };
 
-export function HomeStatCard({ label, value, icon, color }: { label: string; value: string; icon: React.ReactNode; color: keyof typeof colorStyles }) {
+export function HomeStatCard({ label, value, icon, color }: { label: string; value: React.ReactNode; icon: React.ReactNode; color: keyof typeof colorStyles }) {
   return (
     <div className="card p-3 sm:p-4" data-testid="stat-card">
       <div className="flex items-center justify-between mb-2 sm:mb-3">

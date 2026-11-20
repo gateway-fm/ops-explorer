@@ -56,7 +56,7 @@ describe('named native Explorer screens',()=>{
   function Back(){const navigate=useNavigate();return <><button onClick={()=>navigate(-1)}>History back</button><TokensNative/></>;}
   renderPage(<Back/>,'/tokens?search=Example&type=ERC20');
   expect(await screen.findByTestId('token-row')).toHaveTextContent('Example token');
-  expect(screen.getByText(/Unavailable columns are omitted/)).toBeInTheDocument();expect(screen.queryByRole('columnheader',{name:'Total Supply'})).toBeNull();
+  expect(screen.getByText(/unavailable columns are omitted/)).toBeInTheDocument();expect(screen.queryByRole('columnheader',{name:'Total Supply'})).toBeNull();
   expect(session.read.mock.calls[0]?.[0]).toContain('search=Example');
   fireEvent.click(screen.getByRole('tab',{name:'ERC-721'}));await waitFor(()=>expect(session.read.mock.calls.at(-1)?.[0]).toContain('type=ERC721'));
   fireEvent.click(screen.getByRole('button',{name:'History back'}));await waitFor(()=>expect(screen.getByRole('tab',{name:'ERC-20'})).toHaveAttribute('aria-selected','true'));
@@ -64,11 +64,10 @@ describe('named native Explorer screens',()=>{
   await waitFor(()=>expect(session.read.mock.calls.at(-1)?.[0]).toContain('search=Other+token'));expect(screen.getByTestId('token-row')).toBeInTheDocument();
  });
  it('retains the V1 responsive supply/transfer columns and exact optional fixture quantities without a global rank',async()=>{
-  // Qualified optional-field fixture; the current Go metadata producer omits
-  // these global fields. This verifies presentation, not production coverage.
-  session.read.mockResolvedValue({items:[{...token,decimals:6,totalSupply:'900719925474099312345',holderCount:'9007199254740993',transferCount:'7'}],page});renderPage(<TokensNative/>);
+  // Supply is indexed metadata; count summaries must carry their scoped proof.
+  session.read.mockResolvedValue({items:[{...token,decimals:6,totalSupply:'900719925474099312345',holderCount:'9007199254740993',transferCount:'7',counts:{holders:{status:'exact',value:'9007199254740993',population:'ORDINARY_VISIBLE_ROWS',consistency:'CURRENT',coverage:'current',observedAt:'2026-11-20T11:12:13Z'},tokenTransfers:{status:'exact',value:'7',population:'ORDINARY_VISIBLE_ROWS',consistency:'SNAPSHOT',coverage:'complete_range',observedAt:'2026-11-20T11:12:13Z',range:{fromBlock:'0',throughBlock:'1',headHash:hash}}}}],page});renderPage(<TokensNative/>);
   const row=await screen.findByTestId('token-row');expect(row).toHaveTextContent('900,719,925,474,099.312345');expect(row).toHaveClass('hover:bg-primary-50/40');
-  expect(screen.getByRole('columnheader',{name:'Total Supply'})).toHaveClass('hidden','md:table-cell','text-right');expect(screen.getByRole('columnheader',{name:'Transfers'})).toHaveClass('hidden','sm:table-cell','text-right');
+  expect(screen.getByRole('columnheader',{name:'Indexed supply'})).toHaveClass('hidden','md:table-cell','text-right');expect(screen.getByRole('columnheader',{name:'Transfers'})).toHaveClass('hidden','sm:table-cell','text-right');
   expect(screen.getByText('900,719,925,474,099.312345')).toHaveClass('text-right','font-mono');expect(screen.queryByRole('columnheader',{name:'#'})).toBeNull();
  });
  it('restores Copy on the parent and each returned block root without any follow-up read',async()=>{

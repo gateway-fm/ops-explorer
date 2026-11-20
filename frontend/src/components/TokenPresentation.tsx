@@ -16,7 +16,7 @@ export function TokenHero({ token }: { token: TokenHeroModel }) {
             <span className="text-lg text-neutral-500">{symbol}</span>
             <TokenTypeBadge type={token.tokenType} />
             {token.usdPrice && (
-              <span className="font-mono text-sm tabular-nums text-neutral-600">
+              <span className="min-w-0 max-w-full break-all font-mono text-sm tabular-nums text-neutral-600">
                 ${token.usdPrice}
               </span>
             )}

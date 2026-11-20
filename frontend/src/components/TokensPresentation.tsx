@@ -105,11 +105,11 @@ export function TokensTableSkeleton() {
 }
 
 // The V1 table layout accepts native exact-value cells without its API model.
-export function TokensTablePresentation({children, ranked = false, supply = true, holders = true, transfers = true}: {children: ReactNode; ranked?: boolean; supply?: boolean; holders?: boolean; transfers?: boolean}) {
+export function TokensTablePresentation({children, ranked = false, supply = true, holders = true, transfers = true, supplyLabel = 'Total Supply'}: {children: ReactNode; ranked?: boolean; supply?: boolean; holders?: boolean; transfers?: boolean; supplyLabel?: string}) {
   return <div className="overflow-x-auto rounded-2xl border border-neutral-200 bg-neutral-50"><table className="w-full text-sm"><thead><tr className="border-b border-neutral-200">
     {ranked && <th className="w-12 px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-neutral-500">#</th>}
     <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-neutral-500">Token</th>
-    {supply && <th className="hidden px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-neutral-500 md:table-cell">Total Supply</th>}
+    {supply && <th className="hidden px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-neutral-500 md:table-cell">{supplyLabel}</th>}
     {holders && <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-neutral-500">Holders</th>}
     {transfers && <th className="hidden px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-neutral-500 sm:table-cell">Transfers</th>}
   </tr></thead><tbody>{children}</tbody></table></div>;
