@@ -8,8 +8,8 @@ import { Skeleton } from './ui/skeleton';
 
 // Original Home presentation shared by the legacy and native read controllers.
 // Its slots receive already-authorized data; this component does no fetching.
-export function HomePresentation({ search, stats, chart, blocks, transactions, statsNote }: {
-  search: ReactNode; stats: ReactNode; chart?: ReactNode; blocks: ReactNode; transactions: ReactNode; statsNote?: ReactNode;
+export function HomePresentation({ search, stats, chart, blocks, transactions, statsNote, statsColumns = 4 }: {
+  search: ReactNode; stats: ReactNode; chart?: ReactNode; blocks: ReactNode; transactions: ReactNode; statsNote?: ReactNode; statsColumns?: 4|5;
 }) {
   return <div className="space-y-4 sm:space-y-8">
     <div className={`relative overflow-visible rounded-xl p-5 sm:p-8 shadow-card ${branding.colorHeroBg ? '' : 'bg-gradient-to-br from-primary-900 via-primary-700 to-primary'}`} style={branding.colorHeroBg ? { background: branding.colorHeroBg } : undefined}>
@@ -17,7 +17,7 @@ export function HomePresentation({ search, stats, chart, blocks, transactions, s
       <div className="relative z-10"><h1 className="text-2xl sm:text-3xl font-bold text-white mb-4">{branding.name}</h1>{search}</div>
     </div>
     <div className={`grid gap-4 sm:gap-6 ${chart ? 'md:grid-cols-2' : ''}`}>
-      <div className={`grid grid-cols-2 gap-2 sm:gap-4 ${chart ? '' : 'md:grid-cols-4'}`}>{stats}</div>
+      <div data-testid="home-stats-grid" className={`grid grid-cols-2 gap-2 sm:gap-4 ${statsColumns===5?'md:grid-cols-3 xl:grid-cols-5':chart?'':'md:grid-cols-4'}`}>{stats}</div>
       {chart}
       {statsNote && <p className="text-xs text-neutral-500 col-span-full">{statsNote}</p>}
     </div>
@@ -35,7 +35,7 @@ const colorStyles = {
   amber: 'bg-warning-50 dark:bg-warning-500/10 text-warning-600 dark:text-warning-500 border border-warning-100 dark:border-warning-500/20',
 };
 
-export function HomeStatCard({ label, value, icon, color }: { label: string; value: React.ReactNode; icon: React.ReactNode; color: keyof typeof colorStyles }) {
+export function HomeStatCard({ label, value, icon, color, note }: { label: string; value: React.ReactNode; icon: React.ReactNode; color: keyof typeof colorStyles; note?:ReactNode }) {
   return (
     <div className="card p-3 sm:p-4" data-testid="stat-card">
       <div className="flex items-center justify-between mb-2 sm:mb-3">
@@ -45,6 +45,7 @@ export function HomeStatCard({ label, value, icon, color }: { label: string; val
         </div>
       </div>
       <div className="text-lg sm:text-2xl font-mono font-semibold text-neutral-900 truncate">{value}</div>
+      {note&&<p className="mt-1 text-xs font-sans text-neutral-500 break-words">{note}</p>}
     </div>
   );
 }
@@ -88,12 +89,12 @@ const transactionKinds = {
   token_transfer: { label: 'Token Transfer', icon: Coins, bgColor: 'bg-orange-50 dark:bg-orange-900/20', textColor: 'text-orange-600 dark:text-orange-400' },
   coin_transfer: { label: 'Coin Transfer', icon: ArrowRightLeft, bgColor: 'bg-green-50 dark:bg-green-900/20', textColor: 'text-green-600 dark:text-green-400' },
 };
-export function HomeTransactionRow({ tx, from, to, isNew = false }: { tx: { hash: string; blockTimestamp?: number | string; status: number | null; txCategories?: string[] }; from: ReactNode; to?: ReactNode; isNew?: boolean }) {
+export function HomeTransactionRow({ tx, from, to, isNew = false, wrapParties = false }: { tx: { hash: string; blockTimestamp?: number | string; status: number | null; txCategories?: string[] }; from: ReactNode; to?: ReactNode; isNew?: boolean; wrapParties?:boolean }) {
   const kind = Object.keys(transactionKinds).find(key => tx.txCategories?.includes(key)) as keyof typeof transactionKinds | undefined;
   const { icon: Icon, bgColor, textColor, label } = kind ? transactionKinds[kind] : { label: 'Transfer', icon: ArrowRightLeft, bgColor: 'bg-neutral-100', textColor: 'text-neutral-500' };
-  return <div data-testid="tx-row" className={`px-3 sm:px-4 h-[52px] sm:h-[60px] flex items-center gap-3 hover:bg-primary-50/50 dark:hover:bg-primary-900/10 transition-colors ${isNew ? 'feed-item-new' : ''}`}>
+  return <div data-testid="tx-row" className={`px-3 sm:px-4 ${wrapParties?'min-h-[52px] sm:min-h-[60px] py-3':'h-[52px] sm:h-[60px]'} flex items-center gap-3 hover:bg-primary-50/50 dark:hover:bg-primary-900/10 transition-colors ${isNew ? 'feed-item-new' : ''}`}>
     <div className={`p-2 rounded-lg ${bgColor} ${textColor} shrink-0`}><Icon className="w-5 h-5" /></div>
-    <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><Link to={`/tx/${tx.hash}`} className="font-mono text-primary hover:text-primary-600 transition-colors text-xs sm:text-sm">{formatHash(tx.hash,10)}</Link>{tx.blockTimestamp !== undefined && <span className="text-neutral-400 text-xs hidden sm:inline"><HomeTime timestamp={tx.blockTimestamp} /></span>}</div><div className="text-xs sm:text-sm text-neutral-500 truncate">{from}{to && <> → {to}</>}</div></div>
+    <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><Link to={`/tx/${tx.hash}`} className={`font-mono text-primary hover:text-primary-600 transition-colors text-xs sm:text-sm ${wrapParties?'min-w-0 truncate':''}`}>{formatHash(tx.hash,10)}</Link>{tx.blockTimestamp !== undefined && <span className="text-neutral-400 text-xs hidden sm:inline"><HomeTime timestamp={tx.blockTimestamp} /></span>}</div><div className={`text-xs sm:text-sm text-neutral-500 ${wrapParties?'flex flex-wrap items-center gap-x-1 gap-y-1':'truncate'}`}>{from}{to && <> → {to}</>}</div></div>
     <div className="text-right text-xs sm:text-sm shrink-0"><div className={`${textColor} font-medium`}>{label}</div><div className={tx.status === 1 ? 'text-success-600' : tx.status === 0 ? 'text-error-600' : 'text-neutral-500'}>{tx.status === 1 ? 'Success' : tx.status === 0 ? 'Failed' : 'Pending / unknown'}</div></div>
   </div>;
 }

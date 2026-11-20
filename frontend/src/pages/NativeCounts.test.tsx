@@ -19,7 +19,7 @@ beforeEach(()=>{sessionStorage.clear();mock.read.mockReset();mock.state={identit
 afterEach(()=>{cleanup();vi.useRealTimers();});
 it('Home displays scoped accounts rather than observed participant addresses, with exact zero/lower-bound/unavailable',async()=>{
   let calls=0;mock.read.mockImplementation(async(path:string)=>path.includes('/stats?')?(calls++,{privacyEnabled:true,observedTransactions:'3',observedParticipantAddresses:'777',observedBlocks:'2',counts:{transactions:limited,accounts:current,tokens:unavailable},page:{...page,coverage:'OBSERVED_VISIBLE_PAGE'}}):path.endsWith('/blocks/latest/number')?{number:'123'}:{items:[],page});
-  mount(<HomeNative/>);await waitFor(()=>expect(screen.getAllByTestId('stat-card')).toHaveLength(4));
+  mount(<HomeNative/>);await waitFor(()=>expect(screen.getAllByTestId('stat-card')).toHaveLength(5));
   const card=(label:string)=>screen.getAllByTestId('stat-card').find(node=>within(node).queryByText(label))!;
   expect(card('Visible Accounts')).toHaveTextContent('0');expect(card('Visible Accounts')).not.toHaveTextContent('777');
   expect(card('Visible Transactions')).toHaveTextContent('≥9,007,199,254,740,993');expect(card('Visible Tokens')).toHaveTextContent('—');
