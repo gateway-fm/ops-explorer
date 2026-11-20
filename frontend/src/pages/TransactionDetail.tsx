@@ -1,3 +1,4 @@
+import { InlineTokenTransferPresentation } from '../components/InlineTokenTransferPresentation';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
@@ -303,19 +304,12 @@ function TokenTransferRow({ transfer, tokenDecimals, tokenSymbol }: { transfer: 
   const fromReason = transfer.addressMetadata?.[transfer.from?.toLowerCase()];
   const toReason = transfer.addressMetadata?.[transfer.to?.toLowerCase()];
 
-  return (
-    <div data-testid="transfer-row" className="flex items-center gap-1.5 flex-wrap text-sm">
-      <span className="text-neutral-500">From</span>
-      <AddressLink address={transfer.from} reason={fromReason} />
-      <AddressLabel reason={fromReason} />
-      <span className="text-neutral-500">To</span>
-      <AddressLink address={transfer.to} reason={toReason} />
-      <AddressLabel reason={toReason} />
-      <span className="text-neutral-500">For</span>
-      <span className="font-mono text-success-600 font-medium">{formattedValue}{tokenSymbol ? ` ${tokenSymbol}` : ''}</span>
-      <TokenAddressLink address={transfer.tokenAddress} />
-    </div>
-  );
+  return <InlineTokenTransferPresentation
+    from={<><AddressLink address={transfer.from} reason={fromReason}/><AddressLabel reason={fromReason}/></>}
+    to={<><AddressLink address={transfer.to} reason={toReason}/><AddressLabel reason={toReason}/></>}
+    quantity={<>{formattedValue}{tokenSymbol ? ` ${tokenSymbol}` : ''}</>}
+    token={<TokenAddressLink address={transfer.tokenAddress}/>}
+  />;
 }
 
 type TopicDecodeFormat = 'hex' | 'address' | 'number' | 'text';

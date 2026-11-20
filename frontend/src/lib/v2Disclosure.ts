@@ -29,6 +29,7 @@ const aliasPattern = /^da1\.[A-Za-z0-9_-]{1,64}\.[A-Za-z0-9_-]{22}$/;
 const digestPattern = /^sha256:[0-9a-f]{64}$/;
 const invalid = (): never => { throw Error('The disclosure response is invalid. Refresh the case before continuing.'); };
 function object(value: unknown): Record<string, unknown> { if (!value || typeof value !== 'object' || Array.isArray(value)) return invalid(); return value as Record<string, unknown>; }
+function onlyFields(value: Record<string, unknown>, allowed: string[]): void { if (Object.keys(value).some(key => !allowed.includes(key))) return invalid(); }
 function text(value: unknown, max = 4096): string { if (typeof value !== 'string' || value.length > max) return invalid(); return value; }
 function integer(value: unknown, max = 253402300799): number { if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || value > max) return invalid(); return value; }
 function identifier(value: unknown): string { const s = text(value, 36); if (!uuidPattern.test(s) || s === '00000000-0000-0000-0000-000000000000') return invalid(); return s; }
@@ -50,15 +51,25 @@ export function parseDisclosureCase(value: unknown): DisclosureCase {
   return { caseId: identifier(v.caseId), ruleId: text(v.ruleId, 128), recipientActorId: actor(v.recipientActorId), creatorActorId: actor(v.creatorActorId), dataOrganizationId: identifier(v.dataOrganizationId), scope: scope(v.scope), caseReference: text(v.caseReference), purpose: text(v.purpose), legalBasis: text(v.legalBasis), status: v.status, version: integer(v.version, Number.MAX_SAFE_INTEGER), createdAt: integer(v.createdAt), expiresAt: integer(v.expiresAt) };
 }
 export function parseCasePage(value: unknown): CasePage { const v = object(value); if (typeof v.scanComplete !== 'boolean') return invalid(); return { items: list(v.items, 100, parseDisclosureCase), nextCursor: text(v.nextCursor, 8192), scanComplete: v.scanComplete }; }
+function disclosedDisplay(value: unknown, selected: DisclosureLevel): string {
+  const display = text(value, 256);
+  if (selected === 'full' ? !addressPattern.test(display) : selected === 'pseudonymous' ? !/^Address-[A-Z2-7]{26}$/.test(display) : display !== '[PRIVATE]') return invalid();
+  return display;
+}
 function address(value: unknown, selected: DisclosureLevel): DataAddress {
-  const v = object(value); if (selected !== 'full' && (v.address !== undefined || v.targetActorIds !== undefined || v.ensName !== undefined) || selected === 'redacted' && v.isMine !== undefined) return invalid();
+  const v = object(value); onlyFields(v, ['addressId', 'display', 'address', 'targetActorIds', 'ensName', 'isMine']);
+  if (selected !== 'full' && (v.address !== undefined || v.targetActorIds !== undefined || v.ensName !== undefined) || selected === 'redacted' && v.isMine !== undefined) return invalid();
   const mine = v.isMine; if (mine !== undefined && typeof mine !== 'boolean') return invalid();
-  return { addressId: pattern(v.addressId, aliasPattern, 128), display: text(v.display, 256), address: optional(v.address, v => pattern(v, addressPattern, 42)), isMine: mine as boolean | undefined };
+  return { addressId: pattern(v.addressId, aliasPattern, 128), display: disclosedDisplay(v.display, selected), address: optional(v.address, v => pattern(v, addressPattern, 42)), isMine: mine as boolean | undefined };
 }
 function transaction(value: unknown, selected: DisclosureLevel, detail = false): DataTransaction {
-  const v = object(value); if (selected !== 'full' && (v.transactionHash !== undefined || v.value !== undefined || v.addressId !== undefined) || detail && selected !== 'full') return invalid();
+  const v = object(value);
+  const detailFields = ['gasPrice', 'gasLimit', 'maxFeePerGas', 'maxPriorityFeePerGas', 'nonce', 'type', 'input', 'error', 'revertReason', 'contractAddress'];
+  onlyFields(v, ['blockNumber', 'transactionIndex', 'blockTime', 'gasUsed', 'status', 'direction', 'from', 'to', 'transactionHash', 'value', 'addressId', ...(detail ? detailFields : [])]);
+  const fullOnly = ['transactionHash', 'value', 'addressId', 'gasPrice', 'gasLimit', 'maxFeePerGas', 'maxPriorityFeePerGas', 'nonce', 'type', 'input', 'error', 'revertReason', 'contractAddress'];
+  if (selected !== 'full' && fullOnly.some(key => v[key] !== undefined) || detail && selected !== 'full') return invalid();
   if (!['incoming', 'outgoing', 'self'].includes(String(v.direction))) return invalid();
-  const out: DataTransaction = { blockNumber: quantity(v.blockNumber), transactionIndex: integer(v.transactionIndex, 4294967295), blockTime: integer(v.blockTime), gasUsed: quantity(v.gasUsed), status: integer(v.status, 1), direction: String(v.direction), from: text(v.from, 256), to: v.to === null ? null : text(v.to, 256), transactionHash: optional(v.transactionHash, x => pattern(x, hashPattern, 66)), addressId: optional(v.addressId, x => pattern(x, aliasPattern, 128)), value: optional(v.value, quantity) };
+  const out: DataTransaction = { blockNumber: quantity(v.blockNumber), transactionIndex: integer(v.transactionIndex, 4294967295), blockTime: integer(v.blockTime), gasUsed: quantity(v.gasUsed), status: integer(v.status, 1), direction: String(v.direction), from: disclosedDisplay(v.from, selected), to: v.to === null ? null : disclosedDisplay(v.to, selected), transactionHash: optional(v.transactionHash, x => pattern(x, hashPattern, 66)), addressId: optional(v.addressId, x => pattern(x, aliasPattern, 128)), value: optional(v.value, quantity) };
   if (detail) { out.gasPrice = quantity(v.gasPrice); out.gasLimit = quantity(v.gasLimit); out.nonce = quantity(v.nonce); out.type = integer(v.type, 4); out.input = pattern(v.input, /^0x(?:[0-9a-f]{2})*$/, 1 << 20); }
   return out;
 }

@@ -15,8 +15,7 @@ import { AddressNative } from '../pages/AddressNative';
 import { TransactionNative } from '../pages/TransactionNative';
 import { BlockNative } from '../pages/BlocksNative';
 import { TransactionsNative } from '../pages/CollectionsNative';
-import { DisclosureAddressV2, DisclosureTransactionV2 } from '../pages/DisclosuresV2';
-import { DisclosureTransactionRows } from './DisclosureTransactions';
+import { DisclosureAddressV2, DisclosureCaseV2, DisclosureTransactionV2 } from '../pages/DisclosuresV2';
 import { decodeTransactions, decodeToken } from '../lib/nativeReadModels';
 import { exactFiatValue } from '../lib/nativePresentation';
 import { advancePosition, firstPosition, navigationOwner, restorePosition, savePosition } from '../lib/nativeNavigation';
@@ -104,10 +103,42 @@ describe('E7 route-owned metadata sharing',()=>{
 describe('E3 disclosed transactions stay in case authority',()=>{
  const id='11111111-1111-4111-8111-111111111111',alias='da1.test.'+'A'.repeat(21)+'Q';
  function record(level='full'):DisclosureCase{const now=Math.floor(Date.now()/1000);return{caseId:id,ruleId:'transactions',recipientActorId:mock.state.identity.actor,creatorActorId:mock.state.identity.actor,dataOrganizationId:id,scope:{targetActors:[mock.state.identity.actor],resources:['transactions'],addresses:{mode:'all-target-addresses',values:[]},dataTime:{start:now-100,end:now},level:level as DisclosureCase['scope']['level']},caseReference:'Case fixture',purpose:'Review',legalBasis:'Mandate',status:'open',version:1,createdAt:now-1,expiresAt:now+900};}
- function tx():DataTransaction{return{transactionHash:hash,addressId:alias,blockNumber:'9007199254740993',transactionIndex:1,blockTime:Math.floor(Date.now()/1000)-1,from:address,to:other,value:'100000000000000001',gasUsed:'21000',gasPrice:'1500000001',gasLimit:'30000',nonce:'0',type:2,input:'0xdeadbeef',status:1,direction:'outgoing'};}
+ function listTx():DataTransaction{return{transactionHash:hash,addressId:alias,blockNumber:'9007199254740993',transactionIndex:1,blockTime:Math.floor(Date.now()/1000)-1,from:address,to:other,value:'100000000000000001',gasUsed:'21000',status:1,direction:'outgoing'};}
+ function tx():DataTransaction{return{...listTx(),gasPrice:'1500000001',gasLimit:'30000',nonce:'0',type:2,input:'0xdeadbeef'};}
  function envelope(){return{v:1,readId:id,caseId:id,resource:'transactions',view:'detail',level:'full',effectiveUntil:record().expiresAt,coverage:{status:'RETAINED_AT_READ',sourceBasisDigest:'sha256:'+'a'.repeat(64),preparedAt:Math.floor(Date.now()/1000)},result:{item:tx()}};}
  function detail(){return mount(<Routes><Route path="/disclosures/cases/:caseId/addresses/:addressId/transactions/:hash" element={<DisclosureTransactionV2/>}/></Routes>,`/disclosures/cases/${id}/addresses/${alias}/transactions/${hash}`);}
- it.each(['redacted','pseudonymous','full'])('presents %s units, status and direction without ordinary routes or metadata',async(level)=>{const transaction=tx();if(level!=='full'){delete transaction.value;delete transaction.transactionHash;delete transaction.addressId;transaction.from=level==='redacted'?'[PRIVATE]':'Address-alias';}mount(<DisclosureTransactionRows rows={[transaction]} record={record(level)}/>);expect(screen.getByText('outgoing')).toBeInTheDocument();expect(screen.getByText('Success')).toBeInTheDocument();expect(screen.getByText(level==='full'?'0.100000000000000001 ETH':'Private')).toBeInTheDocument();expect([...document.querySelectorAll('a')].every(link=>link.getAttribute('href')?.startsWith('/disclosures/cases/'))).toBe(true);expect(mock.read).not.toHaveBeenCalled();});
+ it.each(['redacted','pseudonymous','full'])('presents actual Go-shaped %s list fields through the routed case view',async(level)=>{
+  // TransactionDTO list projection: detail-only gas price, nonce and calldata
+  // are absent at every list level; both parties follow the selected display.
+  const common={blockNumber:'9007199254740993',transactionIndex:1,blockTime:Math.floor(Date.now()/1000)-1,gasUsed:'21000',status:1,direction:'outgoing'};
+  const transaction=level==='full'?{...common,from:address,to:other,transactionHash:hash,addressId:alias,value:'100000000000000001'}:level==='pseudonymous'?{...common,from:'Address-'+'A'.repeat(26),to:'Address-'+'B'.repeat(26)}:{...common,from:'[PRIVATE]',to:'[PRIVATE]'};
+  const wire={...envelope(),view:'list',level,result:{items:[transaction],nextCursor:null}};
+  const canaries=[address,other,hash,'0xdeadbeef','98765432109876543210'];
+  if(level!=='full'){
+    for(const canary of canaries)expect(JSON.stringify(wire)).not.toContain(canary);
+    for(const field of ['value','transactionHash','addressId','input','nonce','gasPrice','gasLimit','type'])expect(transaction).not.toHaveProperty(field);
+  }
+  mock.disclosure.mockImplementation(async(path:string,options?:RequestInit)=>path.includes('/audit')?{items:[],nextCursor:''}:options?.method==='POST'?wire:record(level));
+  mount(<Routes><Route path="/disclosures/cases/:caseId" element={<DisclosureCaseV2/>}/></Routes>,`/disclosures/cases/${id}`);fireEvent.click(await screen.findByRole('button',{name:'Transactions',exact:true}));
+  const row=await screen.findByTestId('disclosure-transaction-row');expect(row).toHaveTextContent('outgoing');expect(row).toHaveTextContent('Success');expect(row).toHaveTextContent(level==='full'?'0.100000000000000001 ETH':'Private');
+  if(level!=='full'){
+    for(const canary of canaries)expect(document.body.textContent).not.toContain(canary);
+    expect(row.querySelector('a')).toBeNull();expect(row.querySelector('button')).toBeNull();
+    expect([...document.querySelectorAll('[href],[title],[data-copy]')].every(node=>canaries.every(canary=>!node.outerHTML.includes(canary)))).toBe(true);
+  }
+  expect(screen.getByTestId('disclosure-boundary')).toHaveTextContent(level);
+  expect([...document.querySelectorAll('a')].every(link=>link.getAttribute('href')?.startsWith('/disclosures'))).toBe(true);expect(mock.read).not.toHaveBeenCalled();
+ });
+ it.each(['from','to','input','nonce'])('rejects an invalid non-Full %s field through the routed list before it reaches DOM or copy controls',async(field)=>{
+  const safe={blockNumber:'7',transactionIndex:1,blockTime:Math.floor(Date.now()/1000)-1,gasUsed:'21000',status:1,direction:'outgoing',from:'Address-'+'A'.repeat(26),to:'Address-'+'B'.repeat(26)};
+  const canary=field==='from'?address:field==='to'?other:field==='input'?'0xdeadbeef':'98765432109876543210';
+  const raw={...envelope(),view:'list',level:'pseudonymous',result:{items:[{...safe,[field]:canary}],nextCursor:null}};
+  mock.disclosure.mockImplementation(async(path:string,options?:RequestInit)=>path.includes('/audit')?{items:[],nextCursor:''}:options?.method==='POST'?raw:record('pseudonymous'));
+  mount(<Routes><Route path="/disclosures/cases/:caseId" element={<DisclosureCaseV2/>}/></Routes>,`/disclosures/cases/${id}`);fireEvent.click(await screen.findByRole('button',{name:'Transactions',exact:true}));await screen.findByRole('alert');expect(screen.queryByTestId('disclosure-transaction-row')).toBeNull();expect(document.body.outerHTML).not.toContain(canary);expect(screen.queryByTitle('Copy to clipboard')).toBeNull();expect(mock.read).not.toHaveBeenCalled();
+ });
+ it.each(['pseudonymous','redacted'])('does not issue or display a Full detail read for a %s case route',async(level)=>{
+  mock.disclosure.mockResolvedValue(record(level));detail();expect(await screen.findByRole('alert')).toHaveTextContent('no longer permits full transaction details');expect(mock.disclosure.mock.calls.every(([path])=>!path.startsWith('/grant/'))).toBe(true);for(const canary of [address,other,hash,'0xdeadbeef'])expect(document.body.outerHTML).not.toContain(canary);expect(screen.queryByTitle('Copy to clipboard')).toBeNull();expect(mock.read).not.toHaveBeenCalled();
+ });
  it('accepts a recipient-wallet detail endpoint when Go returns the sender representative alias',async()=>{
   const senderAlias='da1.sender.'+'B'.repeat(21)+'Q';const currentRecord={...record(),scope:{...record().scope,addresses:{mode:'list',values:[address,other]}}};
   mock.disclosure.mockImplementation(async(path:string)=>path.startsWith('/grant/')?{...envelope(),result:{item:{...tx(),addressId:senderAlias}}}:currentRecord);detail();expect(await screen.findByText('0xdeadbeef')).toBeInTheDocument();expect(mock.disclosure.mock.calls[1][0]).toBe(`/grant/${id}/${alias}/transactions/${hash}`);expect(screen.queryByRole('alert')).toBeNull();expect(mock.read).not.toHaveBeenCalled();
@@ -121,7 +152,7 @@ describe('E3 disclosed transactions stay in case authority',()=>{
   const currentRecord={...record(),scope:{...record().scope,resources:['addresses','transactions']}};let revoked=false,resolveChild!:(value:unknown)=>void,childSignal:AbortSignal|undefined;
   const resolved={...envelope(),resource:'addresses',view:'resolve',result:{item:{addressId:alias,address,display:address}}};
   mock.disclosure.mockImplementation(async(path:string,options?:RequestInit)=>path.includes('/resolve/')?resolved:path.includes('/transactions?')?new Promise(resolve=>{resolveChild=resolve;childSignal=options?.signal??undefined;}):{...currentRecord,status:revoked?'revoked':'open'});
-  mount(<Routes><Route path="/disclosures/cases/:caseId/addresses/:addressId" element={<DisclosureAddressV2/>}/></Routes>,`/disclosures/cases/${id}/addresses/${alias}`);await screen.findByText(address);await waitFor(()=>expect(resolveChild).toBeTypeOf('function'));revoked=true;fireEvent(window,new Event('focus'));expect(screen.queryByText(address)).toBeNull();expect(childSignal?.aborted).toBe(true);expect(await screen.findByRole('alert')).toHaveTextContent('no longer permits');await act(async()=>resolveChild({...envelope(),view:'list',result:{items:[tx()],nextCursor:null}}));expect(screen.queryByTestId('disclosure-transaction-row')).toBeNull();expect(mock.read).not.toHaveBeenCalled();
+  mount(<Routes><Route path="/disclosures/cases/:caseId/addresses/:addressId" element={<DisclosureAddressV2/>}/></Routes>,`/disclosures/cases/${id}/addresses/${alias}`);await screen.findByText(address);await waitFor(()=>expect(resolveChild).toBeTypeOf('function'));revoked=true;fireEvent(window,new Event('focus'));expect(screen.queryByText(address)).toBeNull();expect(childSignal?.aborted).toBe(true);expect(await screen.findByRole('alert')).toHaveTextContent('no longer permits');await act(async()=>resolveChild({...envelope(),view:'list',result:{items:[listTx()],nextCursor:null}}));expect(screen.queryByTestId('disclosure-transaction-row')).toBeNull();expect(mock.read).not.toHaveBeenCalled();
  });
  it('clears a disclosed address on explicit failed case refresh and at the original shorter session expiry',async()=>{
   const currentRecord={...record(),scope:{...record().scope,resources:['addresses']}};const resolved={...envelope(),resource:'addresses',view:'resolve',result:{item:{addressId:alias,address,display:address}}};

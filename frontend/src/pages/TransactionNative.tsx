@@ -32,6 +32,7 @@ export function TransactionNative() {
   if (read.loading || read.error) return <NativeReadState {...read}/>;
   const tx = read.data;
   if (!tx) return <StateMessage variant="empty" title="Transaction unavailable" detail="It may be outside your current access or the retained index."/>;
+  const showTransfers = transfers.loading || !!transfers.error || !!transfers.data?.items.length || !!transfers.data?.page.next || transfers.index > 0;
   const setTab = (tab: TransactionTab) => { const query=new URLSearchParams(params);if(tab==='overview')query.delete('tab');else query.set('tab',tab);navigate({pathname:`/tx/${hash}`,search:query.toString(),hash:location.hash},{state:location.state}); };
   return <NativeNames items={[tx.from,tx.to,tx.contractAddress].filter((address):address is string=>!!address).map(address=>({address,metadata:tx.addressMetadata}))}><TransactionDetailPresentation activeTab={activeTab} setActiveTab={setTab} logsVisible traceVisible logCount={logs.data ? `${logs.data.items.length} on page` : 'view'} traceCount={internal.data ? `${internal.data.items.length} on page` : 'view'}>
     {activeTab === 'overview' && <TransactionOverview showMore={showMore} onToggle={() => setShowMore(!showMore)} input={<TransactionInput data={tx.inputData}/>} extra={<>
@@ -43,7 +44,10 @@ export function TransactionNative() {
       <InfoRow label="Timestamp" value={exactTimestamp(tx.blockTimestamp)}/>
       <InfoRow label="From" value={<NativeAddress address={tx.from} metadata={tx.addressMetadata} full/>}/>
       <InfoRow label="To" value={tx.to ? <NativeAddress address={tx.to} metadata={tx.addressMetadata} full/> : tx.contractAddress ? <span className="flex items-center gap-1 text-sm"><NativeAddress address={tx.contractAddress} metadata={tx.addressMetadata} full/><span className="text-neutral-500">Contract created</span></span> : 'Contract creation'}/>
-      <InfoRow label="ERC-20 Tokens Transferred" value={<div className="space-y-3"><NativeReadState {...transfers} reset={transfers.reset}/>{transfers.data && <><NativeTransferRows items={transfers.data.items}/><NativeContinuation {...transfers} page={transfers.data.page}/></>}</div>}/>
+      {showTransfers && <InfoRow label="ERC-20 Tokens Transferred" value={<div className="space-y-3">
+        {transfers.loading ? <p role="status" className="text-sm text-neutral-500">Loading transfers…</p> : <NativeReadState {...transfers} reset={transfers.reset}/>}
+        {transfers.data && <><NativeTransferRows items={transfers.data.items} layout="compact"/>{!transfers.data.items.length && <p className="text-sm text-neutral-500">No token transfers on this visible page.</p>}{(transfers.data.page.next || transfers.index > 0) && <NativeContinuation {...transfers} page={transfers.data.page}/>} {transfers.trimmed && <button className="text-sm text-primary underline" onClick={transfers.reset}>Restart transfers from the first page</button>}</>}
+      </div>}/>}
       <InfoRow label="Value" value={`${exactUnits(tx.value)}${tx.value !== null ? ` ${getNetworkCurrency()}` : ''}`}/><InfoRow label="Transaction Fee" value={nativeFee(tx)}/><InfoRow label="Gas Price" value={`${exactQuantity(tx.gasPrice)} wei`}/>
     </TransactionOverview>}
     {activeTab === 'logs' && <><NativeReadState {...logs} reset={logs.reset}/>{logs.data && <><NativeLogCards items={logs.data.items}/><NativeContinuation {...logs} page={logs.data.page}/></>}</>}

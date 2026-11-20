@@ -17,6 +17,8 @@ export function NativeAddress({ address, metadata, full = false, token = false, 
   }
   const reason = metadata?.[address];
   const display = full ? address : formatAddress(address);
-  if (reason === 'participant_override' || reason === 'no_access') return <span className={`font-mono text-neutral-500 ${className}`}>{display}</span>;
-  return <span className="inline-flex items-center gap-1 flex-wrap"><Link className={`font-mono text-primary hover:text-primary-600 transition-colors ${full ? 'break-all' : ''} ${className}`} to={token ? `/token/${address}` : `/address/${address}`} title={address}>{name && <span className="font-sans font-medium mr-1">{name}</span>}{display}</Link><CopyButton text={address}/><AddressLabel reason={reason} /></span>;
+  if (reason === 'no_access') return <span className={`font-mono text-neutral-500 ${className}`}>{display}</span>;
+  if (reason === 'participant_override') return <span className="inline-flex items-center gap-1 flex-wrap"><span className={`font-mono text-neutral-500 ${className}`}>{display}</span><AddressLabel reason={reason}/>{full && <CopyButton text={address}/>}</span>;
+  const labelReason = reason === 'own_address' || reason === 'public_address' || reason === 'rbac_group_member' || reason === 'visible_to_grant' ? reason : undefined;
+  return <span className="inline-flex items-center gap-1 flex-wrap"><Link className={`font-mono text-primary hover:text-primary-600 transition-colors ${full ? 'break-all' : ''} ${className}`} to={token ? `/token/${address}` : `/address/${address}`} title={address}>{name && <span className="font-sans font-medium mr-1">{name}</span>}{display}</Link><CopyButton text={address}/><AddressLabel reason={labelReason} /></span>;
 }
