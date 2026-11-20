@@ -7,6 +7,25 @@ const response=(value:unknown)=>new Response(JSON.stringify(value),{headers:{'Co
 const request:NativeRPCRequest={jsonrpc:'2.0',id:'owned-request',method:'eth_call',params:[{to:'0x'+'b'.repeat(40),data:'0x12345678'},'latest']};
 beforeEach(()=>{localStorage.clear();sessionStorage.clear();});
 describe('native own-self and read-only RPC operation',()=>{
+  it('accepts current bounded own groups with exact totals, retaining legacy fixtures and explicit roles',async()=>{
+    const groups=Array.from({length:256},(_,i)=>({id:(i+1).toString(16).padStart(8,'0')+'-3333-3333-3333-333333333333',name:'Group '+i,slug:'group-'+i}));groups[0].name='Банк🏦<>&"\\';groups[1].name='<'.repeat(256);groups[2].name='\ufeffReader\ufeff';
+    const projected={...self,organizations:[{...self.organizations[0],groups,groupCount:4096,groupsTruncated:true}]};
+    const transport=vi.fn().mockResolvedValueOnce(response(status)).mockResolvedValueOnce(response(projected));const session=new AppSession('/api',()=>1000,transport as typeof fetch);await session.check();
+    const current=await session.captureOperation().self();expect(current.organizations).toEqual(projected.organizations);expect(current.organizations[0].isOrgAdmin).toBe(false);
+  });
+  it('rejects malformed, duplicate, oversized and inconsistent group projections before returning own facts',async()=>{
+    const group={id:'33333333-3333-3333-3333-333333333333',name:'Reader',slug:'reader'},orgBase={...self.organizations[0],groups:[group],groupCount:1,groupsTruncated:false};
+    const malformed=[{groups:null},{groupCount:0},{groupCount:1.5},{groupCount:-1},{groupCount:4294967296},{groupsTruncated:true},{groups:[group,group],groupCount:2},
+      {groups:[{...group,id:'00000000-0000-0000-0000-000000000000'}]},{groups:[{...group,name:'a'.repeat(257)}]},{groups:[{...group,name:' Bank'}]},{groups:[{...group,name:'\u0085Reader'}]},{groups:[{...group,name:'Reader\u0085'}]},{groups:[{...group,name:'Bank\n'}]},
+      {groups:[{...group,slug:'a'.repeat(101)}]},{groups:[{...group,slug:'../bad'}]},{groups:[{...group,allowedMethods:['eth_call']}]},{groups:[{...group,organizationId:org}]},
+      {groups:[group,{...group,id:'44444444-4444-4444-4444-444444444444'}],groupCount:2},
+      {groups:Array.from({length:257},(_,i)=>({...group,id:(i+1).toString(16).padStart(8,'0')+'-3333-3333-3333-333333333333',name:'Group '+i,slug:'g'+i})),groupCount:257}];
+    malformed.push({groups:[group,{...group,id:'44444444-4444-4444-4444-444444444444',name:'Other name'}],groupCount:2});
+    for(const change of malformed){const transport=vi.fn().mockResolvedValueOnce(response(status)).mockResolvedValueOnce(response({...self,organizations:[{...orgBase,...change}]}));const session=new AppSession('/api',()=>1000,transport as typeof fetch);await session.check();await expect(session.captureOperation().self()).rejects.toThrow();}
+    const many=Array.from({length:129},(_,i)=>({...group,id:(i+1).toString(16).padStart(8,'0')+'-3333-3333-3333-333333333333',name:'Group '+i,slug:'g'+i}));
+    const incomplete={...orgBase,groupCount:undefined};const transport=vi.fn().mockResolvedValueOnce(response(status)).mockResolvedValueOnce(response({...self,organizations:[incomplete]}));const session=new AppSession('/api',()=>1000,transport as typeof fetch);await session.check();await expect(session.captureOperation().self()).rejects.toThrow();
+    const global=vi.fn().mockResolvedValueOnce(response(status)).mockResolvedValueOnce(response({...self,organizations:[{...orgBase,groups:many,groupCount:129},{...orgBase,id:'55555555-5555-5555-5555-555555555555',groups:many,groupCount:129}]}));const bounded=new AppSession('/api',()=>1000,global as typeof fetch);await bounded.check();await expect(bounded.captureOperation().self()).rejects.toThrow();
+  });
   it('uses only fixed protected endpoints, cookies and the original app activation',async()=>{
     const transport=vi.fn().mockResolvedValueOnce(response(status)).mockResolvedValueOnce(response(self)).mockResolvedValueOnce(response({jsonrpc:'2.0',id:request.id,result:'0x'}));
     const session=new AppSession('/api',()=>1000,transport as typeof fetch);await session.check();const operation=session.captureOperation();

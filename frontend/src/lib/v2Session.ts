@@ -2,7 +2,8 @@ import { getConfig } from './runtimeConfig';
 
 export const isV2 = () => import.meta.env.VITE_AUTH_PROTOCOL === 'ops-v2' || getConfig('VITE_AUTH_PROTOCOL') === 'ops-v2';
 export interface AppIdentity { actor: string; profile: string; activation: string; expires: number }
-export interface OwnOrganization { id:string; slug:string; name:string; isOrgAdmin:boolean; isOrgReadonlyAdmin:boolean }
+export interface OwnGroup { id:string; name:string; slug:string }
+export interface OwnOrganization { id:string; slug:string; name:string; isOrgAdmin:boolean; isOrgReadonlyAdmin:boolean; groups?:OwnGroup[]; groupCount?:number; groupsTruncated?:boolean }
 export interface OwnSelf { actorId:string; principalKind:string; sourceProfile:string; sourceProfileDigest:string; expiresAt:number; organizations:OwnOrganization[] }
 export interface NativeRPCRequest { jsonrpc:'2.0'; id:string|number; method:string; params:unknown[] }
 export interface NativeRPCResponse { jsonrpc:'2.0'; id:string|number; result?:unknown; error?:{code:number;message:string;data?:unknown} }
@@ -174,9 +175,19 @@ export class AppSession {
         if (!raw || typeof raw!=='object' || Array.isArray(raw)) throw Error('Invalid own identity');
         const value=raw as OwnSelf;
         if (!exactKeys(value,['actorId','principalKind','sourceProfile','sourceProfileDigest','expiresAt','organizations']) || value.actorId!==identity!.actor || value.sourceProfile!==identity!.profile || typeof value.principalKind!=='string' || !/^sha256:[0-9a-f]{64}$/.test(value.sourceProfileDigest) || !Number.isSafeInteger(value.expiresAt) || value.expiresAt<=this.now() || !Array.isArray(value.organizations) || value.organizations.length>256) throw Error('Invalid own identity');
-        const seen=new Set<string>();
+        const seen=new Set<string>();let displayedGroups=0;
         for (const org of value.organizations) {
-          if (!org || !exactKeys(org,['id','slug','name','isOrgAdmin','isOrgReadonlyAdmin']) || !validUUID(org.id) || seen.has(org.id) || typeof org.slug!=='string' || typeof org.name!=='string' || typeof org.isOrgAdmin!=='boolean' || typeof org.isOrgReadonlyAdmin!=='boolean') throw Error('Invalid own organizations');
+          const fields=['groups','groupCount','groupsTruncated'];const projected=!!org&&fields.some(key=>Object.hasOwn(org,key));
+          if (!org || !exactKeys(org,['id','slug','name','isOrgAdmin','isOrgReadonlyAdmin',...(projected?fields:[])]) || !validUUID(org.id) || seen.has(org.id) || typeof org.slug!=='string' || typeof org.name!=='string' || typeof org.isOrgAdmin!=='boolean' || typeof org.isOrgReadonlyAdmin!=='boolean') throw Error('Invalid own organizations');
+          if(projected){
+            if(!Array.isArray(org.groups)||org.groups.length>256||!Number.isSafeInteger(org.groupCount)||org.groupCount!<org.groups.length||org.groupCount!>0xffffffff||org.groupsTruncated!==(org.groupCount!>org.groups.length))throw Error('Invalid own groups');
+            displayedGroups+=org.groups.length;if(displayedGroups>256)throw Error('Invalid own groups');
+            let previous='';const names=new Set<string>(),slugs=new Set<string>();
+            for(const group of org.groups){
+              if(!group||!exactKeys(group,['id','name','slug'])||!validUUID(group.id)||group.id<=previous||typeof group.name!=='string'||/^\p{White_Space}|\p{White_Space}$/u.test(group.name)||new TextEncoder().encode(group.name).length<1||new TextEncoder().encode(group.name).length>256||group.name.includes('\0') || group.name.includes('\r') || group.name.includes('\n') || group.name.includes('\t')||names.has(group.name)||typeof group.slug!=='string'||!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/.test(group.slug)||slugs.has(group.slug))throw Error('Invalid own groups');
+              previous=group.id;names.add(group.name);slugs.add(group.slug);
+            }
+          }
           seen.add(org.id);
         }
         return value;
