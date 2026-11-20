@@ -10,7 +10,9 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -20,6 +22,10 @@ import (
 
 const nativeRPCRequestLimit = 256 << 10
 const nativeRPCResponseLimit = 2 << 20
+const nativeSelfResponseLimit = 512 << 10
+const nativeSelfGroupLimit = 256
+
+var nativeOwnGroupSlug = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$`)
 
 type nativeOwnOrganization struct {
 	ID                 string `json:"id"`
@@ -27,6 +33,16 @@ type nativeOwnOrganization struct {
 	Name               string `json:"name"`
 	IsOrgAdmin         bool   `json:"isOrgAdmin"`
 	IsOrgReadonlyAdmin bool   `json:"isOrgReadonlyAdmin"`
+	// Raw optional fields distinguish legacy absence from malformed nulls.
+	// They are validated display facts, never a permission or membership set.
+	Groups          json.RawMessage `json:"groups,omitempty"`
+	GroupCount      json.RawMessage `json:"groupCount,omitempty"`
+	GroupsTruncated json.RawMessage `json:"groupsTruncated,omitempty"`
+}
+type nativeOwnGroup struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
 }
 type nativeOwnSelf struct {
 	ActorID             string                  `json:"actorId"`
@@ -171,7 +187,7 @@ func (s *Server) nativeUpstream(r *http.Request, method, path string, body []byt
 }
 func (s *Server) nativeSelf(r *http.Request) (nativeOwnSelf, []byte, error) {
 	var self nativeOwnSelf
-	raw, e := s.nativeUpstream(r, "GET", "/api/v2/self", nil, 512<<10)
+	raw, e := s.nativeUpstream(r, "GET", "/api/v2/self", nil, nativeSelfResponseLimit)
 	if e != nil {
 		return self, nil, e
 	}
@@ -180,7 +196,54 @@ func (s *Server) nativeSelf(r *http.Request) (nativeOwnSelf, []byte, error) {
 	if d.Decode(&self) != nil || d.Decode(&struct{}{}) != io.EOF || self.ActorID != authv2.Actor(r.Context()) || self.ExpiresAt <= time.Now().Unix() || self.Organizations == nil || len(self.Organizations) > 256 {
 		return self, nil, authv2.ErrUnavailable
 	}
+	displayed := 0
+	var wire struct {
+		Organizations []json.RawMessage `json:"organizations"`
+	}
+	if json.Unmarshal(raw, &wire) != nil {
+		return self, nil, authv2.ErrUnavailable
+	}
+	for i, org := range self.Organizations {
+		_, err := nativeStrictObject(wire.Organizations[i], nativeSelfResponseLimit, "id", "slug", "name", "isOrgAdmin", "isOrgReadonlyAdmin", "groups", "groupCount", "groupsTruncated")
+		if err != nil || !nativeOwnGroupsValid(org, &displayed) {
+			return self, nil, authv2.ErrUnavailable
+		}
+	}
 	return self, raw, nil
+}
+
+// The complete display tuple is optional for older OPS versions. A bounded
+// partial list never changes the organization authority used by native RPC.
+func nativeOwnGroupsValid(org nativeOwnOrganization, displayed *int) bool {
+	if len(org.Groups) == 0 && len(org.GroupCount) == 0 && len(org.GroupsTruncated) == 0 {
+		return true
+	}
+	var rows []json.RawMessage
+	var count uint32
+	var truncated bool
+	if len(org.Groups) == 0 || len(org.GroupCount) == 0 || len(org.GroupsTruncated) == 0 || bytes.Equal(bytes.TrimSpace(org.GroupCount), []byte("null")) || bytes.Equal(bytes.TrimSpace(org.GroupsTruncated), []byte("null")) || json.Unmarshal(org.Groups, &rows) != nil || rows == nil || len(rows) > nativeSelfGroupLimit || json.Unmarshal(org.GroupCount, &count) != nil || json.Unmarshal(org.GroupsTruncated, &truncated) != nil || count < uint32(len(rows)) || truncated != (count > uint32(len(rows))) {
+		return false
+	}
+	*displayed += len(rows)
+	if *displayed > nativeSelfGroupLimit {
+		return false
+	}
+	previous := ""
+	names, slugs := map[string]bool{}, map[string]bool{}
+	for _, raw := range rows {
+		fields, err := nativeStrictObject(raw, nativeSelfResponseLimit, "id", "name", "slug")
+		var group nativeOwnGroup
+		if err != nil || len(fields) != 3 || json.Unmarshal(raw, &group) != nil {
+			return false
+		}
+		id, err := uuid.Parse(group.ID)
+		if err != nil || id == uuid.Nil || id.String() != group.ID || group.ID <= previous || !utf8.ValidString(group.Name) || len(group.Name) < 1 || len(group.Name) > 256 || strings.TrimSpace(group.Name) != group.Name || strings.ContainsAny(group.Name, "\x00\r\n\t") || names[group.Name] || !nativeOwnGroupSlug.MatchString(group.Slug) || slugs[group.Slug] {
+			return false
+		}
+		previous = group.ID
+		names[group.Name], slugs[group.Slug] = true, true
+	}
+	return true
 }
 func (s *Server) handleV2NativeSelf(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" || r.URL.RawQuery != "" || r.URL.EscapedPath() != "/api/v2/self" || r.ContentLength > 0 {
