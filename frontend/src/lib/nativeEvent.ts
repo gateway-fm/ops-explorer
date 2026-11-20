@@ -2,6 +2,7 @@ import { AbiCoder, EventFragment, Interface, ParamType, type InterfaceAbi } from
 import { KNOWN_EVENTS } from './eventDecoder';
 import type { Log } from './v2ReadTypes';
 
+export type EventDecodeInput = Pick<Log, 'topic0' | 'topic1' | 'topic2' | 'topic3' | 'data'>;
 export interface NativeEventParameter { name: string; type: ParamType; indexed: boolean; value?: unknown; hidden?: boolean; hash?: boolean }
 export interface NativeEvent { name: string; signature: string; source: 'Approved ABI' | 'Known event format'; params: NativeEventParameter[]; indexedCount: number }
 const coder = AbiCoder.defaultAbiCoder();
@@ -14,7 +15,7 @@ const localEvents = new Map(Object.values(KNOWN_EVENTS).map(event => {
   return [fragment.topicHash, fragment] as const;
 }));
 
-function localFragment(log: Log): EventFragment | null {
+function localFragment(log: EventDecodeInput): EventFragment | null {
   const known = log.topic0 && localEvents.get(log.topic0);
   if (!known) return null;
   // ERC721 and ERC20 share Transfer/Approval hashes but differ in indexing.
@@ -25,7 +26,7 @@ function localFragment(log: Log): EventFragment | null {
   return known;
 }
 
-export function decodeNativeEvent(log: Log, abi?: unknown[]): NativeEvent | null {
+export function decodeNativeEvent(log: EventDecodeInput, abi?: unknown[]): NativeEvent | null {
   if (!log.topic0 || log.data.length > (1 << 20)) return null;
   try {
     let fragment: EventFragment | null = null, source: NativeEvent['source'] = 'Known event format';
