@@ -1,7 +1,7 @@
 import { normalizeRouteIdentifier } from '../lib/nativeRoute';
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeftRight, ArrowRightLeft, BookOpen, Boxes, Check, ChevronDown, Coins, Copy, Eye, Info, LogOut, LogIn, Loader2, RefreshCw, Shield, Users, Wallet } from 'lucide-react';
+import { ArrowLeftRight, ArrowRightLeft, BookOpen, Boxes, ChevronDown, Coins, Eye, Info, LogOut, LogIn, Loader2, RefreshCw, Shield, Users, Wallet } from 'lucide-react';
 import { useNativeRead } from '../hooks/useNativeRead';
 import { decodeSearchSuggestions } from '../lib/nativeReadModels';
 import { readTarget } from '../lib/v2Reads';
@@ -12,6 +12,7 @@ import { ExplorerChrome } from './ExplorerChrome';
 import { ExplorerNavigation } from './ExplorerNavigation';
 import { SearchBarPresentation } from './SearchBarPresentation';
 import { MetaMaskFox } from './MetaMask';
+import { CopyButton } from './CopyButton';
 import type { ReactNode } from 'react';
 
 type Suggestion = ReturnType<typeof decodeSearchSuggestions>[number];
@@ -58,7 +59,7 @@ function useNativeSearch(keyboardShortcut = false, enabled = true) {
     if (event.key === 'ArrowDown') { event.preventDefault(); setSelectedIndex(value => Math.min(value + 1, suggestions.length - 1)); }
     if (event.key === 'ArrowUp') { event.preventDefault(); setSelectedIndex(value => Math.max(value - 1, -1)); }
   };
-  return { search, setSearch: updateSearch, suggestions, showSuggestions, setShowSuggestions, selectedIndex, inputRef, containerRef, handleSearch, handleKeyDown, navigateToSuggestion, error: result.error };
+  return { search, setSearch: updateSearch, suggestions, showSuggestions, setShowSuggestions, selectedIndex, inputRef, containerRef, handleSearch, handleKeyDown, navigateToSuggestion, error: result.error, loading: result.loading || !!clean && clean !== query };
 }
 
 export function NativeSearchBar({ variant = 'default' }: { variant?: 'hero' | 'default' }) {
@@ -69,13 +70,14 @@ export function NativeSearchBar({ variant = 'default' }: { variant?: 'hero' | 'd
 function NativeAccountMenu() {
   const { auth, logout, isLoading } = useAuth();
   const [open, setOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
   const menu = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const outside = (event: MouseEvent) => { if (!menu.current?.contains(event.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', outside); return () => document.removeEventListener('mousedown', outside);
+    const escape = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', outside); document.addEventListener('keydown', escape);
+    return () => { document.removeEventListener('mousedown', outside); document.removeEventListener('keydown', escape); };
   }, []);
   const run = (operation: () => Promise<unknown>) => { if (pending) return; setPending(true); setError(undefined); void operation().catch(() => setError('The session action could not be completed. Try again.')).finally(() => setPending(false)); };
   if (!auth.authenticated) return <div className="relative">
@@ -90,7 +92,7 @@ function NativeAccountMenu() {
   return <div ref={menu} className="relative">
     <button aria-expanded={open} aria-label="Account menu" onClick={() => setOpen(!open)} title={auth.did ?? undefined} className="flex items-center gap-1.5 px-3 py-2 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors text-sm font-medium"><Shield className="w-4 h-4 text-success-500" /><span className="font-mono text-xs max-w-[140px] truncate" data-field="app-actor">{auth.did ?? 'Signed in'}</span><ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} /></button>
     {open && <div className="absolute top-full right-0 mt-2 w-72 card overflow-hidden z-50 shadow-elevated">
-      <div className="px-4 py-3 border-b border-neutral-100"><div className="text-xs text-neutral-400 mb-1">Your identity</div><div className="flex gap-1 items-center"><span className="font-mono text-xs text-neutral-700 flex-1 truncate" title={auth.did ?? undefined}>{auth.did}</span><button title="Copy identity" className="p-1 text-neutral-400 hover:text-neutral-700" onClick={() => { if (auth.did) void navigator.clipboard.writeText(auth.did).then(() => setCopied(true)); }}>{copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}</button></div></div>
+      <div className="px-4 py-3 border-b border-neutral-100"><div className="text-xs text-neutral-400 mb-1">Your identity</div><div className="flex gap-1 items-center"><span className="font-mono text-xs text-neutral-700 flex-1 truncate" title={auth.did ?? undefined}>{auth.did}</span>{auth.did && <CopyButton text={auth.did} label="Copy identity"/>}</div></div>
       <Link to="/wallets" onClick={() => setOpen(false)} className="flex gap-3 px-4 py-3 hover:bg-primary-50"><Wallet className="w-4 h-4 text-neutral-500" /><span className="text-sm text-neutral-700">Wallets</span></Link>
       <Link to="/disclosures" onClick={() => setOpen(false)} className="flex gap-3 px-4 py-3 hover:bg-primary-50"><Eye className="w-4 h-4 text-neutral-500" /><span className="text-sm text-neutral-700">Auditor</span></Link>
       <button onClick={() => run(() => appSession.login(undefined, true))} className="w-full flex gap-3 px-4 py-3 hover:bg-primary-50"><RefreshCw className="w-4 h-4 text-neutral-500" /><span className="text-sm text-neutral-700">Refresh identity</span></button>
@@ -121,5 +123,5 @@ export function NativeExplorerLayout({ children }: { children: ReactNode }) {
     setMobileMenuOpen(false);
   }, [location.pathname, location.search]);
   useEffect(() => { const prior = document.body.style.overflow; if (mobileMenuOpen) document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = prior; }; }, [mobileMenuOpen]);
-  return <ExplorerChrome privacyEnabled searchEnabled={isAuthenticated} featureFlags={features()} accountLabel="Accounts" navigation={<ExplorerNavigation nativeReads account={<NativeAccountMenu />} networkButton={<NetworkSetupButton />} accountLabel="Accounts" />} networkButton={<NetworkSetupButton />} mobileAccount={<NativeAccountMenu />} mobileNavItems={mobileItems} mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} search={search.search} setSearch={search.setSearch} suggestions={search.suggestions} selectedIndex={search.selectedIndex} mobileInputRef={search.inputRef} handleSearch={search.handleSearch} handleKeyDown={search.handleKeyDown} navigateToSuggestion={search.navigateToSuggestion}>{children}</ExplorerChrome>;
+  return <ExplorerChrome privacyEnabled searchEnabled={isAuthenticated} featureFlags={features()} accountLabel="Accounts" navigation={<ExplorerNavigation nativeReads account={<NativeAccountMenu />} networkButton={<NetworkSetupButton />} accountLabel="Accounts" />} networkButton={<NetworkSetupButton />} mobileAccount={<NativeAccountMenu />} mobileNavItems={mobileItems} mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} search={search.search} setSearch={search.setSearch} suggestions={search.suggestions} showSuggestions={search.showSuggestions} setShowSuggestions={search.setShowSuggestions} searchContainerRef={search.containerRef} searchError={search.error} searchLoading={search.loading} selectedIndex={search.selectedIndex} mobileInputRef={search.inputRef} handleSearch={search.handleSearch} handleKeyDown={search.handleKeyDown} navigateToSuggestion={search.navigateToSuggestion}>{children}</ExplorerChrome>;
 }

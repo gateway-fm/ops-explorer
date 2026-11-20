@@ -1,3 +1,5 @@
+import { DetailHeroSkeleton, DetailRowsSkeleton } from '../components/DetailSkeletons';
+import { CoinBalancePanel } from '../components/AddressPresentation';
 import { useNativeMetadata } from '../hooks/useNativeMetadata';
 import { nativeTokenPath, NativeNames } from '../components/NativeNames';
 import { useCanonicalIdentifier } from '../lib/nativeRoute';
@@ -34,7 +36,8 @@ export function AddressNative() {
   const logs = useNativePage(path && `${path}/logs`, decodeLogs, 25, '', active === 'logs');
   const internal = useNativePage(path && `${path}/internal`, decodeInternalTransactions, 25, '', active === 'internal');
   if (!valid) return <StateMessage variant="error" title="Invalid or private address"/>;
-  if (info.loading) return <NativeReadState {...info}/>;
+  if (info.loading) return <div className="space-y-6"><AddressBackButton onClick={() => navigate(-1)}/><DetailHeroSkeleton/></div>;
+  if (info.error) return <div className="space-y-6"><AddressBackButton onClick={() => navigate(-1)}/><NativeReadState {...info}/></div>;
   const stats = info.data ?? {address};
   const isContract = stats.isContract ?? (code.data ? code.data.code !== '0x' : undefined);
   const setTab = (tab: AddressTab) => { const query=new URLSearchParams(params); if(tab==='details')query.delete('tab');else query.set('tab',tab); navigate({pathname:`/address/${address}`,search:query.toString(),hash:location.hash},{state:location.state}); };
@@ -50,11 +53,11 @@ export function AddressNative() {
         ...(contract.data?.creator ? [{label:'Creator',value:<NativeAddress address={contract.data.creator}/>}]:[]),
         ...(contract.data?.creationTx ? [{label:'Creation transaction',value:<Link className="font-mono text-primary break-all" to={`/tx/${contract.data.creationTx}`}>{contract.data.creationTx}</Link>}]:[]),
       ]}/><p className="mt-3 text-xs text-neutral-500">Counts are shown only when supplied for your current access. Unavailable is not zero.</p></>}
-      {active === 'transactions' && <><NativeReadState {...txs} reset={txs.reset}/>{txs.data && <><NativeTransactionsTable items={txs.data.items} currentAddress={address} footer={<NativeContinuation {...txs} page={txs.data.page}/>}/>{!txs.data.items.length && <EmptyRow>No direct transactions on this visible page. Continue if more records are available.</EmptyRow>}</>}</>}
-      {active === 'transfers' && <><NativeReadState {...transfers} reset={transfers.reset}/>{transfers.data && <PanelShell><NativeTransferRows items={transfers.data.items} currentAddress={address}/><NativeContinuation {...transfers} page={transfers.data.page}/></PanelShell>}</>}
-      {active === 'logs' && <><NativeReadState {...logs} reset={logs.reset}/>{logs.data && <><NativeLogCards items={logs.data.items}/><NativeContinuation {...logs} page={logs.data.page}/></>}</>}
-      {active === 'internal' && <><NativeReadState {...internal} reset={internal.reset}/>{internal.data && <><NativeTraceRows items={internal.data.items}/><NativeContinuation {...internal} page={internal.data.page}/></>}</>}
-      {active === 'coin-history' && <><NativeReadState {...balance}/><AddressDetailsPanel rows={[{label:'Current balance',value:balance.data ? `${exactUnits(balance.data.balance)} ${getNetworkCurrency()}` : 'Unavailable'},{label:'At block',value:exactQuantity(balance.data?.blockNumber)}]}/></>}
+      {active === 'transactions' && <><NativeReadState {...txs} reset={txs.reset} loadingView={<DetailRowsSkeleton/>}/>{txs.data && <><NativeTransactionsTable items={txs.data.items} currentAddress={address} footer={<NativeContinuation {...txs} page={txs.data.page}/>}/>{!txs.data.items.length && <EmptyRow>No direct transactions on this visible page. Continue if more records are available.</EmptyRow>}</>}</>}
+      {active === 'transfers' && <><NativeReadState {...transfers} reset={transfers.reset} loadingView={<DetailRowsSkeleton/>}/>{transfers.data && <PanelShell><NativeTransferRows items={transfers.data.items} currentAddress={address}/><NativeContinuation {...transfers} page={transfers.data.page}/></PanelShell>}</>}
+      {active === 'logs' && <><NativeReadState {...logs} reset={logs.reset} loadingView={<DetailRowsSkeleton rows={3}/>}/>{logs.data && <><NativeLogCards items={logs.data.items}/><NativeContinuation {...logs} page={logs.data.page}/></>}</>}
+      {active === 'internal' && <><NativeReadState {...internal} reset={internal.reset} loadingView={<DetailRowsSkeleton rows={3}/>}/>{internal.data && <><NativeTraceRows items={internal.data.items}/><NativeContinuation {...internal} page={internal.data.page}/></>}</>}
+      {active === 'coin-history' && <><NativeReadState {...balance}/><CoinBalancePanel balance={balance.data ? `${exactUnits(balance.data.balance)} ${getNetworkCurrency()}` : 'Unavailable'} observedBlock={balance.data?.blockNumber !== undefined ? <Link className="text-primary" to={`/block/${balance.data.blockNumber}`}>{exactQuantity(balance.data.blockNumber)}</Link> : undefined}/></>}
       {active === 'tokens' && <NativePortfolio key={address} address={address}/>}
       {active === 'contract' && <div className="space-y-4"><NativeReadState {...code}/><NativeReadState {...contract}/><NativeContractPanel key={address} address={address} contract={contract.data} code={code.data?.code}/></div>}
     </section>

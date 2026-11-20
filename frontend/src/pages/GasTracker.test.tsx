@@ -6,7 +6,7 @@ import { type ReactNode } from 'react';
 
 // getConfig drives features().gasTracker (privacy → false). features() reads it
 // at render time, so a per-test return value is enough — no module reset needed.
-const mockGetConfig = vi.fn();
+const mockGetConfig = vi.hoisted(() => vi.fn());
 vi.mock('../lib/runtimeConfig', () => ({
   getConfig: (key: string, fallback?: string) => mockGetConfig(key, fallback),
 }));

@@ -55,12 +55,29 @@ describe('named native Explorer screens',()=>{
   session.read.mockResolvedValue({items:[token],page});
   function Back(){const navigate=useNavigate();return <><button onClick={()=>navigate(-1)}>History back</button><TokensNative/></>;}
   renderPage(<Back/>,'/tokens?search=Example&type=ERC20');
-  expect(await screen.findByTestId('token-row')).toHaveTextContent('Unavailable');
+  expect(await screen.findByTestId('token-row')).toHaveTextContent('Example token');
+  expect(screen.getByText(/Unavailable columns are omitted/)).toBeInTheDocument();expect(screen.queryByRole('columnheader',{name:'Total Supply'})).toBeNull();
   expect(session.read.mock.calls[0]?.[0]).toContain('search=Example');
   fireEvent.click(screen.getByRole('tab',{name:'ERC-721'}));await waitFor(()=>expect(session.read.mock.calls.at(-1)?.[0]).toContain('type=ERC721'));
   fireEvent.click(screen.getByRole('button',{name:'History back'}));await waitFor(()=>expect(screen.getByRole('tab',{name:'ERC-20'})).toHaveAttribute('aria-selected','true'));
   fireEvent.change(screen.getByRole('searchbox',{name:'Search tokens'}),{target:{value:'Other token'}});
   await waitFor(()=>expect(session.read.mock.calls.at(-1)?.[0]).toContain('search=Other+token'));expect(screen.getByTestId('token-row')).toBeInTheDocument();
+ });
+ it('retains the V1 responsive supply/transfer columns and exact optional fixture quantities without a global rank',async()=>{
+  // Qualified optional-field fixture; the current Go metadata producer omits
+  // these global fields. This verifies presentation, not production coverage.
+  session.read.mockResolvedValue({items:[{...token,decimals:6,totalSupply:'900719925474099312345',holderCount:'9007199254740993',transferCount:'7'}],page});renderPage(<TokensNative/>);
+  const row=await screen.findByTestId('token-row');expect(row).toHaveTextContent('900,719,925,474,099.312345');expect(row).toHaveClass('hover:bg-primary-50/40');
+  expect(screen.getByRole('columnheader',{name:'Total Supply'})).toHaveClass('hidden','md:table-cell','text-right');expect(screen.getByRole('columnheader',{name:'Transfers'})).toHaveClass('hidden','sm:table-cell','text-right');
+  expect(screen.getByText('900,719,925,474,099.312345')).toHaveClass('text-right','font-mono');expect(screen.queryByRole('columnheader',{name:'#'})).toBeNull();
+ });
+ it('restores Copy on the parent and each returned block root without any follow-up read',async()=>{
+  const writeText=vi.fn().mockResolvedValue(undefined);vi.spyOn(navigator,'clipboard','get').mockReturnValue({writeText} as unknown as Clipboard);session.read.mockResolvedValue(block);
+  renderPage(<Routes><Route path="/block/:number" element={<BlockNative/>}/></Routes>,`/block/${number}`);await screen.findByText('Verified node point read');await act(async()=>{await Promise.resolve();await Promise.resolve();});const readsBeforeCopy=session.read.mock.calls.length;fireEvent.click(screen.getByText('Show more'));
+  for(const [label,value] of [['Parent hash',block.parentHash],['State root',block.stateRoot],['Transactions root',block.transactionsRoot],['Receipts root',block.receiptsRoot]]){
+   const info=[...document.querySelectorAll('[data-testid="info-row"]')].find(row=>row.textContent?.startsWith(label))!;fireEvent.click(info.querySelector('button')!);await waitFor(()=>expect(writeText).toHaveBeenLastCalledWith(value));
+  }
+  expect(session.read).toHaveBeenCalledTimes(readsBeforeCopy);vi.restoreAllMocks();
  });
  it('opens a holder deep link, preserves uint256 balances, and labels mutable pagination',async()=>{
   session.read.mockImplementation(async(path:string)=>path.includes('/holders')?{items:[{address,balance:'900719925474099312345678901234567890'}],page:{...page,consistency:'CURRENT'}}:token);
@@ -90,7 +107,7 @@ describe('named native Explorer screens',()=>{
  it('offers real bounded native Try It and clears an in-flight result when its inputs change',async()=>{
   let resolve!:(value:unknown)=>void;session.read.mockImplementationOnce(()=>new Promise(r=>{resolve=r;}));
   renderPage(<ApiDocsNative/>);fireEvent.click(screen.getByRole('button',{name:'GET /v2/explorer/blocks'}));
-  const send=screen.getByRole('button',{name:'Send request'});fireEvent.click(send);await waitFor(()=>expect(session.read).toHaveBeenCalledWith('/v2/explorer/blocks?limit=25',expect.any(AbortSignal)));
+  const send=screen.getByRole('button',{name:'Send request'});fireEvent.click(send);await waitFor(()=>expect(session.read).toHaveBeenCalledWith('/v2/explorer/blocks?limit=100',expect.any(AbortSignal)));
   fireEvent.change(screen.getByLabelText('/v2/explorer/blocks limit'),{target:{value:'10'}});await act(async()=>resolve({private:'old input'}));expect(screen.queryByText('old input')).toBeNull();expect(screen.queryByText('No authentication is required.')).toBeNull();
  });
  it('never turns an omitted catch-up distance into zero',async()=>{

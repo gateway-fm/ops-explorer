@@ -1,5 +1,5 @@
 import { ArrowLeftRight, Boxes, Users } from 'lucide-react';
-import { HomeBlockRow, HomeFeedSkeleton, HomePresentation, HomeStatCard } from '../components/HomePresentation';
+import { HomeBlockRow, HomeFeedSkeleton, HomePresentation, HomeStatCard, HomeStatCardSkeleton } from '../components/HomePresentation';
 import { HomeTransactionRow } from '../components/HomePresentation';
 import { NativeSearchBar } from '../components/NativeExplorerControls';
 import { NativeAddress } from '../components/NativeAddress';
@@ -17,10 +17,10 @@ export function HomeNative() {
   const transactions = useNativeRead(readTarget('/transactions', page), decodeTransactions, 5000);
   return <HomePresentation search={<NativeSearchBar variant="hero" />}
     stats={<>
-      <HomeStatCard label="Current Block" value={exactQuantity(latest.data?.number)} icon={<Boxes className="w-5 h-5" />} color="blue" />
-      <HomeStatCard label="Visible Transactions" value={exactQuantity(stats.data?.observedTransactions as string | undefined)} icon={<ArrowLeftRight className="w-5 h-5" />} color="green" />
-      <HomeStatCard label="Visible Addresses" value={exactQuantity(stats.data?.observedParticipantAddresses as string | undefined)} icon={<Users className="w-5 h-5" />} color="purple" />
-      <HomeStatCard label="Blocks Represented" value={exactQuantity(stats.data?.observedBlocks as string | undefined)} icon={<Boxes className="w-5 h-5" />} color="amber" />
+      {latest.loading ? <HomeStatCardSkeleton/> : <HomeStatCard label="Current Block" value={exactQuantity(latest.data?.number)} icon={<Boxes className="w-5 h-5" />} color="blue" />}
+      {stats.loading ? <HomeStatCardSkeleton/> : <HomeStatCard label="Visible Transactions" value={exactQuantity(stats.data?.observedTransactions as string | undefined)} icon={<ArrowLeftRight className="w-5 h-5" />} color="green" />}
+      {stats.loading ? <HomeStatCardSkeleton/> : <HomeStatCard label="Visible Addresses" value={exactQuantity(stats.data?.observedParticipantAddresses as string | undefined)} icon={<Users className="w-5 h-5" />} color="purple" />}
+      {stats.loading ? <HomeStatCardSkeleton/> : <HomeStatCard label="Blocks Represented" value={exactQuantity(stats.data?.observedBlocks as string | undefined)} icon={<Boxes className="w-5 h-5" />} color="amber" />}
     </>}
     statsNote={stats.error ?? latest.error ?? 'Visible counts cover one permitted page, not totals for the chain or all retained history.'}
     blocks={blocks.loading ? Array.from({ length: 5 }, (_, i) => <HomeFeedSkeleton key={i} />) : blocks.error ? <StateMessage variant="error" title={blocks.error} /> : blocks.data?.items.length ? blocks.data.items.map(block => <HomeBlockRow key={block.hash} block={block} />) : <StateMessage variant="empty" title="No blocks on this page" />}

@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import { Copy, Check, ChevronDown } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
+import { CopyButton } from './CopyButton';
 export interface APIParam {
   name: string;
   type: string;
@@ -75,23 +76,7 @@ export function JsonSyntax({ data }: { data: unknown }) {
 // ---------------------------------------------------------------------------
 
 export function APICopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const copy = () => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <button
-      onClick={copy}
-      className="p-1.5 rounded-md text-neutral-400 hover:text-neutral-600 hover:bg-neutral-200 transition-colors"
-      title="Copy"
-    >
-      {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
-    </button>
-  );
+  return <CopyButton text={text} label="Copy" className="p-1.5 rounded-md hover:bg-neutral-200" />;
 }
 
 // ---------------------------------------------------------------------------

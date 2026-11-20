@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import { ThemeProvider, useTheme } from './useTheme';
 
@@ -17,6 +17,7 @@ function Probe() {
 }
 
 describe('ThemeProvider / useTheme', () => {
+  afterEach(() => vi.restoreAllMocks());
   beforeEach(() => {
     localStorage.clear();
     document.documentElement.classList.remove('dark');
@@ -48,5 +49,13 @@ describe('ThemeProvider / useTheme', () => {
     render(<ThemeProvider><Probe /></ThemeProvider>);
     expect(screen.getByTestId('theme')).toHaveTextContent('dark');
     expect(document.documentElement.classList.contains('dark')).toBe(true);
+  });
+  it('keeps rendering and switching in memory when persistence is denied', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new DOMException('blocked', 'SecurityError'); });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('blocked', 'SecurityError'); });
+    render(<ThemeProvider><Probe/></ThemeProvider>);
+    expect(screen.getByTestId('theme')).toHaveTextContent('light');
+    act(() => screen.getByText('dark').click()); expect(document.documentElement.classList.contains('dark')).toBe(true);
+    act(() => screen.getByText('light').click()); expect(document.documentElement.classList.contains('dark')).toBe(false);
   });
 });

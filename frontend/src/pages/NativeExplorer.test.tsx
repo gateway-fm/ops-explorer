@@ -63,7 +63,7 @@ describe('native Explorer original presentation',()=>{
     await act(async()=>{finish({name:'old'});await Promise.resolve();});expect(result.current.data?.name).toBe('new');
   });
   it.each(['contract','balances'])('opens the named %s address tab on a direct deep link',async(suffix)=>{
-    session.read.mockResolvedValue(suffix === 'balances' ? {items:[],page} : {address,contractName:'Approved registry contract'});
+    session.read.mockImplementation(async (path:string) => path.includes('/balances') ? {items:[],page} : path.endsWith('/stats') ? {address,isContract:true} : path.endsWith('/code') ? {address,code:'0x6000'} : path.endsWith('/contract') ? {address,contractName:'Approved registry contract'} : null);
     window.history.pushState({},'',`/addresses/${address}/${suffix}`);
     render(<V2App/>);
     if(suffix==='balances')expect(await screen.findByText('No token balances on this visible page.')).toBeInTheDocument();
@@ -88,6 +88,33 @@ describe('native Explorer original presentation',()=>{
     expect(session.read.mock.calls.slice(before).some(([path])=>String(path).includes('private-bank-record'))).toBe(false);
   });
 
+  it('keeps mobile suggestions dismissed through late completion and shows current search errors',async()=>{
+    let finish!:(value:unknown)=>void;
+    session.read.mockImplementation((path:string)=>String(path).includes('/search/suggestions')?new Promise(resolve=>{finish=resolve;}):Promise.resolve({items:[],page}));
+    window.history.pushState({},'','/blocks');render(<V2App/>);fireEvent.click(screen.getByRole('button',{name:'Toggle menu'}));
+    const input=screen.getByRole('textbox',{name:'Search the explorer'});fireEvent.change(input,{target:{value:'bank'}});
+    await waitFor(()=>expect(session.read.mock.calls.some(([path])=>String(path).includes('q=bank'))).toBe(true));fireEvent.keyDown(input,{key:'Escape'});
+    await act(async()=>finish({items:[{type:'address',value:address}],page}));expect(screen.queryByRole('button',{name:new RegExp(address)})).toBeNull();
+    fireEvent.focus(input);expect(screen.getByRole('button',{name:new RegExp(address)})).toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByTestId('page-header-title'));expect(screen.queryByRole('button',{name:new RegExp(address)})).toBeNull();
+    fireEvent.focus(input);fireEvent.keyDown(input,{key:'ArrowDown'});fireEvent.keyDown(input,{key:'Enter'});fireEvent.submit(input.closest('form')!);
+    await waitFor(()=>expect(window.location.pathname).toBe('/address/'+address));
+  });
+
+  it('displays mobile failed and empty search feedback with working clear and Escape',async()=>{
+    session.read.mockImplementation(async(path:string)=>{if(String(path).includes('q=failed'))throw Error('failed');return {items:[],page};});
+    window.history.pushState({},'','/blocks');render(<V2App/>);fireEvent.click(screen.getByRole('button',{name:'Toggle menu'}));const input=screen.getByRole('textbox',{name:'Search the explorer'});
+    fireEvent.change(input,{target:{value:'failed'}});expect(await screen.findByRole('alert')).toHaveTextContent('read could not be completed');
+    fireEvent.keyDown(input,{key:'Escape'});expect(screen.queryByRole('alert')).toBeNull();
+    fireEvent.change(input,{target:{value:'empty'}});expect(await screen.findByText('No visible results. Try an address, transaction hash or block number.')).toBeInTheDocument();
+    fireEvent.change(input,{target:{value:''}});expect(screen.queryByText(/No visible results/)).toBeNull();
+  });
+
+  it.each([['/verify','Contract verification unavailable'],['/gas-tracker','Gas tracker unavailable'],['/stats','Global charts unavailable'],[`/nft/${address}/7`,'NFT item metadata unavailable'],['/privacy','Use Auditor for disclosure cases'],['/grant/legacy/alias','Legacy disclosure link unavailable'],['/view-as','View as user unavailable']])('explains the supported recovery for %s without legacy reads',async(path,title)=>{
+    session.read.mockResolvedValue({items:[],page});window.history.pushState({},'',path);render(<V2App/>);
+    expect(await screen.findByTestId('page-header-title')).toHaveTextContent(title);expect(screen.getByTestId('restricted-state')).toBeInTheDocument();expect(session.read).not.toHaveBeenCalled();
+  });
+
   it.each([['failed','Type unavailable'],['empty','EOA']])('keeps account classification honest when code is %s',async(mode,label)=>{
     session.read.mockImplementation(async(path:string)=>{
       if(path.endsWith('/stats'))return {address};
@@ -99,6 +126,17 @@ describe('native Explorer original presentation',()=>{
     expect(await screen.findByText(label)).toBeInTheDocument();
     if(mode==='failed')expect(screen.queryByText('EOA')).toBeNull();
     expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0);
+  });
+  it('retains an authorized current balance when stats are unindexed and explains unavailable coin history',async()=>{
+    session.read.mockImplementation(async(path:string)=>path.endsWith('/balance')?{address,balance:'100000000000000001',blockNumber:'9007199254740993'}:path.endsWith('/code')?{address,code:'0x'}:null);
+    render(<MemoryRouter initialEntries={[`/address/${address}?tab=coin-history`]}><Routes><Route path="/address/:address" element={<AddressNative/>}/></Routes></MemoryRouter>);
+    expect(await screen.findByText(/0.100000000000000001 ETH/)).toBeInTheDocument();expect(screen.getByText(/Per-block coin balance history isn't indexed/)).toBeInTheDocument();
+    expect(screen.getByRole('link',{name:'9,007,199,254,740,993'})).toHaveAttribute('href','/block/9007199254740993');expect(session.read.mock.calls.every(([path])=>!String(path).includes('history'))).toBe(true);
+  });
+  it('shows a failed stats read as an error with retry instead of a successful empty address frame',async()=>{
+    session.read.mockImplementation(async(path:string)=>{if(path.endsWith('/stats'))throw Error('Denied');return null;});
+    render(<MemoryRouter initialEntries={[`/address/${address}`]}><Routes><Route path="/address/:address" element={<AddressNative/>}/></Routes></MemoryRouter>);
+    expect(await screen.findByTestId('app-error')).toBeInTheDocument();expect(screen.getByRole('button',{name:'Try again'})).toBeInTheDocument();expect(screen.queryByTestId('tab-details')).toBeNull();
   });
 
 });

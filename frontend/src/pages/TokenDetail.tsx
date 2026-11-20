@@ -1,3 +1,4 @@
+import { DetailHeroSkeleton, DetailRowsSkeleton as TableSkeleton } from '../components/DetailSkeletons';
 import { TokenHero } from '../components/TokenPresentation';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -729,32 +730,4 @@ function EmptyState({ children }: { children: React.ReactNode }) {
   );
 }
 
-function TableSkeleton({ rows = 4 }: { rows?: number }) {
-  return (
-    <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-50">
-      {Array.from({ length: rows }).map((_, i) => (
-        <div
-          key={i}
-          className="flex items-center gap-4 border-b border-neutral-200/60 px-4 py-5 last:border-b-0"
-        >
-          <div className="h-3 w-32 animate-pulse rounded bg-neutral-200" />
-          <div className="hidden h-3 w-16 animate-pulse rounded bg-neutral-200/70 md:block" />
-          <div className="flex-1 h-3 animate-pulse rounded bg-neutral-200/70" />
-          <div className="h-3 w-16 animate-pulse rounded bg-neutral-200" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function HeroSkeleton() {
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-4">
-        <div className="h-14 w-14 animate-pulse rounded-full bg-neutral-200" />
-        <div className="h-7 w-64 animate-pulse rounded bg-neutral-200" />
-      </div>
-      <div className="h-9 w-96 animate-pulse rounded-full bg-neutral-200/60" />
-    </div>
-  );
-}
+function HeroSkeleton() { return <DetailHeroSkeleton wide/>; }

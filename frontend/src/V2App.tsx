@@ -19,6 +19,7 @@ import { HomeNative } from './pages/HomeNative';
 import { TransactionNative } from './pages/TransactionNative';
 import { AddressNative } from './pages/AddressNative';
 import { DisclosuresV2, DisclosureCaseV2, DisclosureAddressV2, DisclosureTransactionV2 } from './pages/DisclosuresV2';
+import { NativeUnavailable } from './pages/NativeUnavailable';
 
 const queries = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, staleTime: 1000 } } });
 function Layout() {
@@ -70,5 +71,12 @@ export function V2App() {
 <Route path="search" element={<SearchNative/>} />
 <Route path="sync" element={<SyncNative/>} />
 <Route path="api-docs" element={<ApiDocsNative/>} />
+<Route path="verify" element={<NativeUnavailable feature="verify"/>}/>
+<Route path="gas-tracker" element={<NativeUnavailable feature="gas"/>}/>
+<Route path="stats" element={<NativeUnavailable feature="stats"/>}/>
+<Route path="nft/:address/:tokenId" element={<NativeUnavailable feature="nft"/>}/>
+<Route path="privacy" element={<NativeUnavailable feature="privacy"/>}/>
+<Route path="grant/:grantId/:addressId/*" element={<NativeUnavailable feature="grant"/>}/>
+<Route path="view-as/*" element={<NativeUnavailable feature="impersonation"/>}/>
 <Route path="*" element={<p>Page not found.</p>} /></Route></Routes></V2AuthProvider></BrowserRouter></TooltipProvider></QueryClientProvider></ThemeProvider>;
 }

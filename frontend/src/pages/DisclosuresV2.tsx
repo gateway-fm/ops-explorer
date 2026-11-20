@@ -9,6 +9,7 @@ import { appSession } from '../lib/v2Session';
 import { ownWallets, type OwnWallet } from '../lib/v2Wallet';
 import { disclosureResources, displayDisclosureTime, parseCasePage, parseDisclosureCase, parseDisclosureData, type CasePage, type DataActivity, type DataAddress, type DataCompliance, type DataEvent, type DataFinancePage, type DataEnvelope, type DataPage, type DataSanctions, type DataSummary, type DataTransaction, type DisclosureCase, type DisclosureLevel, type DisclosureResource } from '../lib/v2Disclosure';
 
+import { NativeReadState } from '../components/NativeReadPanels';
 import { readNarrowing } from '../lib/v2DisclosureFinance';
 
 const labels: Record<DisclosureResource, string> = { addresses: 'Addresses', transactions: 'Transactions', activity_logs: 'Activity', activity_summary: 'Activity summary', sanctions_report: 'Sanctions', compliance_report: 'Compliance', events: 'Events' };
@@ -27,21 +28,33 @@ function useRemote<T>(endpoint: string, parse: (value: unknown) => T, body?: str
   }, [endpoint, body, wallet, identity?.activation, version]);
   return { ...state, reload: () => setVersion(n => n + 1) };
 }
-function Status({ loading, error }: { loading: boolean; error?: string }) { return <>{loading && <p role="status" className="text-sm text-neutral-500">Loading…</p>}{error && <p role="alert" className="rounded-lg border border-error-200 bg-error-50 p-3 text-sm text-error-700">{error}</p>}</>; }
+function Status({ loading, error }: { loading: boolean; error?: string }) { return <NativeReadState loading={loading} error={error}/>; }
+// A display clock only retires controls; it never renews case/session authority.
+function useDisplayClock() {
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  useEffect(() => { const timer = setInterval(() => setNow(Date.now() / 1000), 250); return () => clearInterval(timer); }, []);
+  return now;
+}
+function displayStatus(record: DisclosureCase, deadline: number, now: number) {
+  return record.status === 'open' && deadline <= now ? 'expired' : record.status;
+}
+function CaseStatus({status}: {status: string}) { return <span className={status === 'open' ? 'badge-success' : 'badge-neutral'}>{status === 'expired' ? 'Expired' : status}</span>; }
 function Table({ headings, children }: { headings: string[]; children: ReactNode }) { return <div className="table-container"><table className={headings.length > 4 ? 'table min-w-[48rem]' : 'table'}><thead><tr>{headings.map(h => <th className="px-4 py-3" key={h}>{h}</th>)}</tr></thead><tbody>{children}</tbody></table></div>; }
 function Cell({ children }: { children?: ReactNode }) { return <td className="px-4 py-3 align-top break-all text-sm">{children ?? '—'}</td>; }
 function query(cursor: string | null) { return cursor ? `?limit=50&cursor=${encodeURIComponent(cursor)}` : '?limit=50'; }
 
 export function DisclosuresV2() { const identity = useIdentity(); return identity ? <Dashboard key={identity.activation} /> : null; }
 function Dashboard() {
+  const identity = useIdentity(), originalExpiry = useRef(identity?.expires ?? 0), deadlines = useRef(new Map<string, number>()), now = useDisplayClock();
   const [cursor, setCursor] = useState<string | null>(null);
   const cases = useRemote<CasePage>('/viewable-addresses' + query(cursor), parseCasePage);
   const wallets = useRemote<OwnWallet[]>('/eth/addresses', ownWallets, undefined, true);
+  for (const record of cases.data?.items ?? []) deadlines.current.set(record.caseId, Math.min(deadlines.current.get(record.caseId) ?? Infinity, originalExpiry.current, record.expiresAt));
   return <section className="space-y-5"><PageHeader title="Auditor" subtitle="Approved disclosure cases available to your current identity"/><p className="text-sm text-neutral-500">Access follows approved rules. Each permitted disclosure is checked and recorded without asking the client to approve it.</p>
     <DisclosurePanelPresentation title="Your wallets"><div className="p-4 space-y-3 text-sm"><Status {...wallets} />{wallets.data && <ul>{wallets.data.map(w => <li key={w.address} className="break-all"><Link className="text-primary hover:underline" to={'/addresses/' + w.address}><code>{w.address}</code></Link></li>)}</ul>}<Link className="text-primary" to="/wallets">Manage wallet links</Link></div></DisclosurePanelPresentation>
     <DisclosurePanelPresentation title="Your cases"><div className="p-4 space-y-3 text-sm"><Status {...cases} />{cases.data && <><Table headings={['Reference', 'Purpose', 'Status', 'Expires', '']}>
-      {cases.data.items.map(c => <tr key={c.caseId}><Cell>{c.caseReference}</Cell><Cell>{c.purpose}</Cell><Cell>{c.status}</Cell><Cell>{displayDisclosureTime(c.expiresAt)}</Cell><Cell><Link className="btn-secondary whitespace-nowrap" to={'/disclosures/cases/' + c.caseId}>Open case</Link></Cell></tr>)}
-    </Table>{cases.data.items.length === 0 && <p>No cases on this page.</p>}<div className="flex flex-wrap gap-2"><button className="btn-secondary" onClick={() => { setCursor(null); cases.reload(); }}>Refresh cases</button><button className="btn-secondary" disabled={!cases.data.nextCursor} onClick={() => setCursor(cases.data!.nextCursor)}>Next cases</button></div></>}</div></DisclosurePanelPresentation>
+      {cases.data.items.map(c => <tr key={c.caseId}><Cell>{c.caseReference}</Cell><Cell>{c.purpose}</Cell><Cell><CaseStatus status={displayStatus(c, deadlines.current.get(c.caseId)!, now)}/></Cell><Cell>{displayDisclosureTime(c.expiresAt)}</Cell><Cell><Link className="btn-secondary whitespace-nowrap" to={'/disclosures/cases/' + c.caseId}>Open case</Link></Cell></tr>)}
+    </Table>{cases.data.items.length === 0 && <p>No cases on this page.</p>}<div className="flex flex-wrap gap-2"><button className="btn-secondary" disabled={!cases.data.nextCursor} onClick={() => setCursor(cases.data!.nextCursor)}>Next cases</button></div></>}<button className="btn-secondary" disabled={cases.loading} onClick={() => { setCursor(null); cases.reload(); }}>{cases.error ? 'Retry cases' : 'Refresh cases'}</button></div></DisclosurePanelPresentation>
     <CreateCase onCreated={() => { setCursor(null); cases.reload(); }} />
   </section>;
 }
@@ -87,23 +100,36 @@ function CreateCase({ onCreated }: { onCreated: () => void }) {
 
 export function DisclosureCaseV2() { const identity = useIdentity(), { caseId = '' } = useParams(); return identity ? <CasePanel key={identity.actor + identity.profile + identity.activation + caseId} caseId={caseId} /> : null; }
 function CasePanel({ caseId }: { caseId: string }) {
+  const identity = useIdentity(), originalExpiry = useRef(identity?.expires ?? 0), deadline = useRef(originalExpiry.current), now = useDisplayClock();
   const result = useRemote('/disclosure/cases/' + encodeURIComponent(caseId), parseDisclosureCase), [resource, setResource] = useState<DisclosureResource>(), [reason, setReason] = useState(''), [error, setError] = useState<string>(), [busy, setBusy] = useState(false);
   useEffect(() => { const refresh = () => { setResource(undefined); result.reload(); }; window.addEventListener('focus', refresh); return () => window.removeEventListener('focus', refresh); }, []);
+  if (result.data) deadline.current = Math.min(deadline.current, result.data.expiresAt);
+  const status = result.data ? displayStatus(result.data, deadline.current, now) : undefined;
+  const available = status === 'open';
+  const refresh = () => { setResource(undefined); result.reload(); };
   const revoke = async () => { if (busy || !reason.trim()) return; setBusy(true); setError(undefined); try { await appSession.disclosure('/disclosure/cases/' + caseId + '/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }) }); setResource(undefined); result.reload(); } catch (e) { setError(failure(e)); } finally { setBusy(false); } };
   return <section className="space-y-5">
     <PageHeader title={result.data?.caseReference ?? 'Disclosure case'} subtitle="Access through an approved disclosure case"><Link className="btn-secondary" to="/disclosures">All disclosures</Link></PageHeader>
+    <button className="btn-secondary" disabled={result.loading} onClick={refresh}>{result.error ? 'Retry case' : 'Refresh case'}</button>
     <Status {...result} />{result.data && <>
     <DisclosurePanelPresentation title="Case details"><div className="divide-y divide-neutral-100">
       <InfoRow label="Purpose" value={result.data.purpose} />
       <InfoRow label="Legal basis" value={result.data.legalBasis} />
-      <InfoRow label="Status" value={<span className={result.data.status === 'open' ? 'badge-success' : 'badge-neutral'}>{result.data.status}</span>} />
+      <InfoRow label="Status" value={<CaseStatus status={status!}/>} />
       <InfoRow label="Expires" value={displayDisclosureTime(result.data.expiresAt)} />
       <InfoRow label="Detail level" value={result.data.scope.level} />
+      <InfoRow label="Approved rule" value={<code className="break-all">{result.data.ruleId}</code>} />
+      <InfoRow label="Data organization" value={<code className="break-all">{result.data.dataOrganizationId}</code>} />
+      <InfoRow label="Target actors" value={<ul className="space-y-1">{result.data.scope.targetActors.map(actor => <li key={actor}><code className="break-all">{actor}</code></li>)}</ul>} />
+      <InfoRow label="Wallet limit" value={result.data.scope.addresses.mode === 'all-target-addresses' ? 'All eligible wallets of the target actors' : <ul className="space-y-1">{result.data.scope.addresses.values.map(address => <li key={address}><code className="break-all">{address}</code></li>)}</ul>} />
+      <InfoRow label="Data time (inclusive)" value={<>{displayDisclosureTime(result.data.scope.dataTime.start)} – {displayDisclosureTime(result.data.scope.dataTime.end)}</>} />
+      <InfoRow label="Permitted data" value={result.data.scope.resources.map(resource => labels[resource]).join(', ')} />
     </div></DisclosurePanelPresentation>
-    <div className="flex flex-wrap gap-2" role="group" aria-label="Case data">{result.data.scope.resources.map(r => <button className={resource === r ? 'btn-primary' : 'btn-secondary'} aria-pressed={resource === r} key={r} disabled={result.data?.status !== 'open'} onClick={() => setResource(r)}>{labels[r]}</button>)}<button className="btn-secondary" onClick={() => { setResource(undefined); result.reload(); }}>Refresh case</button></div>
-    {resource && result.data.status === 'open' && <ResourcePanel key={resource + result.data.version} record={result.data} resource={resource} />}
+    {status === 'expired' && <p role="status" className="rounded-lg border border-warning-200 bg-warning-50 p-3 text-sm text-warning-700">Expired. The original case or application session deadline has passed. Data access through this case has ended.</p>}
+    <div className="flex flex-wrap gap-2" role="group" aria-label="Case data">{result.data.scope.resources.map(r => <button className={resource === r ? 'btn-primary' : 'btn-secondary'} aria-pressed={resource === r} key={r} disabled={!available} onClick={() => setResource(r)}>{labels[r]}</button>)}</div>
+    {resource && available && <ResourcePanel key={resource + result.data.version} record={result.data} resource={resource} sessionExpiresAt={deadline.current} />}
     <CaseAudit caseId={caseId} />
-    {result.data.status === 'open' && <details className="card p-5"><summary className="cursor-pointer font-medium text-error-600">Revoke this case</summary><div className="mt-4 space-y-3"><p className="text-sm text-neutral-500">Revocation ends access through this case.</p><label className="block text-sm font-medium text-neutral-700">Revocation reason<input className="input mt-1" aria-label="Revocation reason" value={reason} maxLength={1024} onChange={e => setReason(e.target.value)} /></label><button className="btn-secondary text-error-600" disabled={busy || !reason.trim()} onClick={() => void revoke()}>Revoke case</button>{error && <p role="alert" className="rounded-lg border border-error-200 bg-error-50 p-3 text-sm text-error-700">{error}</p>}</div></details>}
+    {available && <details className="card p-5"><summary className="cursor-pointer font-medium text-error-600">Revoke this case</summary><div className="mt-4 space-y-3"><p className="text-sm text-neutral-500">Revocation ends access through this case.</p><label className="block text-sm font-medium text-neutral-700">Revocation reason<input className="input mt-1" aria-label="Revocation reason" value={reason} maxLength={1024} onChange={e => setReason(e.target.value)} /></label><button className="btn-secondary text-error-600" disabled={busy || !reason.trim()} onClick={() => void revoke()}>Revoke case</button>{error && <p role="alert" className="rounded-lg border border-error-200 bg-error-50 p-3 text-sm text-error-700">{error}</p>}</div></details>}
   </>}</section>;
 }
 
@@ -159,7 +185,7 @@ function ResourcePanel({ record, resource, addressId, sessionExpiresAt }: { reco
     {resource === 'events' && <p className="text-sm text-neutral-500">Events from transactions covered by this case, emitted by contracts attributed to the data organization. This covers transactions whose sender or recipient is a target wallet; events mentioning a target only in their payload are outside this population. {record.scope.level === 'full' ? 'Full Events reveals the whole event payload and may include other parties’ data.' : 'Topics, raw data and hashes are withheld at this privacy level.'}</p>}
     {resource === 'compliance_report' && <label>Compliance view<select aria-label="Compliance view" className="input mt-1" value={readView} disabled={state.loading} onChange={event => { clear(); const view = event.target.value as 'list' | 'report'; setReadView(view); void read('', view); }}><option value="report">Summary report</option><option value="list">Admission decisions</option></select></label>}
     {narrow && <fieldset className="space-y-3 rounded-lg border border-neutral-200 p-3"><legend>Narrow this read</legend><div className="grid gap-3 sm:grid-cols-3"><label>Target actor<select aria-label="Target actor" className="input mt-1" value={target} onChange={event => { clear(); setTarget(event.target.value); }}><option value="">All targets in this case</option>{record.scope.targetActors.map(actor => <option key={actor} value={actor}>{actor}</option>)}</select></label><label>From (UTC, inclusive)<input aria-label="From (UTC, inclusive)" type="datetime-local" step="1" className="input mt-1" value={from} onChange={event => { clear(); setFrom(event.target.value); }} /></label><label>Through (UTC, inclusive)<input aria-label="Through (UTC, inclusive)" type="datetime-local" step="1" className="input mt-1" value={through} onChange={event => { clear(); setThrough(event.target.value); }} /></label></div><button className="btn-secondary" disabled={state.loading} onClick={() => void read()}>Read permitted data</button></fieldset>}
-    <Status {...state} />{data && <><p>{data.coverage.status === 'RETAINED_AT_READ' ? 'These results cover retained records available when the request was prepared.' : 'These results cover recorded activity up to the selected audit snapshot.'} Prepared {displayDisclosureTime(data.coverage.preparedAt)}. Available in this session until {displayDisclosureTime(Math.min(data.effectiveUntil, originalExpiry.current))}.</p>
+    <Status {...state} />{!data && state.error && <button className="btn-secondary" disabled={state.loading || !owned()} onClick={() => void read()}>Try again</button>}{data && <><p>{data.coverage.status === 'RETAINED_AT_READ' ? 'These results cover retained records available when the request was prepared.' : 'These results cover recorded activity up to the selected audit snapshot.'} Prepared {displayDisclosureTime(data.coverage.preparedAt)}. Available in this session until {displayDisclosureTime(Math.min(data.effectiveUntil, originalExpiry.current))}.</p>
     {resource === 'addresses' && page && <ul>{(page.items as DataAddress[]).map(a => <li key={a.addressId}><Link className="text-primary hover:underline break-all" to={`/disclosures/cases/${record.caseId}/addresses/${a.addressId}`}>{a.display}</Link>{a.isMine ? ' · Your wallet' : ''}</li>)}</ul>}
     {resource === 'transactions' && page && <><DisclosureBanner record={record} envelope={data} expires={originalExpiry.current}/><DisclosureTransactionRows rows={page.items as DataTransaction[]} record={record} addressId={addressId} /></>}
     {resource === 'events' && page && <DisclosureEventCards rows={page.items as DataEvent[]} level={record.scope.level} />}
@@ -178,7 +204,12 @@ function Evidence({ rows }: { rows: DataFinancePage['items'] }) { return <Table 
 function Summary({ data }: { data: DataSummary }) { return <><p>Total {data.total} · Successful {data.successful} · Failed {data.failed}</p><Table headings={['Method', 'Total', 'Successful', 'Failed']}>{data.methodBreakdown.map(m => <tr key={m.method}><Cell>{m.method}</Cell><Cell>{m.total}</Cell><Cell>{m.successful}</Cell><Cell>{m.failed}</Cell></tr>)}</Table></>; }
 function Sanctions({ data }: { data: DataSanctions }) { return <><p>{data.status === 'hit' ? 'Approved-list match found' : data.status === 'clear' ? 'No approved-list match in the checked addresses' : 'No eligible addresses to check'} · {data.scopedAddressCount} addresses · Checked {displayDisclosureTime(data.checkedAt)}</p><ul>{data.matches.map(m => <li key={m.sourceId}>{m.address.display}{m.reason ? ` · ${m.reason}` : ''}</li>)}</ul></>; }
 function Compliance({ data }: { data: DataCompliance }) { return <div className="space-y-3"><Summary data={data.activity} /><Sanctions data={data.sanctions} /><p>KYC: not evaluated by this report.</p><p>Matching retained admission decisions: <strong>{data.finance.matchingRetainedCount}</strong> as of <time>{data.finance.observedAt}</time>. This summary includes aggregate counts. Open admission decisions to read individual records with these same filters.</p></div>; }
-function CaseAudit({ caseId }: { caseId: string }) { const [cursor, setCursor] = useState<string | null>(null), result = useRemote(`/disclosure/cases/${caseId}/audit${query(cursor)}`, value => { const v = value as { items: { eventId: string; time: number; action: string; outcome: string }[]; nextCursor: string }; if (!v || !Array.isArray(v.items) || v.items.length > 100 || typeof v.nextCursor !== 'string') throw Error('Invalid case history'); return v; }); return <details className="card p-5"><summary className="cursor-pointer font-medium text-primary">Case history</summary><Status {...result} />{result.data && <><Table headings={['Time', 'Action', 'Outcome']}>{result.data.items.map(e => <tr key={e.eventId}><Cell>{displayDisclosureTime(e.time)}</Cell><Cell>{e.action}</Cell><Cell>{e.outcome}</Cell></tr>)}</Table><button className="btn-secondary mt-3" disabled={!result.data.nextCursor} onClick={() => setCursor(result.data!.nextCursor)}>Next history page</button></>}</details>; }
+function CaseAudit({ caseId }: { caseId: string }) {
+  const [cursor, setCursor] = useState<string | null>(null), result = useRemote(`/disclosure/cases/${caseId}/audit${query(cursor)}`, value => { const v = value as { items: { eventId: string; time: number; action: string; outcome: string }[]; nextCursor: string }; if (!v || !Array.isArray(v.items) || v.items.length > 100 || typeof v.nextCursor !== 'string') throw Error('Invalid case history'); return v; });
+  return <details className="card p-5"><summary className="cursor-pointer font-medium text-primary">Case history</summary><Status {...result} />
+    <div className="my-3 flex flex-wrap gap-2"><button className="btn-secondary" disabled={result.loading} onClick={result.reload}>{result.error ? 'Retry history' : 'Refresh history'}</button>{cursor && <button className="btn-secondary" disabled={result.loading} onClick={() => setCursor(null)}>Restart history</button>}</div>
+    {result.data && <><Table headings={['Time', 'Action', 'Outcome']}>{result.data.items.map(e => <tr key={e.eventId}><Cell>{displayDisclosureTime(e.time)}</Cell><Cell>{e.action}</Cell><Cell>{e.outcome}</Cell></tr>)}</Table><button className="btn-secondary mt-3" disabled={!result.data.nextCursor} onClick={() => setCursor(result.data!.nextCursor)}>Next history page</button></>}</details>;
+}
 
 export function DisclosureAddressV2() { const identity = useIdentity(), { caseId = '', addressId = '' } = useParams(); return identity ? <AddressPanel key={identity.actor + identity.profile + identity.activation + caseId + addressId} caseId={caseId} addressId={addressId} /> : null; }
 function AddressPanel({ caseId, addressId }: { caseId: string; addressId: string }) {

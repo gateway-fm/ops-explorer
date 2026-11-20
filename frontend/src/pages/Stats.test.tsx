@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { type ReactNode } from 'react';
 
-const mockGetConfig = vi.fn();
+const mockGetConfig = vi.hoisted(() => vi.fn());
 vi.mock('../lib/runtimeConfig', () => ({
   getConfig: (key: string, fallback?: string) => mockGetConfig(key, fallback),
 }));

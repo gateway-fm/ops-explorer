@@ -1,5 +1,5 @@
+import { LinkedWalletAddress } from './LinkedWalletPresentation';
 import { useState, useCallback } from 'react';
-import { Link } from 'react-router-dom';
 import {
   ShieldCheck,
   Info,
@@ -7,8 +7,6 @@ import {
   Trash2,
   Loader2,
   AlertTriangle,
-  Copy,
-  Check,
   LinkIcon,
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -31,36 +29,6 @@ function getMetaMask(): MetaMaskProvider | null {
 function truncateAddress(address: string): string {
   if (!address) return '';
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
-}
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          onClick={handleCopy}
-          className="p-1 rounded hover:bg-neutral-100 transition-colors"
-        >
-          {copied ? (
-            <Check className="w-3.5 h-3.5 text-success-600" />
-          ) : (
-            <Copy className="w-3.5 h-3.5 text-neutral-400" />
-          )}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent>{copied ? 'Copied!' : 'Copy address'}</TooltipContent>
-    </Tooltip>
-  );
 }
 
 function AddressRow({
@@ -98,16 +66,7 @@ function AddressRow({
               </TooltipContent>
             </Tooltip>
           )}
-          <Link
-            to={`/address/${addr.address}`}
-            className="font-mono text-primary hover:text-primary-600 transition-colors"
-          >
-            {/* SECURITY: Address is rendered as text content, not dangerouslySetInnerHTML.
-                React auto-escapes text content, preventing XSS. */}
-            <span className="hidden sm:inline">{addr.address}</span>
-            <span className="sm:hidden">{truncateAddress(addr.address)}</span>
-          </Link>
-          <CopyButton text={addr.address} />
+          <LinkedWalletAddress address={addr.address}/>
           {addr.ens_name && (
             // SECURITY: ENS name rendered as text content (auto-escaped by React)
             <span className="text-xs text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded">

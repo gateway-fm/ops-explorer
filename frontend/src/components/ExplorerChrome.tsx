@@ -32,6 +32,11 @@ interface ExplorerChromeProps<T extends ChromeSuggestion> {
   navigateToSuggestion: (suggestion: T) => void;
   accountLabel?: string;
   searchEnabled?: boolean;
+  showSuggestions?: boolean;
+  setShowSuggestions?: (show: boolean) => void;
+  searchContainerRef?: RefObject<HTMLDivElement | null>;
+  searchError?: string;
+  searchLoading?: boolean;
 }
 
 // The established Explorer chrome is shared by the legacy and native data
@@ -40,6 +45,7 @@ export function ExplorerChrome<T extends ChromeSuggestion>({ children, navigatio
   privacyEnabled, featureFlags, gasPrices, versionInfo, mobileNavItems, mobileMenuOpen,
   setMobileMenuOpen, search, setSearch, suggestions, selectedIndex, mobileInputRef,
   handleSearch, handleKeyDown, navigateToSuggestion, accountLabel = 'Top Accounts', searchEnabled = true,
+  showSuggestions = true, setShowSuggestions, searchContainerRef, searchError, searchLoading = false,
 }: ExplorerChromeProps<T>) {
   const getTypeIcon = (type: string) => {
     switch (type) {
@@ -191,7 +197,7 @@ export function ExplorerChrome<T extends ChromeSuggestion>({ children, navigatio
           <div className="absolute top-[72px] left-4 right-4 bottom-4 overflow-y-auto backdrop-blur-md border border-neutral-200 rounded-2xl" style={{ backgroundColor: 'color-mix(in srgb, var(--neutral-50) 80%, transparent)' }}>
             <div className="p-4 space-y-4">
               {/* Mobile Search */}
-              {searchEnabled && <form onSubmit={handleSearch}>
+              {searchEnabled && <div ref={searchContainerRef}><form onSubmit={handleSearch}>
                 <div className="relative">
                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
                   <input
@@ -200,14 +206,16 @@ export function ExplorerChrome<T extends ChromeSuggestion>({ children, navigatio
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     onKeyDown={handleKeyDown}
+                    onFocus={() => setShowSuggestions?.(true)}
+                    aria-label="Search the explorer"
                     placeholder={`Search ${branding.name}...`}
                     className="input pl-11"
                   />
                 </div>
-              </form>}
+              </form>
 
               {/* Mobile Search Suggestions */}
-              {searchEnabled && search.trim() && suggestions.length > 0 && (
+              {showSuggestions && search.trim() && suggestions.length > 0 && (
                 <div className="card overflow-hidden max-h-64 overflow-y-auto">
                   {suggestions.map((suggestion, index) => (
                     <button
@@ -227,6 +235,8 @@ export function ExplorerChrome<T extends ChromeSuggestion>({ children, navigatio
                   ))}
                 </div>
               )}
+              {showSuggestions && search.trim() && (searchError ? <p role="alert" className="mt-2 text-sm text-error-600">{searchError}</p> : searchLoading ? <p role="status" className="mt-2 text-sm text-neutral-500">Searching…</p> : !suggestions.length ? <p className="mt-2 text-sm text-neutral-500">No visible results. Try an address, transaction hash or block number.</p> : null)}
+              </div>}
 
               {/* Mobile Network Switcher (hidden when ≤1 network configured) */}
               {mobileNetworks}

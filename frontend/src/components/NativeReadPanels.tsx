@@ -12,6 +12,8 @@ import { exactQuantity, exactUnits, exactTimestamp } from '../lib/nativePresenta
 import { getNetworkCurrency, formatHash } from '../lib/utils';
 import { NativeAddress } from './NativeAddress';
 import { AddressTransactionsTable } from './AddressPresentation';
+import { StateMessage } from './StateMessage';
+import { Loader2 } from 'lucide-react';
 
 export function useNativePage<T>(path: string | null, decode: (raw: unknown) => Page<T>, limit = 25, filters = '', enabled = true) {
   const identity = useSyncExternalStore(appSession.subscribe, appSession.snapshot).identity;
@@ -44,13 +46,13 @@ export function useNativePage<T>(path: string | null, decode: (raw: unknown) => 
     reset: () => {if (owner && identity) persist(firstPosition(owner, identity.expires)); read.refresh?.();},
   };
 }
-export function NativeReadState({loading, error, stale, reset, refresh}: {loading?: boolean; error?: string; stale?: boolean; reset?: () => void; refresh?: () => void}) {
-  if (error) return <div role="alert" className="rounded-xl border border-error-200 bg-error-50 p-4 text-sm text-error-700">{error}{stale && reset && <button onClick={reset} className="ml-3 underline">Restart from the first page</button>}{!stale && refresh && <button onClick={refresh} className="ml-3 underline">Try again</button>}</div>;
-  return loading ? <p role="status" className="p-6 text-sm text-neutral-500">Loading…</p> : null;
+export function NativeReadState({loading, error, stale, reset, refresh, loadingView, errorView}: {loading?: boolean; error?: string; stale?: boolean; reset?: () => void; refresh?: () => void; loadingView?: ReactNode; errorView?: ReactNode}) {
+  if (error) return <div role="alert">{errorView ?? <StateMessage variant="error" title={error} action={stale && reset ? <button onClick={reset} className="btn-secondary">Restart from the first page</button> : refresh ? <button onClick={refresh} className="btn-secondary">Try again</button> : undefined}/>}</div>;
+  return loading ? loadingView ?? <StateMessage variant="loading" title="Loading…" icon={<Loader2 className="h-4 w-4 animate-spin"/>}/> : null;
 }
-export function NativeContinuation({page, index, next, previous, canPrevious, trimmed}: {page?: PageInfo; index: number; next: () => void; previous: () => void; canPrevious?: boolean; trimmed?: boolean}) {
+export function NativeContinuation({page, index, next, previous, canPrevious, trimmed, reset}: {page?: PageInfo; index: number; next: () => void; previous: () => void; canPrevious?: boolean; trimmed?: boolean; reset?: () => void}) {
   if (!page) return null;
-  return <div className="border-t border-neutral-200 px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-sm"><span className="text-xs text-neutral-500">Page {index + 1}. {continuationMessage(page)}{trimmed && ' Earlier navigation coordinates were released; restart to reach them.'}</span><div className="flex gap-4"><button disabled={canPrevious === undefined ? !index : !canPrevious} onClick={previous} className="text-primary disabled:text-neutral-400">Previous</button><button data-testid="load-more" disabled={!page.next} onClick={next} className="text-primary disabled:text-neutral-400">Continue</button></div></div>;
+  return <div className="border-t border-neutral-200 px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-sm"><span className="text-xs text-neutral-500">Page {index + 1}. {continuationMessage(page)}{trimmed && ' Earlier navigation coordinates were released.'}</span><div className="flex flex-wrap items-center gap-3">{trimmed && reset && <button onClick={reset} className="text-primary hover:text-primary-600">Restart from the first page</button>}<div className="inline-flex items-center overflow-hidden rounded-full border border-neutral-200 bg-neutral-50"><button disabled={canPrevious === undefined ? !index : !canPrevious} onClick={previous} className="px-4 py-1.5 font-medium text-neutral-700 transition-colors hover:bg-primary-50 hover:text-primary disabled:cursor-not-allowed disabled:text-neutral-300">Previous</button><span className="h-5 w-px bg-neutral-200" aria-hidden/><button data-testid="load-more" disabled={!page.next} onClick={next} className="px-4 py-1.5 font-medium text-neutral-700 transition-colors hover:bg-primary-50 hover:text-primary disabled:cursor-not-allowed disabled:text-neutral-300">Continue</button></div></div></div>;
 }
 export function nativeFee(tx: Transaction): string {
   if (tx.gasUsed === undefined) return 'Unavailable';

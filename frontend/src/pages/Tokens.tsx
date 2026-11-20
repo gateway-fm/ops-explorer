@@ -1,3 +1,4 @@
+import { TokensTablePresentation, TokenTableRowPresentation } from '../components/TokensPresentation';
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -105,36 +106,7 @@ export default function Tokens() {
 // ---------- Table ----------
 
 function TokenTable({ tokens, firstIndex }: { tokens: Token[]; firstIndex: number }) {
-  return (
-    <div className="overflow-x-auto rounded-2xl border border-neutral-200 bg-neutral-50">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-neutral-200">
-            <th className="w-12 px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-neutral-500">
-              #
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-neutral-500">
-              Token
-            </th>
-            <th className="hidden px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-neutral-500 md:table-cell">
-              Total Supply
-            </th>
-            <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-neutral-500">
-              Holders
-            </th>
-            <th className="hidden px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-neutral-500 sm:table-cell">
-              Transfers
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {tokens.map((token, idx) => (
-            <TokenRow key={token.address} token={token} index={firstIndex + idx + 1} />
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+  return <TokensTablePresentation ranked>{tokens.map((token, idx) => <TokenRow key={token.address} token={token} index={firstIndex + idx + 1}/>)}</TokensTablePresentation>;
 }
 
 function TokenRow({ token, index }: { token: Token; index: number }) {
@@ -150,7 +122,7 @@ function TokenRow({ token, index }: { token: Token; index: number }) {
   ].join(' ');
 
   return (
-    <tr data-testid="token-row" className="border-b border-neutral-200/60 transition-colors last:border-b-0 hover:bg-primary-50/40 dark:hover:bg-primary-900/10">
+    <TokenTableRowPresentation>
       <td className="px-4 py-4 align-middle text-sm tabular-nums text-neutral-400">{index}</td>
       <td className="px-4 py-4 align-middle">
         <div className="flex items-center gap-3">
@@ -188,7 +160,7 @@ function TokenRow({ token, index }: { token: Token; index: number }) {
       <td className="hidden px-4 py-4 text-right align-middle text-sm tabular-nums text-neutral-700 sm:table-cell">
         {token.transferCount.toLocaleString()}
       </td>
-    </tr>
+    </TokenTableRowPresentation>
   );
 }
 

@@ -40,6 +40,16 @@ function Back(){const navigate=useNavigate();return <button onClick={()=>navigat
 function RouteState(){const location=useLocation();return <output data-testid="route-state">{location.pathname}{location.search}{location.hash} {JSON.stringify(location.state)}</output>;}
 
 describe('E1 cursor navigation coordinates',()=>{
+ it('reaches page one through the actual shared Restart control after 26+ pages release earlier coordinates',async()=>{
+  let cursor=0; mock.read.mockImplementation(async()=>({items:[],page:{...page,hasMore:null,scanLimited:true,next:`opaque-${++cursor}`}}));
+  mount(<Position/>); await screen.findByRole('button',{name:'Continue'});
+  for(let i=0;i<27;i++){fireEvent.click(screen.getByRole('button',{name:'Continue'}));await waitFor(()=>expect(screen.getByText(`Position ${i+2}`)).toBeInTheDocument());await waitFor(()=>expect(screen.getByRole('button',{name:'Continue'})).toBeEnabled());}
+  expect(screen.getByRole('button',{name:'Restart from the first page'})).toBeInTheDocument();
+  for(let i=0;i<23;i++){fireEvent.click(await screen.findByRole('button',{name:'Previous'}));await screen.findByRole('button',{name:'Previous'});}
+  expect(screen.getByRole('button',{name:'Previous'})).toBeDisabled();expect(screen.queryByText('Position 1')).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'Restart from the first page'}));await screen.findByText('Position 1');await waitFor(()=>expect(mock.read.mock.calls.at(-1)?.[0]).toBe('/v2/explorer/transactions/paginated?limit=25'));
+  const owner=navigationOwner(mock.state.identity,'/transactions/paginated',25,'')!;expect(restorePosition(owner)?.expires).toBe(mock.state.identity.expires*1000);
+ });
  it.each([false,true])('restores page three after detail Back and reload, with tab storage denied=%s',async(denied)=>{
   if(denied){vi.spyOn(Storage.prototype,'getItem').mockImplementation(()=>{throw Error('blocked');});vi.spyOn(Storage.prototype,'setItem').mockImplementation(()=>{throw Error('blocked');});}
   mock.read.mockImplementation(async(path:string)=>({items:[transaction],page:{...page,hasMore:true,next:path.includes('cursor=two')?'three':path.includes('cursor=one')?'two':'one'}}));
@@ -73,6 +83,11 @@ describe('E2 canonical direct identifiers',()=>{
 });
 
 describe('E4 contract tabs and exact named outputs',()=>{
+ it.each([true,false,undefined])('shows only the returned verification status %s and keeps the V1 icon pills',verified=>{
+  mount(<NativeContractPanel address={address} contract={{address,abi:['function read() view returns (uint256)'],...(verified === undefined ? {} : {isVerified:verified})}}/>);
+  const row=screen.getByText('Verification').parentElement!;expect(row).toHaveTextContent(verified === true?'Verified':verified === false?'Not verified':'Unavailable');
+  expect(screen.getByRole('tablist',{name:'Contract sections'})).toHaveClass('rounded-full');expect(screen.getByRole('tab',{name:'Read'}).querySelector('svg')).not.toBeNull();expect(screen.queryByText('Verify now')).toBeNull();
+ });
  it('shows returned metadata and recursively names tuple/array outputs with exact integers, clearing results on input edits',async()=>{
   const abi=['function inspect(uint256 key) view returns (uint256 total, tuple(uint256 amount, address owner)[] entries)','function set(uint256 value)'];const iface=new Interface(abi);mock.rpc.mockResolvedValue({result:iface.encodeFunctionResult('inspect',['900719925474099312345', [['999999999999999999999',address]]])});
   mount(<NativeContractPanel address={address} contract={{address,abi,compilerVersion:'solc fixture',evmVersion:'paris',licenseType:'MIT',optimizationUsed:false,optimizationRuns:0,constructorArgs:'0x0001',creationTx:hash,blockNumber:'7'}} code="0x6000"/>);

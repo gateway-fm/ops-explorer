@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock the runtime config source so we can flip privacy mode per-test.
-const mockGetConfig = vi.fn();
+const mockGetConfig = vi.hoisted(() => vi.fn());
 vi.mock('./runtimeConfig', () => ({
   getConfig: (key: string, fallback?: string) => mockGetConfig(key, fallback),
 }));

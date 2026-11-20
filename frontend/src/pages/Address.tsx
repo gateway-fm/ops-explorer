@@ -1,17 +1,17 @@
+import { CoinBalancePanel } from '../components/AddressPresentation';
+import { ContractTabs, ContractCodeBlock as CodeBlock, ContractVerificationStatus } from '../components/ContractPresentation';
+import { DetailHeroSkeleton as HeroSkeleton, DetailRowsSkeleton as RowsSkeleton } from '../components/DetailSkeletons';
 import { AddressBackButton as BackButton, AddressHero as Hero, AddressTabs as Tabs, AddressDetailsPanel, PanelShell, EmptyRow, Th, LoadMore, AddressTransactionsTable } from '../components/AddressPresentation';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   ArrowRight,
-  FileCode2,
   ShieldCheck,
   ShieldOff,
   Wallet,
   X,
   Loader2,
-  BookOpen,
-  PenLine,
   Network,
   Download,
 } from 'lucide-react';
@@ -980,16 +980,7 @@ function InternalPanel({
 // ---------- Coin balance history ----------
 
 function CoinHistoryPanel({ balance }: { balance: string | number }) {
-  return (
-    <div className="rounded-2xl border border-dashed border-neutral-200 bg-neutral-100/30 px-6 py-12 text-center">
-      <p className="text-sm text-neutral-600">
-        Current balance: <span className="font-mono tabular-nums text-neutral-900">{formatWei(balance)} {getNetworkCurrency()}</span>
-      </p>
-      <p className="mx-auto mt-3 max-w-md text-xs text-neutral-500">
-        Per-block coin balance history isn't indexed yet on this network. The current balance above comes from a live RPC call.
-      </p>
-    </div>
-  );
+  return <CoinBalancePanel balance={`${formatWei(balance)} ${getNetworkCurrency()}`} explanation="Per-block coin balance history isn't indexed yet on this network. The current balance above comes from a live RPC call."/>;
 }
 
 // ---------- Logs ----------
@@ -1089,41 +1080,9 @@ function ContractPanel({
     return <PanelShell><EmptyRow>No contract metadata available for this address.</EmptyRow></PanelShell>;
   }
 
-  const subItems: { id: ContractSubTab; label: string; icon: React.ReactNode; disabled?: boolean; title?: string }[] = [
-    { id: 'overview', label: 'Overview', icon: <FileCode2 className="h-3.5 w-3.5" /> },
-    { id: 'read', label: 'Read', icon: <BookOpen className="h-3.5 w-3.5" />, disabled: !hasAbi, title: !hasAbi ? 'Upload an ABI to enable' : undefined },
-    { id: 'write', label: 'Write', icon: <PenLine className="h-3.5 w-3.5" />, disabled: !hasAbi, title: !hasAbi ? 'Upload an ABI to enable' : undefined },
-  ];
-
   return (
     <div className="space-y-5">
-      <div className="inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-neutral-100/60 p-1" role="tablist">
-        {subItems.map((s) => {
-          const isActive = subTab === s.id;
-          return (
-            <button
-              key={s.id}
-              onClick={() => !s.disabled && onSubTab(s.id)}
-              disabled={s.disabled}
-              role="tab"
-              data-testid={`tab-${s.id}`}
-              aria-selected={isActive}
-              title={s.title}
-              className={[
-                'inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors',
-                s.disabled
-                  ? 'cursor-not-allowed text-neutral-300'
-                  : isActive
-                  ? 'bg-neutral-50 text-neutral-900 shadow-card'
-                  : 'text-neutral-500 hover:text-neutral-800',
-              ].join(' ')}
-            >
-              {s.icon}
-              <span>{s.label}</span>
-            </button>
-          );
-        })}
-      </div>
+      <ContractTabs active={subTab} onChange={onSubTab} hasABI={hasAbi} unavailable="Upload an ABI to enable"/>
 
       {subTab === 'read' && (
         <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
@@ -1181,10 +1140,7 @@ function ContractOverview({
           label="Verification"
           value={
             contract.isVerified ? (
-              <span className="inline-flex items-center gap-1.5 text-sm text-success-600">
-                <span className="h-1.5 w-1.5 rounded-full bg-success-500" />
-                Verified{contract.contractName ? ` (${contract.contractName})` : ''}
-              </span>
+              <ContractVerificationStatus verified name={contract.contractName}/>
             ) : features().contractVerification ? (
               <Link to={`/verify?address=${addressForVerifyLink}`} className="inline-flex items-center gap-1.5 text-sm text-primary transition-colors hover:text-primary-600">
                 <ShieldCheck className="h-3.5 w-3.5" />
@@ -1317,31 +1273,6 @@ function UmlDiagram({ address }: { address: string }) {
   );
 }
 
-function CodeBlock({
-  title,
-  rightMeta,
-  copyText,
-  children,
-}: {
-  title: string;
-  rightMeta?: string;
-  copyText?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-50">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 px-5 py-3">
-        <h3 className="text-sm font-semibold text-neutral-900">{title}</h3>
-        <div className="flex items-center gap-3">
-          {rightMeta && <span className="font-mono text-xs tabular-nums text-neutral-500">{rightMeta}</span>}
-          {copyText && <CopyButton text={copyText} />}
-        </div>
-      </header>
-      <div className="bg-neutral-100/60 px-5 py-4">{children}</div>
-    </section>
-  );
-}
-
 // ---------- Write panel ----------
 
 function WritePanel({
@@ -1423,30 +1354,3 @@ function WritePanel({
 // ============================================================
 // Skeletons
 // ============================================================
-
-function HeroSkeleton() {
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-4">
-        <div className="h-14 w-14 animate-pulse rounded-full bg-neutral-200" />
-        <div className="h-7 w-48 animate-pulse rounded bg-neutral-200" />
-      </div>
-      <div className="h-9 w-96 animate-pulse rounded-full bg-neutral-200/60" />
-    </div>
-  );
-}
-
-function RowsSkeleton({ rows = 4 }: { rows?: number }) {
-  return (
-    <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-50">
-      {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="flex items-center gap-4 border-b border-neutral-200/60 px-4 py-5 last:border-b-0">
-          <div className="h-3 w-32 animate-pulse rounded bg-neutral-200" />
-          <div className="hidden h-3 w-16 animate-pulse rounded bg-neutral-200/70 md:block" />
-          <div className="flex-1 h-3 animate-pulse rounded bg-neutral-200/70" />
-          <div className="h-3 w-16 animate-pulse rounded bg-neutral-200" />
-        </div>
-      ))}
-    </div>
-  );
-}

@@ -18,12 +18,14 @@ const ThemeContext = createContext<ThemeContextValue>({
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => {
-    const stored = localStorage.getItem('theme');
-    return (stored === 'light' || stored === 'dark') ? stored : 'light';
+    try {
+      const stored = localStorage.getItem('theme');
+      return (stored === 'light' || stored === 'dark') ? stored : 'light';
+    } catch { return 'light'; }
   });
 
   const setTheme = (t: Theme) => {
-    localStorage.setItem('theme', t);
+    try { localStorage.setItem('theme', t); } catch { /* Keep the preference for this document when persistence is denied. */ }
     setThemeState(t);
   };
 

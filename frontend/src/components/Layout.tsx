@@ -115,7 +115,6 @@ export function Layout() {
       try {
         const response = await api.searchSuggestions(search.trim());
         setSuggestions(response.suggestions || []);
-        setShowSuggestions(true);
         setSelectedIndex(-1);
       } catch (err) {
         console.error('Search suggestions error:', err);
@@ -160,7 +159,7 @@ export function Layout() {
     e.preventDefault();
     if (!search.trim()) return;
 
-    if (selectedIndex >= 0 && suggestions[selectedIndex]) {
+    if (showSuggestions && selectedIndex >= 0 && suggestions[selectedIndex]) {
       navigateToSuggestion(suggestions[selectedIndex]);
       return;
     }
@@ -213,8 +212,11 @@ export function Layout() {
     mobileMenuOpen={mobileMenuOpen}
     setMobileMenuOpen={setMobileMenuOpen}
     search={search}
-    setSearch={setSearch}
+    setSearch={value => { setSearch(value); setShowSuggestions(true); }}
     suggestions={suggestions}
+    showSuggestions={showSuggestions}
+    setShowSuggestions={setShowSuggestions}
+    searchContainerRef={searchRef}
     selectedIndex={selectedIndex}
     mobileInputRef={mobileInputRef}
     handleSearch={handleSearch}

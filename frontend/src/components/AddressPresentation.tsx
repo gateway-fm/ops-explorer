@@ -205,6 +205,14 @@ export function EmptyRow({ children }: { children: React.ReactNode }) {
   );
 }
 
+export function CoinBalancePanel({ balance, observedBlock, explanation = "Per-block coin balance history isn't indexed yet on this network. Only the current authorized balance is available." }: { balance: React.ReactNode; observedBlock?: React.ReactNode; explanation?: string }) {
+  return <div className="rounded-2xl border border-dashed border-neutral-200 bg-neutral-100/30 px-6 py-12 text-center">
+    <p className="text-sm text-neutral-600">Current balance: <span className="font-mono tabular-nums text-neutral-900">{balance}</span></p>
+    {observedBlock !== undefined && <p className="mt-2 text-xs text-neutral-500">Observed at block {observedBlock}</p>}
+    <p className="mx-auto mt-3 max-w-md text-xs text-neutral-500">{explanation}</p>
+  </div>;
+}
+
 export function Th({
   children,
   align = 'left',

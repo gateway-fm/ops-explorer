@@ -86,7 +86,7 @@ export function TokensToolbar({
 
 export function TokensTableSkeleton() {
   return (
-    <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-50">
+    <div role="status" aria-label="Loading tokens" className="overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-50">
       {Array.from({ length: 4 }).map((_, i) => (
         <div
           key={i}
@@ -102,6 +102,20 @@ export function TokensTableSkeleton() {
       ))}
     </div>
   );
+}
+
+// The V1 table layout accepts native exact-value cells without its API model.
+export function TokensTablePresentation({children, ranked = false, supply = true, holders = true, transfers = true}: {children: ReactNode; ranked?: boolean; supply?: boolean; holders?: boolean; transfers?: boolean}) {
+  return <div className="overflow-x-auto rounded-2xl border border-neutral-200 bg-neutral-50"><table className="w-full text-sm"><thead><tr className="border-b border-neutral-200">
+    {ranked && <th className="w-12 px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-neutral-500">#</th>}
+    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-neutral-500">Token</th>
+    {supply && <th className="hidden px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-neutral-500 md:table-cell">Total Supply</th>}
+    {holders && <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-neutral-500">Holders</th>}
+    {transfers && <th className="hidden px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-neutral-500 sm:table-cell">Transfers</th>}
+  </tr></thead><tbody>{children}</tbody></table></div>;
+}
+export function TokenTableRowPresentation({children}: {children: ReactNode}) {
+  return <tr data-testid="token-row" className="border-b border-neutral-200/60 transition-colors last:border-b-0 hover:bg-primary-50/40 dark:hover:bg-primary-900/10">{children}</tr>;
 }
 
 export function TokensEmptyState({

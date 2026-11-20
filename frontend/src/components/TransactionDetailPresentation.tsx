@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { PageHeader } from './PageHeader';
+import { CopyButton } from './CopyButton';
 
 export type TransactionTab = 'overview' | 'logs' | 'trace';
 export function TransactionDetailPresentation({ activeTab, setActiveTab, logCount, traceCount, logsVisible, traceVisible, children }: {
@@ -61,7 +62,7 @@ export function TransactionOverview({ children, extra, input, showMore, onToggle
 export function TransactionInput({ data }: {data: string}) {
   if (!data || data === '0x') return null;
   const hex = data.startsWith('0x') ? data : `0x${data}`;
-  return <div className="border-t border-neutral-100 px-4 py-3"><div className="flex items-center justify-between mb-2"><div className="flex items-center gap-2"><span className="text-sm font-medium text-neutral-500">Input Data</span><span className="text-neutral-400 text-xs">({(hex.length - 2) / 2} bytes)</span></div><button onClick={() => { void navigator.clipboard.writeText(hex); }} className="text-xs text-neutral-500 hover:text-neutral-700 bg-neutral-100 hover:bg-neutral-200 px-2 py-1 rounded transition-colors">Copy</button></div><div className="code-block p-2 text-xs max-h-64 overflow-y-auto"><div className="break-all whitespace-pre-wrap">{hex}</div></div></div>;
+  return <div className="border-t border-neutral-100 px-4 py-3"><div className="flex items-center justify-between mb-2"><div className="flex items-center gap-2"><span className="text-sm font-medium text-neutral-500">Input Data</span><span className="text-neutral-400 text-xs">({(hex.length - 2) / 2} bytes)</span></div><CopyButton text={hex} label="Copy input data" className="text-xs text-neutral-500 hover:text-neutral-700 bg-neutral-100 hover:bg-neutral-200 px-2 py-1 rounded transition-colors">Copy</CopyButton></div><div className="code-block p-2 text-xs max-h-64 overflow-y-auto"><div className="break-all whitespace-pre-wrap">{hex}</div></div></div>;
 }
 
 export function LogCardPresentation({ index, address, decoded, topics, data, fetching, provenance, context, showEmptyData = false }: {index: number; address: ReactNode; decoded?: ReactNode; topics: ReactNode; data: string; fetching?: boolean; provenance?: ReactNode; context?: ReactNode; showEmptyData?: boolean}) {

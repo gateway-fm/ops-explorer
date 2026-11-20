@@ -27,7 +27,7 @@ export function AccountsNative() {
 }
 export function TransfersNative() {
   const transfers=useNativePage('/transfers',decodeTransfers);
-  return <div className="space-y-6"><PageHeader title="Token Transfers"/><VisiblePageNote/><NativeReadState {...transfers} reset={transfers.reset}/>{transfers.data&&<div className="card"><NativeTransferRows items={transfers.data.items}/><NativeContinuation {...transfers} page={transfers.data.page}/></div>}</div>;
+  return <div className="space-y-6"><PageHeader title="Token Transfers"/><VisiblePageNote/><p className="text-xs text-neutral-500">The authorized transfer feed includes all returned token standards. Filtering this feed by token type is unavailable from the current source.</p><NativeReadState {...transfers} reset={transfers.reset}/>{transfers.data&&<div className="card"><NativeTransferRows items={transfers.data.items}/><NativeContinuation {...transfers} page={transfers.data.page}/></div>}</div>;
 }
 export function LogsNative() {
   const [params,setParams]=useSearchParams();
