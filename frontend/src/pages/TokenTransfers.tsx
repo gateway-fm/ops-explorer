@@ -1,3 +1,4 @@
+import { TransferTypeTabs } from '../components/TransferTypeTabs';
 import { TransferMethodBadge as MethodBadge } from '../components/TransferMethodBadge';
 import { useQuery } from '@tanstack/react-query';
 
@@ -15,12 +16,6 @@ import { ArrowRight } from 'lucide-react';
 
 const ZERO = '0x0000000000000000000000000000000000000000';
 
-// Token-standard filter tabs. `value` is the API `type` query param ('' = all).
-const FILTERS: { label: string; value: string }[] = [
-  { label: 'All', value: '' },
-  { label: 'ERC-20', value: 'ERC20' },
-  { label: 'ERC-721', value: 'ERC721' },
-];
 
 function methodOf(t: TokenTransfer): string {
   if (t.from === ZERO) return 'mint';
@@ -67,27 +62,7 @@ export default function TokenTransfers() {
         }
       />
 
-      {/* Token-standard filter */}
-      <div className="flex items-center gap-1 border-b border-neutral-200">
-        {FILTERS.map((f) => {
-          const isActive = type === f.value;
-          return (
-            <button
-              key={f.value || 'all'}
-              onClick={() => handleFilterChange(f.value)}
-              className={[
-                'relative -mb-px px-4 py-2.5 text-sm font-medium transition-colors',
-                isActive ? 'text-primary' : 'text-neutral-500 hover:text-neutral-800',
-              ].join(' ')}
-            >
-              {f.label}
-              {isActive && (
-                <span className="absolute inset-x-3 -bottom-px h-0.5 rounded-full bg-primary" />
-              )}
-            </button>
-          );
-        })}
-      </div>
+      <TransferTypeTabs active={type} onChange={handleFilterChange}/>
 
       <div className="card">
         {isLoading ? (

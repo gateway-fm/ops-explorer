@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -1153,7 +1154,33 @@ func NormalizeTokenType(s string) string {
 	}
 }
 
+// ParseTransferTokenType preserves the established V1 case/space aliases,
+// while unknown or duplicate filters must never broaden into an all feed.
+func ParseTransferTokenType(values url.Values) (string, error) {
+	items, present := values["type"]
+	if !present {
+		return "", nil
+	}
+	if len(items) != 1 {
+		return "", fmt.Errorf("invalid token-standard filter")
+	}
+	if items[0] == "" {
+		return "", nil
+	}
+	canonical := NormalizeTokenType(items[0])
+	if canonical == "" {
+		return "", fmt.Errorf("invalid token-standard filter")
+	}
+	return canonical, nil
+}
+
 func (s *Server) handleGetAllTransfers(w http.ResponseWriter, r *http.Request) {
+	values, queryErr := url.ParseQuery(r.URL.RawQuery)
+	tokenType, filterErr := ParseTransferTokenType(values)
+	if queryErr != nil || filterErr != nil {
+		http.Error(w, "invalid token-standard filter", http.StatusBadRequest)
+		return
+	}
 	pageStr := r.URL.Query().Get("page")
 	pageSizeStr := r.URL.Query().Get("pageSize")
 
@@ -1172,8 +1199,6 @@ func (s *Server) handleGetAllTransfers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Optional token-standard filter (ERC20/ERC721/ERC1155); empty = all.
-	tokenType := NormalizeTokenType(r.URL.Query().Get("type"))
-
 	offset := (page - 1) * pageSize
 	transfers, total, err := s.provider.GetAllTransfers(r.Context(), tokenType, pageSize, offset)
 	if err != nil {

@@ -3,7 +3,7 @@ import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '../components/ui/tooltip';
 import { BlocksNative, BlockNative } from './BlocksNative';
-import { AccountsNative, TransactionsNative } from './CollectionsNative';
+import { AccountsNative, TransactionsNative, TransfersNative } from './CollectionsNative';
 import { TokensNative, TokenNative, NativePortfolio } from './TokensNative';
 import { ApiDocsNative, SyncNative } from './NetworkNative';
 import { NativeContractPanel } from '../components/NativeContractPanel';
@@ -45,6 +45,23 @@ describe('named native Explorer screens',()=>{
   renderPage(<TransactionsNative/>);
   fireEvent.click(await screen.findByRole('button',{name:'Continue'}));await waitFor(()=>expect(session.read.mock.calls.at(-1)?.[0]).toContain('cursor='));
   fireEvent.click(screen.getByRole('tab',{name:'Contract calls'}));await waitFor(()=>expect(session.read.mock.calls.at(-1)?.[0]).toBe('/v2/explorer/transactions/paginated?category=contract_call&limit=25'));
+ });
+ it('filters transfers at the source and restarts every newly selected standard, retaining history',async()=>{
+  sessionStorage.clear();session.read.mockResolvedValue({items:[],page:{...page,hasMore:null,scanLimited:true,next:'typed-next'}});
+  function Back(){const navigate=useNavigate();return <><button onClick={()=>navigate(-1)}>History back</button><TransfersNative/></>;}
+  renderPage(<Back/>,'/transfers?type=ERC20');
+  await waitFor(()=>expect(session.read.mock.calls.at(-1)?.[0]).toBe('/v2/explorer/transfers?type=ERC20&limit=25'));
+  fireEvent.click(await screen.findByRole('button',{name:'Continue'}));await waitFor(()=>expect(session.read.mock.calls.at(-1)?.[0]).toContain('type=ERC20&limit=25&cursor=typed-next'));
+  fireEvent.click(screen.getByRole('tab',{name:'ERC-721'}));await waitFor(()=>expect(session.read.mock.calls.at(-1)?.[0]).toBe('/v2/explorer/transfers?type=ERC721&limit=25'));
+  fireEvent.click(screen.getByRole('button',{name:'History back'}));await waitFor(()=>expect(session.read.mock.calls.at(-1)?.[0]).toContain('type=ERC20&limit=25&cursor=typed-next'));
+  fireEvent.click(screen.getByRole('tab',{name:'ERC-1155'}));await waitFor(()=>expect(session.read.mock.calls.at(-1)?.[0]).toBe('/v2/explorer/transfers?type=ERC1155&limit=25'));
+  fireEvent.click(screen.getByRole('tab',{name:'ERC-20'}));await waitFor(()=>expect(session.read.mock.calls.at(-1)?.[0]).toBe('/v2/explorer/transfers?type=ERC20&limit=25'));
+  fireEvent.click(screen.getByRole('tab',{name:'All'}));await waitFor(()=>expect(session.read.mock.calls.at(-1)?.[0]).toBe('/v2/explorer/transfers?limit=25'));
+ });
+ it.each(['type=erc20','type=ERC777','type=ERC20&type=ERC20','type='])('rejects invalid native transfer filter %s without an unfiltered request',async(raw)=>{
+  sessionStorage.clear();session.read.mockResolvedValue({items:[],page});renderPage(<TransfersNative/>,'/transfers?'+raw);
+  expect(await screen.findByText('Invalid token-standard filter')).toBeInTheDocument();expect(session.read).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button',{name:'Clear filter'}));await waitFor(()=>expect(session.read.mock.calls.at(-1)?.[0]).toBe('/v2/explorer/transfers?limit=25'));
  });
  it('does not invent account balances, ranks or global percentages',async()=>{
   session.read.mockResolvedValue({items:[{address}],page});renderPage(<AccountsNative/>);

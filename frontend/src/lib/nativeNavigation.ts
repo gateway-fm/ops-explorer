@@ -53,3 +53,12 @@ export function advancePosition(position: NativePosition, cursor: string): Nativ
   while (cursors.length > maxCursors || JSON.stringify(cursors).length > maxBytes / 2) { cursors = cursors.slice(1); offset++; }
   return { ...position, cursors, offset, index: cursors.length - 1 };
 }
+
+// Share the same validated, bounded history coordinates across pagination
+// and filter changes. Rows and response bodies never enter this map.
+export function boundedHistoryPositions(pointers: unknown, next: NativePosition): Record<string, NativePosition | string> {
+  const source = pointers && typeof pointers === 'object' && !Array.isArray(pointers) ? pointers : {};
+  const entries = [...Object.entries(source).filter(([key,value]) => key !== next.owner && restorePosition(key,value)), [next.owner,next] as const].slice(-maxRecords);
+  while (entries.length > 1 && JSON.stringify(entries).length > maxBytes) entries.shift();
+  return Object.fromEntries(entries);
+}

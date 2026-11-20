@@ -15,14 +15,13 @@
 //     counts; adding a batch count RPC would fix it.
 //   - GetTransactionHistory intervalSeconds quantizes to the indexer's
 //     TimeBucket enum (HOUR / DAY / WEEK). Intermediate values round up.
-//   - GetAllTransfers stays on SQL: the indexer requires a filter on
-//     ListTokenTransfers by design; unfiltered global feed is not a
-//     supported indexer use case.
+//   - GetAllTransfers uses the typed global V1 transfer feed.
 
 package indexerclient
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -212,12 +211,15 @@ func (p *Provider) GetAllTransfers(ctx context.Context, tokenType string, limit 
 	page, limit := offsetPage(offset, limit)
 	var tt indexerv1.TokenType
 	switch tokenType {
+	case "":
 	case "ERC20":
 		tt = indexerv1.TokenType_TOKEN_TYPE_ERC20
 	case "ERC721":
 		tt = indexerv1.TokenType_TOKEN_TYPE_ERC721
 	case "ERC1155":
 		tt = indexerv1.TokenType_TOKEN_TYPE_ERC1155
+	default:
+		return nil, 0, fmt.Errorf("invalid token-standard filter")
 	}
 	resp, err := p.client.ListAllTokenTransfers(ctx, &indexerv1.ListAllTokenTransfersRequest{
 		Page:      &indexerv1.OffsetPageRequest{Page: int32(page), PageSize: int32(limit)},

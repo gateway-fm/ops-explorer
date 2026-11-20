@@ -27,7 +27,7 @@ var v2ReadRoutes = []v2ReadRoute{
 	{"/blocks", "page"}, {"/blocks/latest/number", ""}, {"/blocks/hash/{hash}", ""}, {"/blocks/{number}", ""}, {"/blocks/{number}/transactions", "transactions"}, {"/blocks/{number}/internal", "page"},
 	{"/transactions/paginated", "transactions"}, {"/transactions", "transactions"}, {"/transactions/{hash}", ""}, {"/transactions/{hash}/internal", "page"}, {"/transactions/{hash}/transfers", "page"}, {"/transactions/{hash}/logs", "logs"},
 	{"/addresses/{address}/stats", ""}, {"/addresses/{address}/transactions", "transactions"}, {"/addresses/{address}/balance", ""}, {"/addresses/{address}/code", ""}, {"/addresses/{address}/balances", "page"}, {"/addresses/{address}/transfers", "page"}, {"/addresses/{address}/internal", "page"}, {"/addresses/{address}/logs", "scopedLogs"}, {"/addresses/{address}/contract", ""}, {"/addresses/{address}/is-contract", ""},
-	{"/logs", "logs"}, {"/tokens", "tokens"}, {"/tokens/{address}", ""}, {"/tokens/{address}/holders", "page"}, {"/tokens/{address}/transfers", "page"}, {"/transfers", "page"}, {"/accounts", "page"}, {"/search/suggestions", "search"}, {"/sync/status", ""}, {"/sync/indexer-progress", ""}, {"/sync/catchup", ""},
+	{"/logs", "logs"}, {"/tokens", "tokens"}, {"/tokens/{address}", ""}, {"/tokens/{address}/holders", "page"}, {"/tokens/{address}/transfers", "page"}, {"/transfers", "transfers"}, {"/accounts", "page"}, {"/search/suggestions", "search"}, {"/sync/status", ""}, {"/sync/indexer-progress", ""}, {"/sync/catchup", ""},
 }
 
 func v2ReadDeadline(next http.Handler) http.Handler {
@@ -105,6 +105,8 @@ func v2ReadQuery(raw string, kind string) (string, error) {
 		}
 	case "tokens":
 		allowed["type"], allowed["search"] = true, true
+	case "transfers":
+		allowed["type"] = true
 	case "search":
 		allowed["q"] = true
 		maxLimit = 20

@@ -1,7 +1,7 @@
 import { NativeNames } from './NativeNames';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { advancePosition, firstPosition, navigationOwner, restorePosition, savePosition, type NativePosition } from '../lib/nativeNavigation';
+import { advancePosition, boundedHistoryPositions, firstPosition, navigationOwner, restorePosition, savePosition, type NativePosition } from '../lib/nativeNavigation';
 import { Link } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { appSession } from '../lib/v2Session';
@@ -27,9 +27,7 @@ export function useNativePage<T>(path: string | null, decode: (raw: unknown) => 
   const persist = (next: NativePosition) => {
     savePosition(next); setPosition({key: location.key, value: next});
     const state = location.state && typeof location.state === 'object' ? location.state : {};
-    const entries = [...Object.entries(state.nativePages ?? {}).filter(([key,value]) => key !== next.owner && restorePosition(key, value)), [next.owner, next] as const].slice(-12);
-    while (entries.length > 1 && JSON.stringify(entries).length > 64 * 1024) entries.shift();
-    void navigate({pathname: location.pathname, search: location.search, hash: location.hash}, {replace: true, state: {...state, nativePages: Object.fromEntries(entries)}});
+    void navigate({pathname: location.pathname, search: location.search, hash: location.hash}, {replace: true, state: {...state, nativePages: boundedHistoryPositions(state.nativePages,next)}});
   };
   useEffect(() => {
     if (!enabled || !current) return;

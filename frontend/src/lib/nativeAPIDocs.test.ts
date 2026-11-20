@@ -29,6 +29,6 @@ describe('finite native read API documentation',()=>{
     expect(names('/stats/tx-history')).toEqual(['limit','cursor','interval']);
     expect(names('/addresses/{address}/logs')).toEqual(['address','limit','cursor','topic0','from','to']);
     expect(names('/transactions/{hash}/logs')).toEqual(['hash','limit','cursor','address','topic0','from','to']);
-    expect(names('/transfers')).toEqual(['limit','cursor']);expect(names('/tokens')).toContain('type');
+    expect(names('/transfers')).toEqual(['limit','cursor','type']);expect(names('/tokens')).toContain('type');
   });
 });

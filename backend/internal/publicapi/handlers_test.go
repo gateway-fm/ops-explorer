@@ -155,3 +155,30 @@ func TestUnknownRoute404(t *testing.T) {
 		t.Fatalf("status %d, want 404 for unknown route", w.Code)
 	}
 }
+
+type transferProvider struct {
+	api.DataProvider
+	kind  string
+	calls int
+}
+
+func (p *transferProvider) GetAllTransfers(_ context.Context, kind string, _, _ int) ([]types.TokenTransfer, int64, error) {
+	p.kind = kind
+	p.calls++
+	return []types.TokenTransfer{}, 0, nil
+}
+func TestAllTransferTypeValidatedBeforePublicProvider(t *testing.T) {
+	p := &transferProvider{}
+	s := tcServer(p)
+	for _, raw := range []string{"type=erc20", "type=+ERC721+", "type=Erc1155"} {
+		if got := tcReq(s, "/api/v1/token-transfers?"+raw, "198.51.100.33:1234"); got.Code != 200 || p.kind == "" {
+			t.Fatal(raw, got.Code, got.Body.String())
+		}
+	}
+	before := p.calls
+	for _, raw := range []string{"type=ERC777", "type=+", "type=ERC20&type=ERC20", "type=%zz"} {
+		if got := tcReq(s, "/api/v1/token-transfers?"+raw, "198.51.100.33:1234"); got.Code != 400 || p.calls != before {
+			t.Fatal("invalid filter reached provider", raw, got.Code)
+		}
+	}
+}

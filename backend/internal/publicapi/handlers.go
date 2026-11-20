@@ -3,6 +3,7 @@ package publicapi
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -639,10 +640,15 @@ func (s *Server) handleGetTokenTransfers(w http.ResponseWriter, r *http.Request)
 // --- Token Transfers ---
 
 func (s *Server) handleGetAllTransfers(w http.ResponseWriter, r *http.Request) {
+	values, queryErr := url.ParseQuery(r.URL.RawQuery)
+	tokenType, filterErr := api.ParseTransferTokenType(values)
+	if queryErr != nil || filterErr != nil {
+		writeError(w, "invalid token-standard filter", http.StatusBadRequest)
+		return
+	}
 	page := parsePage(r)
 	pageSize := parsePageSize(r)
 	offset := (page - 1) * pageSize
-	tokenType := api.NormalizeTokenType(r.URL.Query().Get("type"))
 
 	transfers, total, err := s.provider.GetAllTransfers(r.Context(), tokenType, pageSize, offset)
 	if err != nil {

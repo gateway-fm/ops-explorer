@@ -1,8 +1,12 @@
+import { TransferTypeTabs } from '../components/TransferTypeTabs';
+import { StateMessage } from '../components/StateMessage';
+import { appSession } from '../lib/v2Session';
+import { boundedHistoryPositions, firstPosition, navigationOwner, savePosition } from '../lib/nativeNavigation';
 import { useEffect, useState } from 'react';
 import { useVisibleTransactionsNotice } from '../hooks/useVisibleTransactionsNotice';
 import { NewItemsNotice } from '../components/NewItemsNotice';
 import { NativeNames } from '../components/NativeNames';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useLocation } from 'react-router-dom';
 import { PageHeader } from '../components/PageHeader';
 import { NativeAddress } from '../components/NativeAddress';
 import { ExplorerTable, ExplorerTabs, VisiblePageNote } from '../components/ExplorerReadPresentation';
@@ -27,8 +31,19 @@ export function AccountsNative() {
   return <div className="space-y-6"><PageHeader title="Accounts" subtitle="Addresses visible to your current access"/><VisiblePageNote/><NativeReadState {...accounts} reset={accounts.reset}/>{accounts.data&&<NativeNames items={accounts.data.items.map(account=>({address:account.address}))}><div className="card"><ExplorerTable headings={['Address','Type','Transactions','Token transfers','First seen','Last seen']}>{accounts.data.items.map(account=><tr key={account.address} data-testid="account-row"><td><NativeAddress address={account.address} full/></td><td>{account.isContract===undefined?'Unavailable':account.isContract?'Contract':'EOA'}</td><td><ScopedCountValue count={account.counts?.transactions}/></td><td><ScopedCountValue count={account.counts?.tokenTransfers}/></td><td>{exactTimestamp(account.firstSeen)}</td><td>{exactTimestamp(account.lastSeen)}</td></tr>)}</ExplorerTable>{!accounts.data.items.length&&<EmptyRow>No visible accounts on this page.</EmptyRow>}<NativeContinuation {...accounts} page={accounts.data.page}/></div></NativeNames>}</div>;
 }
 export function TransfersNative() {
-  const transfers=useNativePage('/transfers',decodeTransfers);
-  return <div className="space-y-6"><PageHeader title="Token Transfers"/><VisiblePageNote/><p className="text-xs text-neutral-500">The authorized transfer feed includes all returned token standards. Filtering this feed by token type is unavailable from the current source.</p><NativeReadState {...transfers} reset={transfers.reset}/>{transfers.data&&<div className="card"><NativeTransferRows items={transfers.data.items}/><NativeContinuation {...transfers} page={transfers.data.page}/></div>}</div>;
+  const [params,setParams]=useSearchParams(),location=useLocation();
+  const values=params.getAll('type'),type=values[0]??'';
+  const valid=values.length===0||values.length===1&&['ERC20','ERC721','ERC1155'].includes(type);
+  const filters=new URLSearchParams();if(type)filters.set('type',type);
+  const transfers=useNativePage(valid?'/transfers':null,decodeTransfers,25,filters.toString());
+  const select=(next:string)=>{
+    const query=new URLSearchParams();if(next)query.set('type',next);
+    const identity=appSession.snapshot().identity,owner=navigationOwner(identity,'/transfers',25,query.toString());
+    const state=location.state&&typeof location.state==='object'?location.state:{};
+    if(owner&&identity){const position=firstPosition(owner,identity.expires);savePosition(position);setParams(query,{state:{...state,nativePages:boundedHistoryPositions(state.nativePages,position)}});}
+    else setParams(query);
+  };
+  return <div className="space-y-6"><PageHeader title="Token Transfers"/><TransferTypeTabs includeERC1155 active={valid?type:'invalid'} onChange={select}/><VisiblePageNote/>{!valid?<StateMessage variant="error" title="Invalid token-standard filter" action={<button className="btn-secondary" onClick={()=>select('')}>Clear filter</button>}/>:<><NativeReadState {...transfers} reset={transfers.reset}/>{transfers.data&&<div className="card"><NativeTransferRows items={transfers.data.items}/><NativeContinuation {...transfers} page={transfers.data.page}/></div>}</>}</div>;
 }
 export function LogsNative() {
   const [params,setParams]=useSearchParams();

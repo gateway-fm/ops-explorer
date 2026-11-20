@@ -15,13 +15,13 @@ func TestV2ReadClosedQueryAndRouteSurface(t *testing.T) {
 		t.Fatal("ordinary route count")
 	}
 	for _, x := range []struct{ kind, raw string }{
-		{"transactions", "offset=1"}, {"page", "limit=01"}, {"page", "limit=1001"}, {"page", "limit=1&limit=2"}, {"", "limit=1"}, {"logs", "from=9&to=1"}, {"logs", "topic0=0x1234"}, {"tokens", "type=other"}, {"search", "q=bank&limit=21"}, {"search", "q=%00"}, {"chart", "interval=year"}, {"page", "cursor=%0A"},
+		{"transactions", "offset=1"}, {"page", "limit=01"}, {"page", "limit=1001"}, {"page", "limit=1&limit=2"}, {"", "limit=1"}, {"logs", "from=9&to=1"}, {"logs", "topic0=0x1234"}, {"tokens", "type=other"}, {"transfers", "type=other"}, {"transfers", "type=erc20"}, {"transfers", "type=ERC20&type=ERC20"}, {"transfers", "type="}, {"search", "q=bank&limit=21"}, {"search", "q=%00"}, {"chart", "interval=year"}, {"page", "cursor=%0A"},
 	} {
 		if _, e := v2ReadQuery(x.raw, x.kind); e == nil {
 			t.Fatalf("invalid query accepted: %s %s", x.kind, x.raw)
 		}
 	}
-	for _, x := range []struct{ kind, raw string }{{"page", "limit=1000&cursor=opaque.A_-"}, {"transactions", "category=token_transfer"}, {"logs", "from=0&to=9223372036854775807"}, {"search", "q=Bank+One&limit=20"}, {"chart", "interval=week&limit=365"}} {
+	for _, x := range []struct{ kind, raw string }{{"page", "limit=1000&cursor=opaque.A_-"}, {"transactions", "category=token_transfer"}, {"transfers", "type=ERC1155&limit=1&cursor=opaque"}, {"logs", "from=0&to=9223372036854775807"}, {"search", "q=Bank+One&limit=20"}, {"chart", "interval=week&limit=365"}} {
 		if _, e := v2ReadQuery(x.raw, x.kind); e != nil {
 			t.Fatalf("legal query rejected: %s", x.kind)
 		}
@@ -50,6 +50,24 @@ func TestV2ReadActualSessionLosslessWireAndChangedCapture(t *testing.T) {
 	response := f.call("GET", "/api/v2/explorer/transactions?limit=25", "")
 	if response.Code != 200 || response.Body.String() != body || response.Header().Get("Set-Cookie") != "" || response.Header().Get("Cache-Control") != "no-store" {
 		t.Fatal("lossless checked source bytes not preserved", response.Code)
+	}
+	f.onWallet = func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/explorer/transfers" || r.URL.RawQuery != "cursor=typed-next&limit=1&type=ERC721" {
+			t.Error("typed transfer query dropped/rewritten", r.URL)
+		}
+		_, _ = w.Write([]byte(body))
+	}
+	if got := f.call("GET", "/api/v2/explorer/transfers?type=ERC721&cursor=typed-next&limit=1", ""); got.Code != 200 || got.Body.String() != body {
+		t.Fatal("typed finite BFF wire failed", got.Code)
+	}
+	typedBefore := f.effects.Load()
+	for _, raw := range []string{"type=ERC777", "type=erc20", "type=ERC20&type=ERC20", "type=+ERC20", "type="} {
+		if got := f.call("GET", "/api/v2/explorer/transfers?"+raw, ""); got.Code != 400 {
+			t.Fatal("invalid typed query", raw, got.Code)
+		}
+	}
+	if typedBefore != f.effects.Load() {
+		t.Fatal("malformed transfer type reached upstream")
 	}
 	const statsBody = `{"privacyEnabled":true,"observedTransactions":"2","observedBlocks":"1","observedParticipantAddresses":"1","page":{"coverage":"OBSERVED_VISIBLE_PAGE","population":"LIVE_RETAINED_INDEXED_ROWS_CURRENT_RIGHTS","hasMore":null,"scanLimited":true,"next":"opaque-next"}}`
 	f.onWallet = func(w http.ResponseWriter, r *http.Request) {
