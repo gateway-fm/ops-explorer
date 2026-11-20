@@ -74,3 +74,12 @@ export function scopedCountNote(count:ScopedCount|undefined):string {
   if(count.observedAt)parts.push('Observed '+count.observedAt+'.');
   return parts.join(' ');
 }
+
+// A block count is bound to its parent number/hash by the native decoder.
+// Known unavailable coverage is useful context, never a fabricated sample.
+export function blockTransactionCountNote(number:string,count:ScopedCount|undefined):string {
+  const scope=`Ordinary transactions in block ${number}. `;
+  if(count?.status!=='unavailable')return scope+scopedCountNote(count);
+  const reason=count.coverage==='history_pruned'?' Indexed history for this block has been pruned.':count.coverage==='index_floor'?' This block has not been indexed.':count.coverage==='scan_limited'?' No qualified count completed within this read’s limits.':'';
+  return scope+scopedCountNote(count)+reason;
+}

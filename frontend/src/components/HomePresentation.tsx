@@ -71,15 +71,15 @@ function HomeTime({ timestamp }: { timestamp?: number | string }) {
   const value = typeof timestamp === 'string' ? BigInt(timestamp) : BigInt(timestamp);
   return value <= 8640000000000n ? <LiveTimeAgo timestamp={Number(value)} /> : <>{String(timestamp)} Unix seconds</>;
 }
-export function HomeBlockRow({ block, isNew = false }: { block: {
+export function HomeBlockRow({ block, isNew = false, transactionCountView }: { block: {
   number: number | string; hash: string; timestamp: number | string; transactionCount?: number | string; gasUsed?: number; gasLimit: number | string;
-}; isNew?: boolean }) {
+}; isNew?: boolean; transactionCountView?:ReactNode }) {
   const gasPercent = typeof block.gasLimit === 'number' && block.gasUsed !== undefined && block.gasLimit > 0 ? block.gasUsed / block.gasLimit * 100 : undefined;
   const gas = block.gasUsed === undefined ? undefined : block.gasUsed >= 1000000 ? `${(block.gasUsed / 1000000).toFixed(2)}M` : block.gasUsed >= 1000 ? `${(block.gasUsed / 1000).toFixed(1)}K` : String(block.gasUsed);
   return <div data-testid="block-row" className={`px-3 sm:px-4 h-[52px] sm:h-[60px] flex items-center gap-3 hover:bg-primary-50/50 dark:hover:bg-primary-900/10 transition-colors ${isNew ? 'feed-item-new' : ''}`}>
     <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 shrink-0"><Box className="w-5 h-5" /></div>
     <div className="flex-1 min-w-0"><div className="flex items-center gap-2"><Link to={`/block/${block.number}`} className="font-mono text-sm sm:text-base text-primary hover:text-primary-600 transition-colors">{block.number}</Link><span className="text-neutral-400 text-xs hidden sm:inline"><HomeTime timestamp={block.timestamp} /></span></div><div className="text-xs sm:text-sm text-neutral-500 font-mono">{formatHash(block.hash,10)}</div></div>
-    <div className="text-right text-xs sm:text-sm shrink-0"><div className="text-neutral-700">{block.transactionCount === undefined ? 'Count unavailable' : `${block.transactionCount} txns`}</div>{gas !== undefined && <div className="flex items-center gap-1.5 justify-end"><span className="text-neutral-500">{gas}</span><div className="w-12 h-1.5 bg-neutral-200 rounded-full overflow-hidden hidden sm:block"><div className="h-full bg-blue-500 rounded-full transition-all" style={{width:`${Math.min(gasPercent ?? 0,100)}%`}} /></div><span className="text-neutral-400 text-xs">{(gasPercent ?? 0).toFixed(0)}%</span></div>}</div>
+    <div className="text-right text-xs sm:text-sm shrink-0"><div className="text-neutral-700">{transactionCountView ?? (block.transactionCount === undefined ? 'Count unavailable' : `${block.transactionCount} txns`)}</div>{gas !== undefined && <div className="flex items-center gap-1.5 justify-end"><span className="text-neutral-500">{gas}</span><div className="w-12 h-1.5 bg-neutral-200 rounded-full overflow-hidden hidden sm:block"><div className="h-full bg-blue-500 rounded-full transition-all" style={{width:`${Math.min(gasPercent ?? 0,100)}%`}} /></div><span className="text-neutral-400 text-xs">{(gasPercent ?? 0).toFixed(0)}%</span></div>}</div>
   </div>;
 }
 const transactionKinds = {

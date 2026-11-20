@@ -31,6 +31,7 @@ export interface Block {
   difficulty:Quantity; totalDifficulty?:Quantity; nonce:Hex; miner:Address;
   extraData:Hex; stateRoot:Hash; transactionsRoot:Hash; receiptsRoot:Hash;
   createdAt:string;
+  counts?:Pick<ScopedCounts,'transactions'>;
   // gasUsed/bloom/blobGasUsed/size omitted; no raw global-volume leak.
 }
 export interface Transaction {

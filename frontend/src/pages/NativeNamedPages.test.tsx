@@ -29,7 +29,7 @@ describe('named native Explorer screens',()=>{
   session.read.mockImplementation(async(path:string)=>path.includes('latest')?{number}:{items:[block],page});
   renderPage(<BlocksNative/>);
   expect(await screen.findByText('9,007,199,254,740,993,123')).toHaveAttribute('href','/block/'+number);
-  expect(screen.getByText('Unavailable')).toBeInTheDocument();expect(screen.queryByText('Gas Used')).toBeNull();
+  expect(screen.getByRole('button',{name:/Count unavailable for this read/})).toHaveTextContent('—');expect(screen.queryByText('Gas Used')).toBeNull();
   expect(screen.getByText('30,000,000')).toBeInTheDocument();
  });
  it('keeps block transactions and internal tab cursors independent and uses node provenance only as information',async()=>{

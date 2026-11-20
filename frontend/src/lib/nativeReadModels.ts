@@ -15,13 +15,22 @@ const decimal=/^(0|[1-9][0-9]*)(?:\.[0-9]+)?$/;
 
 function block(raw: unknown): Block {
   const item = readItem(raw);
-  closed(item,['source','number','hash','parentHash','timestamp','gasLimit','baseFeePerGas','transactionCount','difficulty','totalDifficulty','nonce','miner','extraData','stateRoot','transactionsRoot','receiptsRoot','createdAt']);
+  closed(item,['source','number','hash','parentHash','timestamp','gasLimit','baseFeePerGas','transactionCount','difficulty','totalDifficulty','nonce','miner','extraData','stateRoot','transactionsRoot','receiptsRoot','createdAt','counts']);
   check(item.source === undefined || item.source === 'INDEXER' || item.source === 'NODE');
   check(text(item, 'number', quantity) && text(item, 'hash', hash) && text(item, 'timestamp', quantity) && text(item, 'gasLimit', quantity));
   check(BigInt(item.number as string)<=9223372036854775807n && text(item,'parentHash',hash) && text(item,'miner',address) && text(item,'nonce',/^0x[0-9a-f]{16}$/) && text(item,'extraData',hex) && text(item,'difficulty',quantity) && text(item,'createdAt'));
   for(const key of ['stateRoot','transactionsRoot','receiptsRoot'])check(text(item,key,hash));
   optionalText(item,['baseFeePerGas','transactionCount','totalDifficulty'],quantity);
-  return item as unknown as Block;
+  const counts=item.counts===undefined?undefined:readScopedCounts(item.counts,['transactions']);
+  const count=counts?.transactions;
+  if(count) {
+    check(count.consistency==='SNAPSHOT');
+    check(count.status!=='unavailable'||count.observedAt===undefined);
+    check(count.status==='unavailable'||item.source!=='NODE');
+    if(count.range)check(count.range.fromBlock===item.number&&count.range.throughBlock===item.number&&count.range.headHash===item.hash);
+  }
+  verifyFlatCount(item.transactionCount,count);
+  return {...item,...(counts===undefined?{}:{counts})} as unknown as Block;
 }
 function transaction(raw: unknown): Transaction {
   const item = readItem(raw);

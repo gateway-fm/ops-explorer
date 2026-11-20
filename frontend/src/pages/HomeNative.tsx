@@ -9,6 +9,7 @@ import { decodeBlocks, decodeLatestBlock, decodeObservedStats, decodeTransaction
 import { exactQuantity } from '../lib/nativePresentation';
 import { readTarget } from '../lib/v2Reads';
 import { NativeBlockTimeCard } from '../components/NativeBlockTimeCard';
+import { blockTransactionCountNote } from '../lib/nativeCounts';
 import { sampleBlockTime } from '../lib/nativeBlockTime';
 import { ScopedCountValue } from '../components/ScopedCountValue';
 
@@ -27,7 +28,7 @@ export function HomeNative() {
       {blocks.loading ? <HomeStatCardSkeleton/> : <NativeBlockTimeCard sample={sampleBlockTime(blocks.data?.items)}/>}
     </>}
     statsNote={<span className="space-x-2"><span>{stats.error ?? latest.error ?? 'Counts include only your permitted rows. ≥ means more may exist; tap or focus a count for its retained range and update time.'}</span><button className="text-primary hover:underline disabled:opacity-50" disabled={stats.loading} onClick={stats.refresh}>Refresh counts</button></span>}
-    blocks={blocks.loading ? Array.from({ length: 5 }, (_, i) => <HomeFeedSkeleton key={i} />) : blocks.error ? <StateMessage variant="error" title={blocks.error} /> : blocks.data?.items.length ? blocks.data.items.map(block => <HomeBlockRow key={block.hash} block={block} />) : <StateMessage variant="empty" title="No blocks on this page" />}
+    blocks={blocks.loading ? Array.from({ length: 5 }, (_, i) => <HomeFeedSkeleton key={i} />) : blocks.error ? <StateMessage variant="error" title={blocks.error} /> : blocks.data?.items.length ? blocks.data.items.map(block => <HomeBlockRow key={block.hash} block={block} transactionCountView={<><ScopedCountValue count={block.counts?.transactions} description={blockTransactionCountNote(block.number,block.counts?.transactions)}/> txns</>}/>) : <StateMessage variant="empty" title="No blocks on this page" />}
     transactions={transactions.loading ? Array.from({ length: 5 }, (_, i) => <HomeFeedSkeleton key={i} />) : transactions.error ? <StateMessage variant="error" title={transactions.error} /> : transactions.data?.items.length ? transactions.data.items.map(tx => <HomeTransactionRow wrapParties key={tx.hash} tx={tx} from={<NativeAddress address={tx.from} metadata={tx.addressMetadata} className="text-neutral-500" />} to={tx.to ? <NativeAddress address={tx.to} metadata={tx.addressMetadata} className="text-neutral-500" /> : undefined} />) : <StateMessage variant="empty" title="No transactions on this page" detail={transactions.data?.page.next ? 'More records may be available on another page.' : undefined} />}
   />;
 }
