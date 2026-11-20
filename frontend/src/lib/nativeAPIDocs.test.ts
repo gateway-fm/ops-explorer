@@ -24,6 +24,12 @@ describe('finite native read API documentation',()=>{
     }
     expect(endpoints.find(endpoint=>endpoint.path.endsWith('/stats'))?.exampleResponse).not.toHaveProperty('totalTransactions');
   });
+  it('distinguishes exact retained and CURRENT counts from page samples and unavailable data',()=>{
+    const response=endpoints.find(endpoint=>endpoint.path==='/v2/explorer/stats')!.exampleResponse;
+    const stats=decodeObservedStats(response);expect(stats.counts?.transactions?.range?.fromBlock).toBe('100');
+    expect(stats.counts?.transactions?.coverage).toBe('history_pruned');expect(stats.counts?.accounts?.consistency).toBe('CURRENT');
+    expect(stats.counts?.tokens?.status).toBe('unavailable');expect(stats.counts?.tokens?.value).toBeUndefined();
+  });
   it('documents source-supported history and log bounds while keeping unsupported feed filters absent',()=>{
     const names=(path:string)=>endpoints.find(endpoint=>endpoint.path==='/v2/explorer'+path)?.params?.map(param=>param.name)??[];
     expect(names('/stats/tx-history')).toEqual(['limit','cursor','interval']);

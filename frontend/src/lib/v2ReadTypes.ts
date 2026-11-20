@@ -82,6 +82,8 @@ export interface AddressStats {
   isContract?:boolean; updatedAt?:string;
   counts?:ScopedCounts;
 }
+// Observed fields describe only page samples. counts carries separate scoped
+// results; any legacy scalar count requires its matching typed exact result.
 export interface ChainStats {
   totalBlocks?:Quantity; totalTransactions?:Quantity; totalAddresses?:Quantity;
   totalTokens?:Quantity; avgBlockTime?:Decimal; privacyEnabled:true;
