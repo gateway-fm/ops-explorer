@@ -3,7 +3,7 @@
 # clears the stdlib DoS (Aikido #10140394, fix = stdlib 1.26.4) on top of
 # GO-2026-5039 (net/textproto, privacy path) and GO-2026-5037 (crypto/x509).
 # Do not float below 1.26.4.
-FROM golang:1.26.4-alpine AS builder
+FROM golang:1.26.11-alpine AS builder
 
 # Upgrade system packages
 RUN apk update --no-cache && apk upgrade --no-cache
