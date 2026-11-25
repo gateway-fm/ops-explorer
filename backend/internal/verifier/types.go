@@ -10,7 +10,7 @@ type VerifyRequest struct {
 	ContractName     string            `json:"contractName"`     // e.g., "Token"
 	CompilerVersion  string            `json:"compilerVersion"`  // e.g., "0.8.19"
 	OptimizationUsed bool              `json:"optimizationUsed"`
-	OptimizationRuns int               `json:"optimizationRuns"` // e.g., 200
+	OptimizationRuns int               `json:"optimizationRuns"`          // e.g., 200
 	ConstructorArgs  string            `json:"constructorArgs,omitempty"` // hex-encoded
 	EVMVersion       string            `json:"evmVersion,omitempty"`      // e.g., "london"
 	Libraries        map[string]string `json:"libraries,omitempty"`       // library name -> address
@@ -28,15 +28,15 @@ type StandardJSONVerifyRequest struct {
 }
 
 type VerifyResponse struct {
-	Success          bool            `json:"success"`
-	Address          string          `json:"address"`
-	ContractName     string          `json:"contractName,omitempty"`
-	CompilerVersion  string          `json:"compilerVersion,omitempty"`
-	MatchType        MatchType       `json:"matchType,omitempty"` // exact, partial, none
-	ABI              json.RawMessage `json:"abi,omitempty"`
-	Error            string          `json:"error,omitempty"`
-	BytecodeHash     string          `json:"bytecodeHash,omitempty"`
-	CompiledHash     string          `json:"compiledHash,omitempty"`
+	Success         bool            `json:"success"`
+	Address         string          `json:"address"`
+	ContractName    string          `json:"contractName,omitempty"`
+	CompilerVersion string          `json:"compilerVersion,omitempty"`
+	MatchType       MatchType       `json:"matchType,omitempty"` // exact, partial, none
+	ABI             json.RawMessage `json:"abi,omitempty"`
+	Error           string          `json:"error,omitempty"`
+	BytecodeHash    string          `json:"bytecodeHash,omitempty"`
+	CompiledHash    string          `json:"compiledHash,omitempty"`
 }
 
 type MatchType string
@@ -58,9 +58,9 @@ type CompilerInputSource struct {
 }
 
 type CompilerSettings struct {
-	Optimizer      OptimizerSettings `json:"optimizer"`
-	EVMVersion     string            `json:"evmVersion,omitempty"`
-	Libraries      map[string]map[string]string `json:"libraries,omitempty"`
+	Optimizer       OptimizerSettings              `json:"optimizer"`
+	EVMVersion      string                         `json:"evmVersion,omitempty"`
+	Libraries       map[string]map[string]string   `json:"libraries,omitempty"`
 	OutputSelection map[string]map[string][]string `json:"outputSelection"`
 }
 
@@ -71,7 +71,7 @@ type OptimizerSettings struct {
 
 type CompilerOutput struct {
 	Contracts map[string]map[string]ContractOutput `json:"contracts"`
-	Errors    []CompilerError                       `json:"errors,omitempty"`
+	Errors    []CompilerError                      `json:"errors,omitempty"`
 }
 
 type ContractOutput struct {
@@ -85,9 +85,10 @@ type EVMOutput struct {
 }
 
 type BytecodeOutput struct {
-	Object         string `json:"object"`
-	SourceMap      string `json:"sourceMap,omitempty"`
-	LinkReferences map[string]map[string][]LinkReference `json:"linkReferences,omitempty"`
+	Object              string                                `json:"object"`
+	SourceMap           string                                `json:"sourceMap,omitempty"`
+	LinkReferences      map[string]map[string][]LinkReference `json:"linkReferences,omitempty"`
+	ImmutableReferences map[string][]LinkReference            `json:"immutableReferences,omitempty"`
 }
 
 type LinkReference struct {
@@ -105,8 +106,8 @@ type CompilerError struct {
 }
 
 type CompilerVersion struct {
-	Version  string `json:"version"`  // e.g., "0.8.19"
-	Path     string `json:"path"`     // Path to the binary
+	Version     string `json:"version"`               // e.g., "0.8.19"
+	Path        string `json:"path"`                  // Path to the binary
 	LongVersion string `json:"longVersion,omitempty"` // Full version string
 }
 
