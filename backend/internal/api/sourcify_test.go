@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"explorer/internal/types"
@@ -26,13 +27,16 @@ type scStub struct {
 	contract    *types.Contract
 	contractErr error
 	verifyErr   error
+
+	verifiedSource string
 }
 
 func (s *scStub) GetChainID(context.Context) (uint64, error) { return s.chainID, s.chainIDErr }
 func (s *scStub) GetContract(context.Context, string) (*types.Contract, error) {
 	return s.contract, s.contractErr
 }
-func (s *scStub) VerifyContract(context.Context, string, string, string, bool, string, json.RawMessage, string, string, string, int) error {
+func (s *scStub) VerifyContract(_ context.Context, _, _, _ string, _ bool, source string, _ json.RawMessage, _, _, _ string, _ int) error {
+	s.verifiedSource = source
 	return s.verifyErr
 }
 
@@ -143,7 +147,7 @@ func TestHandleFetchSourcify_NoABI404(t *testing.T) {
 	// Valid JSON file list but no metadata.json/ABI -> 404 "no ABI found".
 	s := scServer(t, &scStub{}, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`[{"name":"README.md","path":"/x","content":"hi"}]`))
+		_, _ = w.Write([]byte(`{"match":"match","sources":{"README.md":{"content":"hi"}},"metadata":{}}`))
 	})
 	w := httptest.NewRecorder()
 	r := hpChiReq(http.MethodGet, "/x?chainId=1", map[string]string{"address": scAddr})
@@ -154,17 +158,24 @@ func TestHandleFetchSourcify_NoABI404(t *testing.T) {
 }
 
 func TestHandleFetchSourcify_HappyPathPersists(t *testing.T) {
-	// metadata.json with an ABI -> VerifyContract called, 200 with summary.
 	prov := &scStub{}
-	metadata := `{"output":{"abi":[{"type":"function","name":"foo"}]},"settings":{"compilationTarget":{"src/C.sol":"C"}},"compiler":{"version":"0.8.20"}}`
-	files := []map[string]string{
-		{"name": "metadata.json", "path": "/metadata.json", "content": metadata},
-		{"name": "C.sol", "path": "/C.sol", "content": "contract C {}"},
-	}
-	body, _ := json.Marshal(files)
+	var gotPath, gotFields string
+	body := `{
+		"match": "exact_match",
+		"sources": {
+			"src/A.sol": {"content": "contract A {}"},
+			"src/C.sol": {"content": "contract C {}"}
+		},
+		"metadata": {
+			"output": {"abi": [{"type": "function", "name": "foo"}]},
+			"settings": {"compilationTarget": {"src/C.sol": "C"}},
+			"compiler": {"version": "0.8.20+commit.a1b79de6"}
+		}
+	}`
 	s := scServer(t, prov, func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotFields = r.URL.Path, r.URL.Query().Get("fields")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(body)
+		_, _ = w.Write([]byte(body))
 	})
 	w := httptest.NewRecorder()
 	r := hpChiReq(http.MethodGet, "/x?chainId=1", map[string]string{"address": scAddr})
@@ -172,13 +183,122 @@ func TestHandleFetchSourcify_HappyPathPersists(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("happy path -> %d, want 200 (body=%s)", w.Code, w.Body.String())
 	}
+	if gotPath != "/v2/contract/1/"+scAddr || gotFields != "sources,metadata" {
+		t.Errorf("upstream request = %s?fields=%s, want /v2/contract/1/%s?fields=sources,metadata", gotPath, gotFields, scAddr)
+	}
 	var resp struct {
 		Success         bool   `json:"success"`
 		ContractName    string `json:"contractName"`
 		CompilerVersion string `json:"compilerVersion"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if !resp.Success || resp.ContractName != "C" || resp.CompilerVersion != "0.8.20" {
-		t.Errorf("summary = %+v, want success/C/0.8.20", resp)
+	if !resp.Success || resp.ContractName != "C" || resp.CompilerVersion != "0.8.20+commit.a1b79de6" {
+		t.Errorf("summary = %+v, want success/C/0.8.20+commit.a1b79de6", resp)
+	}
+	if prov.verifiedSource != "contract C {}" {
+		t.Errorf("stored source = %q, want the compilation target's source", prov.verifiedSource)
+	}
+}
+
+func TestHandleFetchSourcify_UnsupportedChain404(t *testing.T) {
+	s := scServer(t, &scStub{}, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"customCode":"unsupported_chain","message":"Chain 99999 not found"}`))
+	})
+	w := httptest.NewRecorder()
+	r := hpChiReq(http.MethodGet, "/x?chainId=99999", map[string]string{"address": scAddr})
+	s.handleFetchSourcify(w, r)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("unsupported chain -> handler %d, want 404", w.Code)
+	}
+}
+
+func TestHandleFetchSourcify_Upstream400RelaysBody(t *testing.T) {
+	s := scServer(t, &scStub{}, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"customCode":"invalid_parameter","message":"bad address"}`))
+	})
+	w := httptest.NewRecorder()
+	r := hpChiReq(http.MethodGet, "/x?chainId=1", map[string]string{"address": scAddr})
+	s.handleFetchSourcify(w, r)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_parameter") {
+		t.Fatalf("upstream 400 -> %d %q, want 400 carrying the upstream body", w.Code, w.Body.String())
+	}
+}
+
+func checkSourcify(t *testing.T, chainID string, upstream http.HandlerFunc) (int, bool, string) {
+	t.Helper()
+	s := scServer(t, &scStub{}, upstream)
+	w := httptest.NewRecorder()
+	r := hpChiReq(http.MethodGet, "/x?chainId="+chainID, map[string]string{"address": scAddr})
+	s.handleCheckSourcify(w, r)
+	var resp struct {
+		IsVerified bool   `json:"isVerified"`
+		Status     string `json:"status"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	return w.Code, resp.IsVerified, resp.Status
+}
+
+func TestHandleCheckSourcify_V2Matches(t *testing.T) {
+	cases := []struct {
+		match      string
+		wantStatus string
+	}{
+		{`"exact_match"`, "perfect"},
+		{`"match"`, "partial"},
+		{`null`, "not verified"},
+	}
+	for _, tc := range cases {
+		var gotPath string
+		code, verified, status := checkSourcify(t, "1", func(w http.ResponseWriter, r *http.Request) {
+			gotPath = r.URL.Path
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"match":` + tc.match + `,"chainId":"1"}`))
+		})
+		if gotPath != "/v2/contract/1/"+scAddr {
+			t.Errorf("upstream path = %s, want /v2/contract/1/%s", gotPath, scAddr)
+		}
+		if code != http.StatusOK || status != tc.wantStatus || verified != (tc.wantStatus != "not verified") {
+			t.Errorf("match %s -> code=%d verified=%v status=%q, want 200/%q", tc.match, code, verified, status, tc.wantStatus)
+		}
+	}
+}
+
+func TestHandleCheckSourcify_NotFoundIsNotVerified(t *testing.T) {
+	code, verified, status := checkSourcify(t, "1", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"match":null,"creationMatch":null,"runtimeMatch":null,"chainId":"1"}`))
+	})
+	if code != http.StatusOK || verified || status != "not verified" {
+		t.Errorf("404 -> code=%d verified=%v status=%q, want 200/false/not verified", code, verified, status)
+	}
+}
+
+func TestHandleCheckSourcify_UnsupportedChainIsNotVerified(t *testing.T) {
+	code, verified, status := checkSourcify(t, "99999", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"customCode":"unsupported_chain","message":"Chain 99999 not found"}`))
+	})
+	if code != http.StatusOK || verified || status != "not verified" {
+		t.Errorf("unsupported chain -> code=%d verified=%v status=%q, want 200/false/not verified", code, verified, status)
+	}
+}
+
+func TestHandleCheckSourcify_UpstreamErrorIsBadGateway(t *testing.T) {
+	for _, tc := range []struct {
+		code int
+		body string
+	}{
+		{http.StatusInternalServerError, `{"customCode":"internal_error"}`},
+		{http.StatusBadRequest, `{"customCode":"invalid_parameter"}`},
+	} {
+		code, _, _ := checkSourcify(t, "1", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(tc.code)
+			_, _ = w.Write([]byte(tc.body))
+		})
+		if code != http.StatusBadGateway {
+			t.Errorf("upstream %d %s -> handler %d, want 502", tc.code, tc.body, code)
+		}
 	}
 }

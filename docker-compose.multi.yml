@@ -97,7 +97,7 @@ services:
       INDEXER_URL: chain-indexer-a:50051
       ENABLE_GAS_PRICES: ${ENABLE_GAS_PRICES:-false}
     volumes:
-      - solc_binaries_a:/opt/solc
+      - solc_cache_a:/opt/solc
     depends_on:
       postgres-a:
         condition: service_healthy
@@ -244,7 +244,7 @@ services:
       INDEXER_URL: chain-indexer-b:50051
       ENABLE_GAS_PRICES: ${ENABLE_GAS_PRICES:-false}
     volumes:
-      - solc_binaries_b:/opt/solc
+      - solc_cache_b:/opt/solc
     depends_on:
       postgres-b:
         condition: service_healthy
@@ -316,5 +316,5 @@ volumes:
   indexer_postgres_b_data:
   frontend_a_node_modules:
   frontend_b_node_modules:
-  solc_binaries_a:
-  solc_binaries_b:
+  solc_cache_a:
+  solc_cache_b:
