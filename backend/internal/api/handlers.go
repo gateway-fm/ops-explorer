@@ -552,6 +552,7 @@ func (s *Server) handleUpdateContractABI(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	s.invalidateContract(address)
 
 	writeJSON(w, map[string]any{"success": true, "address": address})
 }
@@ -1503,6 +1504,7 @@ func (s *Server) handleFetchSourcify(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to save contract: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	s.invalidateContract(address)
 
 	writeJSON(w, map[string]any{
 		"success":         true,
@@ -1537,6 +1539,12 @@ func isLocalChain(chainID string) bool {
 	return localChains[chainID]
 }
 
+func (s *Server) invalidateContract(address string) {
+	if c, ok := s.provider.(ContractCacheInvalidator); ok {
+		c.InvalidateContract(address)
+	}
+}
+
 func (s *Server) handleVerifyContract(w http.ResponseWriter, r *http.Request) {
 	if s.verifier == nil {
 		http.Error(w, "local verification not configured (solc not available)", http.StatusServiceUnavailable)
@@ -1553,6 +1561,9 @@ func (s *Server) handleVerifyContract(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if result != nil && result.Success {
+		s.invalidateContract(result.Address)
 	}
 
 	writeJSON(w, result)
@@ -1574,6 +1585,9 @@ func (s *Server) handleVerifyStandardJSON(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if result != nil && result.Success {
+		s.invalidateContract(result.Address)
 	}
 
 	writeJSON(w, result)
