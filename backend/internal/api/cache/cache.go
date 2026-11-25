@@ -42,3 +42,7 @@ func (c *TTLCache[V]) Get(key string, fetch func() (V, error)) (V, error) {
 	}
 	return v.(V), nil
 }
+
+func (c *TTLCache[V]) Delete(key string) {
+	c.lru.Remove(key)
+}

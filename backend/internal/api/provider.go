@@ -366,6 +366,10 @@ type CallerScopedProvider interface {
 	CallerScoped()
 }
 
+type ContractCacheInvalidator interface {
+	InvalidateContract(address string)
+}
+
 var errProviderNotFound = errors.New("provider resource not found")
 
 // CallerScoped marks ProxyDataProvider as caller-scoped. It sets a per-caller
