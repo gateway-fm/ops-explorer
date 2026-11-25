@@ -356,6 +356,10 @@ type CallerScopedProvider interface {
 	CallerScoped()
 }
 
+type ContractCacheInvalidator interface {
+	InvalidateContract(address string)
+}
+
 // CallerScoped marks ProxyDataProvider as caller-scoped. It sets a per-caller
 // Authorization bearer from request context (see doRequest), so its responses
 // are RBAC-redacted per caller and must never be shared via a cache.
