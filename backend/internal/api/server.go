@@ -79,7 +79,7 @@ type Server struct {
 	impersonationHTTP *http.Client
 
 	// sourcifyHTTP / sourcifyBaseURL are an optional injectable seam for the
-	// Sourcify handlers (handleFetchSourcify/Check/Verify). Production leaves
+	// Sourcify handlers (handleFetchSourcify/Check). Production leaves
 	// them nil/"" and the handlers use http.DefaultClient + sourcifyAPIBase;
 	// tests point them at an httptest server. Mirrors impersonationHTTP.
 	sourcifyHTTP    *http.Client
