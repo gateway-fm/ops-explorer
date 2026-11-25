@@ -112,6 +112,22 @@ func ExtractMetadataHash(bytecode string) string {
 	return ""
 }
 
+func MaskImmutables(code []byte, refs map[string][]LinkReference) []byte {
+	if len(refs) == 0 {
+		return code
+	}
+	masked := append([]byte(nil), code...)
+	for _, ranges := range refs {
+		for _, r := range ranges {
+			if r.Start < 0 || r.Length <= 0 || r.Start+r.Length > len(masked) {
+				continue
+			}
+			clear(masked[r.Start : r.Start+r.Length])
+		}
+	}
+	return masked
+}
+
 func BytecodeHash(bytecode string) string {
 	bytecode = strings.TrimPrefix(bytecode, "0x")
 	bytes, err := hex.DecodeString(bytecode)
