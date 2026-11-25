@@ -31,6 +31,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"explorer/pkg/eth/common"
 )
 
 // tcDBURL returns the test database URL or fails the test. Under -tags dbtest
@@ -119,8 +121,8 @@ func TestVerifyContractRoundTrip(t *testing.T) {
 	if got == nil {
 		t.Fatalf("GetContractVerification returned nil for a verified contract")
 	}
-	if got.Address != addr {
-		t.Errorf("address = %q, want %q", got.Address, addr)
+	if want := common.HexToAddress(addr).Hex(); got.Address != want {
+		t.Errorf("address = %q, want %q", got.Address, want)
 	}
 	if tcDerefStr(got.ContractName) != "MyToken" {
 		t.Errorf("contract_name = %q, want MyToken", tcDerefStr(got.ContractName))
@@ -170,7 +172,7 @@ func TestVerifyContractOverwrite(t *testing.T) {
 	// Exactly one row for this address (overwrite, not duplicate).
 	var count int
 	if err := database.pool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM contract_verifications WHERE address = $1`, addr).Scan(&count); err != nil {
+		`SELECT COUNT(*) FROM contract_verifications WHERE lower(address) = lower($1)`, addr).Scan(&count); err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if count != 1 {
@@ -235,6 +237,181 @@ func TestVerifiedAtIsSet(t *testing.T) {
 	}
 	if got.CreatedAt.Before(before) {
 		t.Errorf("verified_at = %v, want a recent timestamp (>= %v)", got.CreatedAt, before)
+	}
+}
+
+const (
+	tcProbeChecksummed = "0x6B7FED77A857E39510D19dD96a553B1387120D3E"
+	tcProbeLower       = "0x6b7fed77a857e39510d19dd96a553b1387120d3e"
+)
+
+func tcInsertLegacyRow(t *testing.T, d *DB, name, source string) {
+	t.Helper()
+	if _, err := d.pool.Exec(context.Background(), `
+		INSERT INTO contract_verifications (address, contract_name, source_code, abi)
+		VALUES ($1, $2, $3, '[]')`, tcProbeLower, name, source); err != nil {
+		t.Fatalf("insert legacy row: %v", err)
+	}
+}
+
+func tcInsertABIOnlyRow(t *testing.T, d *DB, address string) {
+	t.Helper()
+	if _, err := d.pool.Exec(context.Background(), `
+		INSERT INTO contract_verifications (address, abi) VALUES ($1, '[]')`, address); err != nil {
+		t.Fatalf("insert ABI-only row: %v", err)
+	}
+}
+
+func TestGetContractVerificationPrefersRowWithSource(t *testing.T) {
+	database := tcOpenMigrated(t)
+	tcInsertLegacyRow(t, database, "Legacy", "legacy src")
+	tcInsertABIOnlyRow(t, database, tcProbeChecksummed)
+
+	got, err := database.GetContractVerification(context.Background(), tcProbeChecksummed)
+	if err != nil || got == nil {
+		t.Fatalf("GetContractVerification = %v, %v", got, err)
+	}
+	if tcDerefStr(got.SourceCode) != "legacy src" {
+		t.Errorf("source = %q, want the legacy row's source", tcDerefStr(got.SourceCode))
+	}
+}
+
+func TestGetContractVerificationPrefersChecksummedRowWhenBothHaveSource(t *testing.T) {
+	database := tcOpenMigrated(t)
+	tcInsertLegacyRow(t, database, "Legacy", "legacy src")
+	if _, err := database.pool.Exec(context.Background(), `
+		INSERT INTO contract_verifications (address, contract_name, source_code, abi)
+		VALUES ($1, 'Canonical', 'canonical src', '[]')`, tcProbeChecksummed); err != nil {
+		t.Fatalf("insert canonical row: %v", err)
+	}
+
+	got, err := database.GetContractVerification(context.Background(), tcProbeLower)
+	if err != nil || got == nil {
+		t.Fatalf("GetContractVerification = %v, %v", got, err)
+	}
+	if tcDerefStr(got.ContractName) != "Canonical" {
+		t.Errorf("name = %q, want Canonical", tcDerefStr(got.ContractName))
+	}
+}
+
+func TestSetContractABIKeepsLegacySourceWhenABIOnlyRowExists(t *testing.T) {
+	database := tcOpenMigrated(t)
+	ctx := context.Background()
+	tcInsertLegacyRow(t, database, "Legacy", "legacy src")
+	tcInsertABIOnlyRow(t, database, tcProbeChecksummed)
+
+	abi := json.RawMessage(`[{"type":"function","name":"ping"}]`)
+	if err := database.SetContractABI(ctx, tcProbeChecksummed, abi); err != nil {
+		t.Fatalf("SetContractABI: %v", err)
+	}
+
+	got, err := database.GetContractVerification(ctx, tcProbeChecksummed)
+	if err != nil || got == nil {
+		t.Fatalf("GetContractVerification = %v, %v", got, err)
+	}
+	if tcDerefStr(got.ContractName) != "Legacy" || tcDerefStr(got.SourceCode) != "legacy src" {
+		t.Errorf("legacy fields lost: name %q source %q", tcDerefStr(got.ContractName), tcDerefStr(got.SourceCode))
+	}
+	tcAssertJSONEqual(t, got.ABI, abi)
+	if got := tcAddressesStored(t, database); len(got) != 1 || got[0] != tcProbeChecksummed {
+		t.Fatalf("stored addresses = %v, want [%s]", got, tcProbeChecksummed)
+	}
+}
+
+func tcAddressesStored(t *testing.T, d *DB) []string {
+	t.Helper()
+	rows, err := d.pool.Query(context.Background(),
+		`SELECT address FROM contract_verifications WHERE lower(address) = $1 ORDER BY address`, tcProbeLower)
+	if err != nil {
+		t.Fatalf("query addresses: %v", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var a string
+		if err := rows.Scan(&a); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
+func TestVerifyContractLowercaseInputReadableByChecksum(t *testing.T) {
+	database := tcOpenMigrated(t)
+	ctx := context.Background()
+
+	if err := database.VerifyContract(ctx, tcProbeLower, "VerifyProbe", "0.8.38", true,
+		"src", json.RawMessage(`[]`), "cancun", "", "", 200); err != nil {
+		t.Fatalf("VerifyContract: %v", err)
+	}
+
+	for _, q := range []string{tcProbeChecksummed, tcProbeLower} {
+		got, err := database.GetContractVerification(ctx, q)
+		if err != nil || got == nil {
+			t.Fatalf("GetContractVerification(%s) = %v, %v; want verified row", q, got, err)
+		}
+		if tcDerefStr(got.ContractName) != "VerifyProbe" || got.Address != tcProbeChecksummed {
+			t.Errorf("GetContractVerification(%s) = name %q address %q", q, tcDerefStr(got.ContractName), got.Address)
+		}
+	}
+	if got := tcAddressesStored(t, database); len(got) != 1 || got[0] != tcProbeChecksummed {
+		t.Fatalf("stored addresses = %v, want [%s]", got, tcProbeChecksummed)
+	}
+}
+
+func TestGetContractVerificationFindsLegacyLowercaseRow(t *testing.T) {
+	database := tcOpenMigrated(t)
+	tcInsertLegacyRow(t, database, "Legacy", "legacy src")
+
+	got, err := database.GetContractVerification(context.Background(), tcProbeChecksummed)
+	if err != nil || got == nil {
+		t.Fatalf("GetContractVerification = %v, %v; want legacy row", got, err)
+	}
+	if tcDerefStr(got.ContractName) != "Legacy" || got.Address != tcProbeChecksummed {
+		t.Errorf("got name %q address %q", tcDerefStr(got.ContractName), got.Address)
+	}
+}
+
+func TestVerifyContractReplacesLegacyLowercaseRow(t *testing.T) {
+	database := tcOpenMigrated(t)
+	ctx := context.Background()
+	tcInsertLegacyRow(t, database, "Legacy", "legacy src")
+
+	if err := database.VerifyContract(ctx, tcProbeChecksummed, "Fresh", "0.8.38", false,
+		"fresh src", json.RawMessage(`[]`), "", "", "", 0); err != nil {
+		t.Fatalf("VerifyContract: %v", err)
+	}
+
+	got, err := database.GetContractVerification(ctx, tcProbeLower)
+	if err != nil || got == nil || tcDerefStr(got.ContractName) != "Fresh" {
+		t.Fatalf("GetContractVerification = %v, %v; want Fresh", got, err)
+	}
+	if got := tcAddressesStored(t, database); len(got) != 1 || got[0] != tcProbeChecksummed {
+		t.Fatalf("stored addresses = %v, want [%s]", got, tcProbeChecksummed)
+	}
+}
+
+func TestSetContractABIKeepsLegacySource(t *testing.T) {
+	database := tcOpenMigrated(t)
+	ctx := context.Background()
+	tcInsertLegacyRow(t, database, "Legacy", "legacy src")
+
+	abi := json.RawMessage(`[{"type":"function","name":"ping"}]`)
+	if err := database.SetContractABI(ctx, tcProbeChecksummed, abi); err != nil {
+		t.Fatalf("SetContractABI: %v", err)
+	}
+
+	got, err := database.GetContractVerification(ctx, tcProbeChecksummed)
+	if err != nil || got == nil {
+		t.Fatalf("GetContractVerification = %v, %v", got, err)
+	}
+	if tcDerefStr(got.ContractName) != "Legacy" || tcDerefStr(got.SourceCode) != "legacy src" {
+		t.Errorf("legacy fields lost: name %q source %q", tcDerefStr(got.ContractName), tcDerefStr(got.SourceCode))
+	}
+	tcAssertJSONEqual(t, got.ABI, abi)
+	if got := tcAddressesStored(t, database); len(got) != 1 || got[0] != tcProbeChecksummed {
+		t.Fatalf("stored addresses = %v, want [%s]", got, tcProbeChecksummed)
 	}
 }
 
