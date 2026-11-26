@@ -160,7 +160,7 @@ export interface PaginatedResponse<T> {
 }
 
 export interface SearchSuggestion {
-  type: 'block' | 'transaction' | 'address';
+  type: 'block' | 'transaction' | 'address' | 'token';
   value: string;
   label: string;
 }

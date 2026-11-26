@@ -12,6 +12,7 @@ vi.mock('../lib/api', () => ({
 }));
 
 import { SearchBar } from './SearchBar';
+import { api } from '../lib/api';
 
 function LocationProbe() {
   const loc = useLocation();
@@ -62,5 +63,33 @@ describe('SearchBar classification + navigation', () => {
     renderBar();
     await user.type(screen.getByTestId('search-input'), 'hello world{Enter}');
     expect(screen.getByTestId('loc')).toHaveTextContent('/');
+  });
+  it('navigates to /token/:addr when a token suggestion is picked', async () => {
+    const token = '0x' + 'c'.repeat(40);
+    vi.mocked(api.searchSuggestions).mockResolvedValueOnce({
+      query: 'Tick',
+      suggestions: [{ type: 'token', value: token, label: 'TICK (Tickr)' }],
+    });
+    const user = userEvent.setup();
+    renderBar();
+    await user.type(screen.getByTestId('search-input'), 'Tick');
+    const item = await screen.findByTestId('search-suggestion');
+    expect(item).toHaveAttribute('data-suggestion-type', 'token');
+    await user.click(item);
+    expect(screen.getByTestId('loc')).toHaveTextContent(`/token/${token}`);
+  });
+
+  it('offers a complete address straight away, even when the lookup fails', async () => {
+    vi.mocked(api.searchSuggestions).mockRejectedValue(new Error('deadline exceeded'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const addr = '0x071e11A4403dc38a35b600C6775766f6DF404c30';
+    const user = userEvent.setup();
+    renderBar();
+    await user.click(screen.getByTestId('search-input'));
+    await user.paste(addr);
+    const item = await screen.findByTestId('search-suggestion');
+    expect(item).toHaveAttribute('data-suggestion-type', 'address');
+    await user.click(item);
+    expect(screen.getByTestId('loc')).toHaveTextContent(`/address/${addr}`);
   });
 });

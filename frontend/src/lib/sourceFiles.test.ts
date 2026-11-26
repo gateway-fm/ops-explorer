@@ -1,0 +1,45 @@
+import { describe, it, expect } from 'vitest';
+import { displayPath, parseSources } from './sourceFiles';
+
+const proxy = 'contract ERC1967Proxy is Proxy {}';
+const standardJSON = JSON.stringify({
+  language: 'Solidity',
+  sources: {
+    '../node_modules/@openzeppelin/contracts/proxy/Proxy.sol': { content: 'abstract contract Proxy {}' },
+    '../node_modules/@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol': { content: proxy },
+    'src/Helper.sol': { content: 'library Helper {}' },
+  },
+  settings: { optimizer: { enabled: true } },
+});
+
+describe('parseSources', () => {
+  it('splits a standard-JSON input into files, verified contract first', () => {
+    const files = parseSources(standardJSON, 'ERC1967Proxy');
+    expect(files.map((f) => displayPath(f.path))).toEqual([
+      'node_modules/@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol',
+      'src/Helper.sol',
+      'node_modules/@openzeppelin/contracts/proxy/Proxy.sol',
+    ]);
+    expect(files[0].content).toBe(proxy);
+  });
+
+  it("unwraps Etherscan's double-braced form", () => {
+    const files = parseSources(`{${standardJSON}}`, 'ERC1967Proxy');
+    expect(files).toHaveLength(3);
+  });
+
+  it('accepts a bare sources map', () => {
+    const files = parseSources(JSON.stringify({ 'A.sol': { content: 'contract A {}' } }), 'A');
+    expect(files).toEqual([{ path: 'A.sol', content: 'contract A {}' }]);
+  });
+
+  it('keeps a flattened source as one file named after the contract', () => {
+    const src = '// SPDX-License-Identifier: MIT\ncontract Token {}';
+    expect(parseSources(src, 'Token')).toEqual([{ path: 'Token.sol', content: src }]);
+  });
+
+  it('falls back to one file when JSON has no sources', () => {
+    const src = '{"not":"sources"}';
+    expect(parseSources(src)).toEqual([{ path: 'Contract.sol', content: src }]);
+  });
+});

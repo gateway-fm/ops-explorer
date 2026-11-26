@@ -4,6 +4,7 @@ import { Search } from 'lucide-react';
 import { api } from '../lib/api';
 import type { SearchSuggestion } from '../lib/api';
 import { branding } from '../lib/branding';
+import { directSuggestion } from '../lib/searchDirect';
 
 interface SearchBarProps {
   variant?: 'hero' | 'default';
@@ -43,15 +44,26 @@ export function SearchBar({ variant = 'default', autoFocus }: SearchBarProps) {
       return;
     }
 
+    // A complete address, tx hash or block number gets a result straight away,
+    // without waiting for the indexer lookup.
+    const direct = directSuggestion(search.trim());
+    setSuggestions(direct ? [direct] : []);
+    setShowSuggestions(!!direct);
+    setSelectedIndex(-1);
+
     const timer = setTimeout(async () => {
       try {
         const response = await api.searchSuggestions(search.trim());
-        setSuggestions(response.suggestions || []);
-        setShowSuggestions(true);
+        const found = response.suggestions || [];
+        const merged = direct && !found.some((s) => s.type === direct.type && s.value.toLowerCase() === direct.value.toLowerCase())
+          ? [direct, ...found]
+          : found;
+        setSuggestions(merged);
+        setShowSuggestions(merged.length > 0);
         setSelectedIndex(-1);
       } catch (err) {
         console.error('Search suggestions error:', err);
-        setSuggestions([]);
+        setSuggestions(direct ? [direct] : []);
       }
     }, 150);
 
@@ -80,6 +92,9 @@ export function SearchBar({ variant = 'default', autoFocus }: SearchBarProps) {
         break;
       case 'address':
         navigate(`/address/${suggestion.value}`);
+        break;
+      case 'token':
+        navigate(`/token/${suggestion.value}`);
         break;
     }
     setSearch('');
@@ -135,6 +150,7 @@ export function SearchBar({ variant = 'default', autoFocus }: SearchBarProps) {
       case 'block': return '#';
       case 'transaction': return 'Tx';
       case 'address': return '@';
+      case 'token': return 'Token';
       default: return '?';
     }
   };
@@ -147,6 +163,8 @@ export function SearchBar({ variant = 'default', autoFocus }: SearchBarProps) {
         return 'bg-green-50 text-green-600 border border-green-200';
       case 'address':
         return 'bg-primary-50 text-primary-600 border border-primary-200';
+      case 'token':
+        return 'bg-amber-50 text-amber-700 border border-amber-200';
       default:
         return 'bg-neutral-100 text-neutral-600';
     }

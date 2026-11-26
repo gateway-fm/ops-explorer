@@ -29,6 +29,7 @@ import type {
 import { AddressLink } from '../components/AddressLink';
 import { AddressLabel } from '../components/AddressLabel';
 import { CopyButton } from '../components/CopyButton';
+import { SourceCodeViewer } from '../components/SourceCodeViewer';
 import { ContractInteraction } from '../components/ContractInteraction';
 import { TokenAvatar } from '../components/TokenAvatar';
 import { useTokenMap } from '../hooks/useTokenMap';
@@ -302,6 +303,13 @@ export function Address() {
         token={tokenInfo ?? null}
       />
 
+      <AddressOverview
+        info={info}
+        balances={balances}
+        onShowTokens={() => setTab('tokens')}
+        onShowTransactions={() => setTab('transactions')}
+      />
+
       <Tabs
         active={activeTab}
         onChange={setTab}
@@ -450,6 +458,99 @@ function Hero({
           {address}
         </span>
         <CopyButton text={address} />
+      </div>
+    </div>
+  );
+}
+
+// Always-visible summary above the tabs, so balance and holdings are in view
+// on every tab (Contract, Transactions, ...), not only under Details.
+function AddressOverview({
+  info,
+  balances,
+  onShowTokens,
+  onShowTransactions,
+}: {
+  info: import('../lib/api').AddressInfo;
+  balances: Balance[] | undefined;
+  onShowTokens: () => void;
+  onShowTransactions: () => void;
+}) {
+  const tokenMap = useTokenMap(balances?.map((b) => b.tokenAddress) ?? []);
+  const holdings = (balances ?? [])
+    .map((b) => {
+      const meta = tokenMap[b.tokenAddress.toLowerCase()];
+      const isNft = meta?.tokenType === 'ERC721' || meta?.tokenType === 'ERC1155';
+      const decimals = meta?.decimals ?? 18;
+      const valueUSD = !isNft && meta?.usdPrice ? (Number(b.balance) / Math.pow(10, decimals)) * meta.usdPrice : null;
+      return { b, meta, isNft, decimals, valueUSD };
+    })
+    .sort((x, y) => Number(x.isNft) - Number(y.isNft) || (y.valueUSD ?? 0) - (x.valueUSD ?? 0));
+  const shown = holdings.slice(0, 3);
+  const totalUsd = holdings.reduce((acc, h) => acc + (h.valueUSD ?? 0), 0);
+
+  const tile = 'flex min-w-0 flex-col gap-1.5 rounded-2xl border border-neutral-200 bg-neutral-50 px-5 py-4';
+  const label = 'text-xs font-medium uppercase tracking-wider text-neutral-500';
+
+  return (
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-3" data-testid="address-overview">
+      <div className={tile}>
+        <span className={label}>{getNetworkCurrency()} balance</span>
+        <span className="truncate text-lg font-semibold text-neutral-900">
+          <span className="font-mono tabular-nums">{formatWei(info.balance)}</span>
+          <span className="ml-1.5 text-sm font-normal text-neutral-500">{getNetworkCurrency()}</span>
+        </span>
+      </div>
+
+      <div className={tile}>
+        <div className="flex items-center justify-between gap-2">
+          <span className={label}>
+            Tokens{balances ? ` · ${balances.length.toLocaleString()}` : ''}
+          </span>
+          {holdings.length > 0 && (
+            <button type="button" onClick={onShowTokens} className="text-xs font-medium text-primary transition-colors hover:text-primary-600">
+              View all
+            </button>
+          )}
+        </div>
+        {!balances ? (
+          <span className="h-5 w-32 animate-pulse rounded bg-neutral-200" />
+        ) : holdings.length === 0 ? (
+          <span className="text-sm text-neutral-500">No token holdings</span>
+        ) : (
+          <ul className="space-y-1">
+            {shown.map(({ b, meta, isNft, decimals }) => (
+              <li key={b.tokenAddress} className="flex items-center gap-2 text-sm">
+                <TokenAvatar symbol={meta?.symbol || '?'} address={b.tokenAddress} size="sm" />
+                <Link to={`/token/${b.tokenAddress}`} className="min-w-0 truncate text-neutral-900 transition-colors hover:text-primary">
+                  {meta?.symbol || formatHash(b.tokenAddress, 4)}
+                </Link>
+                <span className="ml-auto shrink-0 font-mono text-xs tabular-nums text-neutral-600">
+                  {isNft ? `${Number(b.balance).toLocaleString()} NFT` : formatTokenValue(b.balance, decimals)}
+                </span>
+              </li>
+            ))}
+            {holdings.length > shown.length && (
+              <li className="text-xs text-neutral-500">+{(holdings.length - shown.length).toLocaleString()} more</li>
+            )}
+            {totalUsd > 0 && (
+              <li className="text-xs text-neutral-500">
+                Total <span className="font-mono tabular-nums text-neutral-900">${totalUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+              </li>
+            )}
+          </ul>
+        )}
+      </div>
+
+      <div className={tile}>
+        <span className={label}>Activity</span>
+        <button type="button" onClick={onShowTransactions} className="self-start text-left text-lg font-semibold text-neutral-900 transition-colors hover:text-primary">
+          <span className="font-mono tabular-nums">{info.txCount.toLocaleString()}</span>
+          <span className="ml-1.5 text-sm font-normal text-neutral-500">transactions</span>
+        </button>
+        <span className="text-xs text-neutral-500">
+          <span className="font-mono tabular-nums">{info.tokenTransferCount.toLocaleString()}</span> token transfers
+        </span>
       </div>
     </div>
   );
@@ -1449,13 +1550,7 @@ function ContractOverview({
       </dl>
 
       {contract.isVerified && contract.sourceCode && <UmlDiagram address={contract.address} />}
-      {contract.sourceCode && (
-        <CodeBlock title="Source code">
-          <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-neutral-700">
-            {contract.sourceCode}
-          </pre>
-        </CodeBlock>
-      )}
+      {contract.sourceCode && <SourceCodeViewer sourceCode={contract.sourceCode} contractName={contract.contractName} />}
       {contract.abi && contract.abi.length > 0 && (
         <CodeBlock title="ABI" rightMeta={`${contract.abi.length} items`}>
           <pre className="max-h-80 overflow-y-auto whitespace-pre-wrap font-mono text-xs leading-relaxed text-neutral-700">
