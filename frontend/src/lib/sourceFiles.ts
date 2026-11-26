@@ -6,7 +6,9 @@ export interface SourceFile {
 // parseSources turns the stored verification source into a list of files.
 // The stored value is either a flattened single file, a Solidity standard-JSON
 // input ({"language": ..., "sources": {path: {content}}}), a bare sources map
-// ({path: {content}}), or Etherscan's double-braced form of either ({{ ... }}).
+// ({path: {content}}), Etherscan's double-braced form of either ({{ ... }}), or
+// this explorer's own verifier output: every submitted file concatenated, each
+// preceded by a "// File: <path>" line (backend/internal/verifier, storeVerification).
 // The file that declares the verified contract is put first.
 export function parseSources(raw: string, contractName?: string): SourceFile[] {
   let src = raw.trim();
@@ -28,10 +30,12 @@ export function parseSources(raw: string, contractName?: string): SourceFile[] {
       // Not JSON: a flattened source that happens to start with '{'.
     }
   }
+  if (!files) files = splitFileHeaders(raw);
   if (!files) return [{ path: `${contractName || 'Contract'}.sol`, content: raw }];
 
-  const declares = contractName
-    ? new RegExp(`\\b(contract|library|interface)\\s+${contractName.replace(/[^A-Za-z0-9_$]/g, '')}\\b`)
+  const name = contractName?.replace(/[^A-Za-z0-9_$]/g, '');
+  const declares = name
+    ? new RegExp(`\\b(contract|library|interface)\\s+${name}\\b`)
     : null;
   const rank = (f: SourceFile) => {
     if (declares?.test(f.content)) return 0;
@@ -45,4 +49,20 @@ export function parseSources(raw: string, contractName?: string): SourceFile[] {
 // the compiler ran from.
 export function displayPath(path: string): string {
   return path.replace(/^(\.\.?\/)+/, '');
+}
+
+const FILE_HEADER = /^\/\/ File: (.+)$/gm;
+
+// splitFileHeaders splits text made of "// File: <path>" sections into files.
+// Only text that starts with such a header qualifies, so a single source that
+// merely mentions one in a comment further down stays one file.
+function splitFileHeaders(raw: string): SourceFile[] | null {
+  if (!raw.startsWith('// File: ')) return null;
+  const headers = [...raw.matchAll(FILE_HEADER)];
+  const files = headers.map((m, i) => {
+    const start = (m.index ?? 0) + m[0].length + 1;
+    const end = i + 1 < headers.length ? headers[i + 1].index ?? raw.length : raw.length;
+    return { path: m[1].trim(), content: raw.slice(start, end).replace(/\n+$/, '\n') };
+  });
+  return files.length > 0 ? files : null;
 }

@@ -5,8 +5,10 @@ name: Preview Frontend Image
 # `explorer-preview.` host in dev-gateway-eks-cluster) and compared side by side.
 #
 # Trigger: add the `preview` label to a PR (a draft is fine). Every later push to
-# that PR builds again. Only PRs from branches of THIS repo build: fork PRs get
-# no secrets, and the job is skipped for them rather than failing.
+# that PR builds again. Adding any OTHER label does not: it would rebuild the
+# same commit, and the push fails on the immutable tag. Only PRs from branches
+# of THIS repo build: fork PRs get no secrets, and the job is skipped for them
+# rather than failing.
 #
 # Tag: `sha-<7>` of the PR head commit, matching the ops-indexer branch builds.
 # Docker Hub tag immutability is on, so re-running the same commit fails at push;
@@ -17,12 +19,8 @@ name: Preview Frontend Image
 
 on:
   pull_request:
-    types: [labeled, synchronize, reopened]
+    types: [labeled, synchronize]
     branches: [main]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -32,7 +30,13 @@ jobs:
     name: Build and push preview frontend
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
-      contains(github.event.pull_request.labels.*.name, 'preview')
+      contains(github.event.pull_request.labels.*.name, 'preview') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'preview')
+    # Job-level, not workflow-level: a run for an unrelated label skips this job
+    # and so must not cancel a build that is already in progress.
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

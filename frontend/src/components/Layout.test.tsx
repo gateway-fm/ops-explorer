@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { type ReactNode } from 'react';
@@ -107,5 +108,47 @@ describe('Layout header pollers (privacy gate, M1)', () => {
     await renderLayout();
     await waitFor(() => expect(mockGetGasPrices).toHaveBeenCalled());
     await waitFor(() => expect(mockGetPrice).toHaveBeenCalled());
+  });
+});
+
+describe('Layout mobile search', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetPrice.mockResolvedValue({ price: 1 });
+    mockGetGasPrices.mockResolvedValue({ normal: { price: 2 } });
+    mockGetStats.mockResolvedValue({});
+    setPrivacy(false);
+    setBackendPrivacy(false);
+  });
+
+  // PRST-6066: the mobile menu had its own suggestion code with no `token` case,
+  // so tapping a token suggestion cleared the search and went nowhere.
+  it('opens /token/:addr when a token suggestion is tapped', async () => {
+    const token = '0x' + 'c'.repeat(40);
+    mockSearchSuggestions.mockResolvedValue({ query: 'Tick', suggestions: [{ type: 'token', value: token, label: 'TICK' }] });
+    vi.resetModules();
+    const { Layout } = await import('./Layout');
+    const { Routes, Route, useLocation } = await import('react-router-dom');
+    function Loc() {
+      return <div data-testid="loc">{useLocation().pathname}</div>;
+    }
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route path="*" element={<Loc />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('mobile-menu-trigger'));
+    const overlay = screen.getByTestId('mobile-menu-overlay');
+    await user.type(within(overlay).getByRole('textbox'), 'Tick');
+    await user.click(await within(overlay).findByText('TICK'));
+    expect(screen.getByTestId('loc')).toHaveTextContent(`/token/${token}`);
   });
 });

@@ -42,4 +42,16 @@ describe('parseSources', () => {
     const src = '{"not":"sources"}';
     expect(parseSources(src)).toEqual([{ path: 'Contract.sol', content: src }]);
   });
+  it("splits this explorer's own verifier output on // File: headers", () => {
+    const raw = '// File: contracts/Lib.sol\nlibrary Lib {}\n\n// File: contracts/Token.sol\ncontract Token {}\n\n';
+    expect(parseSources(raw, 'Token')).toEqual([
+      { path: 'contracts/Token.sol', content: 'contract Token {}\n' },
+      { path: 'contracts/Lib.sol', content: 'library Lib {}\n' },
+    ]);
+  });
+
+  it('keeps a single source that only mentions // File: further down as one file', () => {
+    const src = 'contract A {}\n// File: not/a/header.sol\n';
+    expect(parseSources(src, 'A')).toEqual([{ path: 'A.sol', content: src }]);
+  });
 });

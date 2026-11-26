@@ -73,7 +73,7 @@ export function SourceCodeViewer({ sourceCode, contractName }: { sourceCode: str
               const active = f === file;
               return (
                 <button
-                  key={f.path}
+                  key={`${i}:${f.path}`}
                   type="button"
                   data-testid="source-file"
                   aria-current={active ? 'true' : undefined}
