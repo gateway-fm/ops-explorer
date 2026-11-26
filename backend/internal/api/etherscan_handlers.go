@@ -139,6 +139,7 @@ func (s *Server) handleEtherscanVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.invalidateContract(contractAddress)
 	s.etherscanResults.Store(guid, &etherscanVerifyResult{Success: true, Message: "Pass - Verified"})
 	etherscanJSON(w, "1", "OK", guid)
 }

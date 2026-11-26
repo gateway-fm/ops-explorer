@@ -101,6 +101,10 @@ func (p *CachingProvider) GetContract(ctx context.Context, address string) (*typ
 	})
 }
 
+func (p *CachingProvider) InvalidateContract(address string) {
+	p.contract.Delete(strings.ToLower(address))
+}
+
 func (p *CachingProvider) GetGasPrices(ctx context.Context, numBlocks int) (*uint64, *uint64, *uint64, *uint64, error) {
 	key := fmt.Sprintf("gas:%d", numBlocks)
 	r, err := p.gas.Get(key, func() (gasResult, error) {
@@ -116,4 +120,7 @@ func (p *CachingProvider) GetGasPrices(ctx context.Context, numBlocks int) (*uin
 	return r.Slow, r.Normal, r.Fast, r.BaseFee, nil
 }
 
-var _ api.DataProvider = (*CachingProvider)(nil)
+var (
+	_ api.DataProvider             = (*CachingProvider)(nil)
+	_ api.ContractCacheInvalidator = (*CachingProvider)(nil)
+)

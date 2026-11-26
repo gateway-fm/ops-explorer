@@ -55,8 +55,6 @@ func (v *Verifier) Verify(ctx context.Context, req *VerifyRequest) (*VerifyRespo
 		return response, nil
 	}
 
-	onChainBytecode := common.Bytes2Hex(onChainCode)
-
 	compilerPath, err := v.solcManager.GetCompiler(req.CompilerVersion)
 	if err != nil {
 		response.Error = fmt.Sprintf("compiler version %s not available: %v", req.CompilerVersion, err)
@@ -90,6 +88,7 @@ func (v *Verifier) Verify(ctx context.Context, req *VerifyRequest) (*VerifyRespo
 	}
 
 	compiledBytecode := contractOutput.EVM.DeployedBytecode.Object
+	onChainBytecode := common.Bytes2Hex(MaskImmutables(onChainCode, contractOutput.EVM.DeployedBytecode.ImmutableReferences))
 	comparison := CompareBytecode(onChainBytecode, compiledBytecode, req.ConstructorArgs)
 
 	response.MatchType = comparison.MatchType
@@ -183,8 +182,6 @@ func (v *Verifier) verifyWithStandardInput(ctx context.Context, req *StandardJSO
 		return response, nil
 	}
 
-	onChainBytecode := common.Bytes2Hex(onChainCode)
-
 	compilerPath, err := v.solcManager.GetCompiler(req.CompilerVersion)
 	if err != nil {
 		response.Error = fmt.Sprintf("compiler version %s not available: %v", req.CompilerVersion, err)
@@ -212,6 +209,7 @@ func (v *Verifier) verifyWithStandardInput(ctx context.Context, req *StandardJSO
 	}
 
 	compiledBytecode := contractOutput.EVM.DeployedBytecode.Object
+	onChainBytecode := common.Bytes2Hex(MaskImmutables(onChainCode, contractOutput.EVM.DeployedBytecode.ImmutableReferences))
 	comparison := CompareBytecode(onChainBytecode, compiledBytecode, req.ConstructorArgs)
 
 	response.MatchType = comparison.MatchType

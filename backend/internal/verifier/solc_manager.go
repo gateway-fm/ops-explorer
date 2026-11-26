@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -29,10 +30,22 @@ func normalizeHash(h string) string {
 }
 
 const (
-	solcListURL          = "https://binaries.soliditylang.org/linux-amd64/list.json"
-	solcGitHubReleaseURL = "https://github.com/ethereum/solidity/releases/download/v%s/solc-static-linux"
-	refreshInterval      = 1 * time.Hour
+	solcBinariesURL = "https://binaries.soliditylang.org"
+	refreshInterval = 1 * time.Hour
 )
+
+var solcVersionRe = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+
+// Native arm64 builds are only published from solc 0.8.31 onwards.
+func solcPlatform(goarch string) string {
+	switch goarch {
+	case "amd64":
+		return "linux-amd64"
+	case "arm64":
+		return "linux-arm64"
+	}
+	return ""
+}
 
 // remoteBuild represents a single build entry from the remote list.json
 type remoteBuild struct {
@@ -55,20 +68,19 @@ type SolcManager struct {
 	mu           sync.RWMutex
 	stopRefresh  chan struct{}
 
-	// httpClient and releaseURLTemplate are test seams (default to the real
-	// client + GitHub release URL). releaseURLTemplate must contain a single
-	// %s for the version.
-	httpClient         *http.Client
-	releaseURLTemplate string
+	httpClient  *http.Client
+	binariesURL string
+	platform    string
 }
 
 func NewSolcManager(basePath string) *SolcManager {
 	sm := &SolcManager{
-		basePath:           basePath,
-		versions:           make(map[string]string),
-		stopRefresh:        make(chan struct{}),
-		httpClient:         http.DefaultClient,
-		releaseURLTemplate: solcGitHubReleaseURL,
+		basePath:    basePath,
+		versions:    make(map[string]string),
+		stopRefresh: make(chan struct{}),
+		httpClient:  http.DefaultClient,
+		binariesURL: solcBinariesURL,
+		platform:    solcPlatform(runtime.GOARCH),
 	}
 	sm.scanVersions()
 
@@ -98,7 +110,11 @@ func (sm *SolcManager) refreshLoop() {
 }
 
 func (sm *SolcManager) RefreshRemoteList() {
-	resp, err := http.Get(solcListURL)
+	if sm.platform == "" {
+		log.Warn("no native solc builds for this architecture; remote compilers disabled", "arch", runtime.GOARCH)
+		return
+	}
+	resp, err := sm.httpClient.Get(sm.binariesURL + "/" + sm.platform + "/list.json")
 	if err != nil {
 		log.Warn("failed to fetch remote solc list", "error", err)
 		return
@@ -193,20 +209,18 @@ func (sm *SolcManager) findRemoteBuild(version string) *remoteBuild {
 	return nil
 }
 
-// downloadCompiler downloads a statically-linked solc binary from GitHub releases.
+// downloadCompiler downloads the solc binary for this platform from binaries.soliditylang.org.
 func (sm *SolcManager) downloadCompiler(build *remoteBuild) (string, error) {
-	tmpl := sm.releaseURLTemplate
-	if tmpl == "" {
-		tmpl = solcGitHubReleaseURL
+	if build.Path == "" || strings.ContainsAny(build.Path, `/\`) || strings.Contains(build.Path, "..") {
+		return "", fmt.Errorf("refusing to install solc %s: invalid build path %q", build.Version, build.Path)
 	}
-	client := sm.httpClient
-	if client == nil {
-		client = http.DefaultClient
+	if !solcVersionRe.MatchString(build.Version) {
+		return "", fmt.Errorf("refusing to install solc: invalid version %q", build.Version)
 	}
-	url := fmt.Sprintf(tmpl, build.Version)
+	url := sm.binariesURL + "/" + sm.platform + "/" + build.Path
 	log.Info("downloading solc compiler", "version", build.Version, "url", url)
 
-	resp, err := client.Get(url)
+	resp, err := sm.httpClient.Get(url)
 	if err != nil {
 		return "", fmt.Errorf("failed to download compiler: %w", err)
 	}
@@ -221,13 +235,8 @@ func (sm *SolcManager) downloadCompiler(build *remoteBuild) (string, error) {
 		return "", fmt.Errorf("failed to read compiler binary: %w", err)
 	}
 
-	// S-1: verify the downloaded bytes against the published sha256 before
-	// writing/exec'ing. Validated against v0.8.26: list.json's sha256
-	// (0x-prefixed) byte-for-byte matches the GitHub-release solc-static-linux
-	// asset this code fetches, so enforcement does not brick downloads. Fail
-	// closed on an empty expected hash (an unverifiable binary must never be
-	// written/exec'd) and on any mismatch. Normalize both sides: strip an
-	// optional 0x/0X prefix and lowercase.
+	// S-1: fail closed on an empty or mismatched sha256 — never write/exec an
+	// unverified binary.
 	expected := normalizeHash(build.SHA256)
 	if expected == "" {
 		return "", fmt.Errorf("refusing to install solc %s: no published sha256 to verify against", build.Version)

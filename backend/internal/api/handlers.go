@@ -1,13 +1,13 @@
 package api
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -552,6 +552,7 @@ func (s *Server) handleUpdateContractABI(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	s.invalidateContract(address)
 
 	writeJSON(w, map[string]any{"success": true, "address": address})
 }
@@ -1425,7 +1426,7 @@ func (s *Server) handleFetchSourcify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	url := fmt.Sprintf("%s/files/%s/%s", s.sourcifyBase(), chainIDStr, address)
+	url := fmt.Sprintf("%s/v2/contract/%s/%s?fields=sources,metadata", s.sourcifyBase(), chainIDStr, address)
 	resp, err := s.sourcifyClient().Get(url)
 	if err != nil {
 		http.Error(w, "failed to fetch from Sourcify: "+err.Error(), http.StatusInternalServerError)
@@ -1433,56 +1434,64 @@ func (s *Server) handleFetchSourcify(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == 404 {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		http.Error(w, "failed to read Sourcify response: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	if sourcifyNotVerified(resp.StatusCode, body) {
 		http.Error(w, "contract not verified on Sourcify", http.StatusNotFound)
 		return
 	}
 
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
 		http.Error(w, fmt.Sprintf("Sourcify error: %s", string(body)), resp.StatusCode)
 		return
 	}
 
-	var sourcifyFiles []struct {
-		Name    string `json:"name"`
-		Path    string `json:"path"`
-		Content string `json:"content"`
+	var contract struct {
+		Sources map[string]struct {
+			Content string `json:"content"`
+		} `json:"sources"`
+		Metadata struct {
+			Output struct {
+				ABI json.RawMessage `json:"abi"`
+			} `json:"output"`
+			Settings struct {
+				CompilationTarget map[string]string `json:"compilationTarget"`
+			} `json:"settings"`
+			Compiler struct {
+				Version string `json:"version"`
+			} `json:"compiler"`
+		} `json:"metadata"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&sourcifyFiles); err != nil {
+	if err := json.Unmarshal(body, &contract); err != nil {
 		http.Error(w, "failed to parse Sourcify response: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	var abi json.RawMessage
-	var sourceCode string
-	var contractName string
-	var compilerVersion string
+	abi := contract.Metadata.Output.ABI
+	compilerVersion := contract.Metadata.Compiler.Version
+	var contractName, targetPath string
+	for path, name := range contract.Metadata.Settings.CompilationTarget {
+		targetPath, contractName = path, name
+		break
+	}
 
-	for _, file := range sourcifyFiles {
-		if file.Name == "metadata.json" {
-			var metadata struct {
-				Output struct {
-					ABI json.RawMessage `json:"abi"`
-				} `json:"output"`
-				Settings struct {
-					CompilationTarget map[string]string `json:"compilationTarget"`
-				} `json:"settings"`
-				Compiler struct {
-					Version string `json:"version"`
-				} `json:"compiler"`
-			}
-			if err := json.Unmarshal([]byte(file.Content), &metadata); err == nil {
-				abi = metadata.Output.ABI
-				compilerVersion = metadata.Compiler.Version
-				for _, name := range metadata.Settings.CompilationTarget {
-					contractName = name
-					break
-				}
+	var sourceCode string
+	if src, ok := contract.Sources[targetPath]; ok {
+		sourceCode = src.Content
+	} else {
+		paths := make([]string, 0, len(contract.Sources))
+		for path := range contract.Sources {
+			if strings.HasSuffix(path, ".sol") {
+				paths = append(paths, path)
 			}
 		}
-		if strings.HasSuffix(file.Name, ".sol") && sourceCode == "" {
-			sourceCode = file.Content
+		sort.Strings(paths)
+		if len(paths) > 0 {
+			sourceCode = contract.Sources[paths[0]].Content
 		}
 	}
 
@@ -1495,6 +1504,7 @@ func (s *Server) handleFetchSourcify(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to save contract: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	s.invalidateContract(address)
 
 	writeJSON(w, map[string]any{
 		"success":         true,
@@ -1503,6 +1513,19 @@ func (s *Server) handleFetchSourcify(w http.ResponseWriter, r *http.Request) {
 		"compilerVersion": compilerVersion,
 		"abiLength":       len(abi),
 	})
+}
+
+func sourcifyNotVerified(status int, body []byte) bool {
+	switch status {
+	case http.StatusNotFound:
+		return true
+	case http.StatusBadRequest:
+		var e struct {
+			CustomCode string `json:"customCode"`
+		}
+		return json.Unmarshal(body, &e) == nil && e.CustomCode == "unsupported_chain"
+	}
+	return false
 }
 
 func isLocalChain(chainID string) bool {
@@ -1516,142 +1539,10 @@ func isLocalChain(chainID string) bool {
 	return localChains[chainID]
 }
 
-func (s *Server) handleVerifySourcify(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Address          string          `json:"address"`
-		ChainID          string          `json:"chainId"`
-		SourceCode       string          `json:"sourceCode"`
-		ContractName     string          `json:"contractName"`
-		CompilerVersion  string          `json:"compilerVersion"`
-		OptimizationUsed bool            `json:"optimizationUsed"`
-		Runs             int             `json:"runs"`
-		ABI              json.RawMessage `json:"abi,omitempty"` // Optional: direct ABI for local chains
+func (s *Server) invalidateContract(address string) {
+	if c, ok := s.provider.(ContractCacheInvalidator); ok {
+		c.InvalidateContract(address)
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	if !common.IsHexAddress(req.Address) {
-		http.Error(w, "invalid address", http.StatusBadRequest)
-		return
-	}
-
-	if req.SourceCode == "" || req.ContractName == "" {
-		http.Error(w, "sourceCode and contractName are required", http.StatusBadRequest)
-		return
-	}
-
-	if req.ChainID == "" {
-		req.ChainID = "1"
-	}
-
-	// For local/dev chains, store verification directly without Sourcify
-	if isLocalChain(req.ChainID) {
-		var abi json.RawMessage
-		if len(req.ABI) > 0 {
-			abi = req.ABI
-		} else {
-			abi = json.RawMessage("[]")
-		}
-
-		if err := s.provider.VerifyContract(r.Context(), req.Address, req.ContractName, req.CompilerVersion, req.OptimizationUsed, req.SourceCode, abi, "", "", "", 0); err != nil {
-			http.Error(w, "failed to store verification: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		writeJSON(w, map[string]any{
-			"success": true,
-			"status":  "local",
-			"address": req.Address,
-			"message": "Contract verified locally (development chain)",
-		})
-		return
-	}
-
-	sourcifyReq := map[string]any{
-		"address": req.Address,
-		"chain":   req.ChainID,
-		"files": map[string]string{
-			req.ContractName + ".sol": req.SourceCode,
-		},
-	}
-
-	body, _ := json.Marshal(sourcifyReq)
-	resp, err := s.sourcifyClient().Post(s.sourcifyBase()+"/verify", "application/json", bytes.NewReader(body))
-	if err != nil {
-		http.Error(w, "failed to submit to Sourcify: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(resp.Body)
-
-	if resp.StatusCode != 200 {
-		http.Error(w, fmt.Sprintf("Sourcify verification failed: %s", string(respBody)), resp.StatusCode)
-		return
-	}
-
-	var result struct {
-		Result []struct {
-			Address string `json:"address"`
-			Status  string `json:"status"`
-		} `json:"result"`
-	}
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		http.Error(w, "failed to parse Sourcify response: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	if len(result.Result) == 0 {
-		http.Error(w, "no verification result returned", http.StatusInternalServerError)
-		return
-	}
-
-	status := result.Result[0].Status
-	if status != "perfect" && status != "partial" {
-		http.Error(w, fmt.Sprintf("verification failed: %s", status), http.StatusBadRequest)
-		return
-	}
-
-	fetchURL := fmt.Sprintf("%s/files/%s/%s", s.sourcifyBase(), req.ChainID, common.HexToAddress(req.Address).Hex())
-	fetchResp, err := s.sourcifyClient().Get(fetchURL)
-	if err == nil && fetchResp.StatusCode == 200 {
-		defer fetchResp.Body.Close()
-		var sourcifyFiles []struct {
-			Name    string `json:"name"`
-			Content string `json:"content"`
-		}
-		if json.NewDecoder(fetchResp.Body).Decode(&sourcifyFiles) == nil {
-			var abi json.RawMessage
-			var compilerVersion string
-			for _, file := range sourcifyFiles {
-				if file.Name == "metadata.json" {
-					var metadata struct {
-						Output struct {
-							ABI json.RawMessage `json:"abi"`
-						} `json:"output"`
-						Compiler struct {
-							Version string `json:"version"`
-						} `json:"compiler"`
-					}
-					if json.Unmarshal([]byte(file.Content), &metadata) == nil {
-						abi = metadata.Output.ABI
-						compilerVersion = metadata.Compiler.Version
-					}
-				}
-			}
-			if len(abi) > 0 {
-				s.provider.VerifyContract(r.Context(), req.Address, req.ContractName, compilerVersion, req.OptimizationUsed, req.SourceCode, abi, "", "", "", 0)
-			}
-		}
-	}
-
-	writeJSON(w, map[string]any{
-		"success": true,
-		"status":  status,
-		"address": req.Address,
-	})
 }
 
 func (s *Server) handleVerifyContract(w http.ResponseWriter, r *http.Request) {
@@ -1670,6 +1561,9 @@ func (s *Server) handleVerifyContract(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if result != nil && result.Success {
+		s.invalidateContract(result.Address)
 	}
 
 	writeJSON(w, result)
@@ -1691,6 +1585,9 @@ func (s *Server) handleVerifyStandardJSON(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if result != nil && result.Success {
+		s.invalidateContract(result.Address)
 	}
 
 	writeJSON(w, result)
@@ -1758,7 +1655,7 @@ func (s *Server) handleCheckSourcify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	url := fmt.Sprintf("%s/check-by-addresses?addresses=%s&chainIds=%s", s.sourcifyBase(), address, chainIDStr)
+	url := fmt.Sprintf("%s/v2/contract/%s/%s", s.sourcifyBase(), chainIDStr, address)
 	resp, err := s.sourcifyClient().Get(url)
 	if err != nil {
 		http.Error(w, "failed to check Sourcify: "+err.Error(), http.StatusInternalServerError)
@@ -1766,23 +1663,33 @@ func (s *Server) handleCheckSourcify(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	var result []struct {
-		Address  string `json:"address"`
-		ChainIds []struct {
-			ChainId string `json:"chainId"`
-			Status  string `json:"status"`
-		} `json:"chainIds"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		http.Error(w, "failed to parse Sourcify response: "+err.Error(), http.StatusInternalServerError)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		http.Error(w, "failed to read Sourcify response: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 
 	isVerified := false
 	status := "not verified"
-	if len(result) > 0 && len(result[0].ChainIds) > 0 {
-		status = result[0].ChainIds[0].Status
-		isVerified = status == "perfect" || status == "partial"
+	switch {
+	case sourcifyNotVerified(resp.StatusCode, body):
+	case resp.StatusCode != http.StatusOK:
+		http.Error(w, fmt.Sprintf("Sourcify returned HTTP %d", resp.StatusCode), http.StatusBadGateway)
+		return
+	default:
+		var result struct {
+			Match string `json:"match"`
+		}
+		if err := json.Unmarshal(body, &result); err != nil {
+			http.Error(w, "failed to parse Sourcify response: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		switch result.Match {
+		case "exact_match":
+			isVerified, status = true, "perfect"
+		case "match":
+			isVerified, status = true, "partial"
+		}
 	}
 
 	writeJSON(w, map[string]any{
