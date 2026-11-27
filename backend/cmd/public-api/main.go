@@ -58,6 +58,18 @@ func main() {
 		}
 	}
 
+	// Proxies in front of the service that append to X-Forwarded-For (an
+	// ingress gateway, the frontend's nginx). The rate limiter keys on the
+	// address the outermost one appended; 0 = key on the TCP peer.
+	trustedHops := publicapi.DefaultTrustedHops
+	if v := os.Getenv("RATE_LIMIT_TRUSTED_HOPS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			trustedHops = n
+		} else {
+			log.Fatal("RATE_LIMIT_TRUSTED_HOPS must be a whole number >= 0", "value", v)
+		}
+	}
+
 	database, err := db.New(databaseURL)
 	if err != nil {
 		log.Fatal("failed to connect to database", "error", err)
@@ -91,6 +103,14 @@ func main() {
 	}
 
 	server := publicapi.NewServer(dataProvider, nil, chainInfo, port, rateLimit, rateWindow)
+	server.SetTrustedProxyHops(trustedHops)
+	// Title, currency and link origin of the `/llm.md` pages. All optional:
+	// without EXPLORER_PUBLIC_URL, links use the request's host.
+	server.SetSiteInfo(publicapi.SiteInfo{
+		Name:           os.Getenv("EXPLORER_NAME"),
+		CurrencySymbol: os.Getenv("EXPLORER_CURRENCY_SYMBOL"),
+		PublicURL:      os.Getenv("EXPLORER_PUBLIC_URL"),
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -103,7 +123,7 @@ func main() {
 		cancel()
 	}()
 
-	log.Info("starting public API server", "port", port, "rateLimit", rateLimit, "rateWindow", rateWindow.String())
+	log.Info("starting public API server", "port", port, "rateLimit", rateLimit, "rateWindow", rateWindow.String(), "trustedHops", trustedHops)
 	if err := server.Start(ctx); err != nil {
 		log.Fatal("server error", "error", err)
 	}

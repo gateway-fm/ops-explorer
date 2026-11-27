@@ -30,6 +30,10 @@ The public API is available at `http://localhost:8082` by default.
 | `PUBLIC_API_PORT` | `8082` | Port for the public API server |
 | `RATE_LIMIT` | `100` | Maximum requests per time window |
 | `RATE_LIMIT_WINDOW` | `1m` | Rate limit time window (e.g. `1m`, `30s`, `5m`) |
+| `RATE_LIMIT_TRUSTED_HOPS` | `1` | Proxies in front of the API that append to `X-Forwarded-For`. See [Rate limiting](#rate-limiting) |
+| `EXPLORER_NAME` | `Block Explorer` | Title of the [Markdown pages](../llm-md/) |
+| `EXPLORER_CURRENCY_SYMBOL` | `ETH` | Native currency shown on the Markdown pages |
+| `EXPLORER_PUBLIC_URL` | — | Public origin used in Markdown page links. When unset, the request's host is used |
 | `DATABASE_URL` | — | PostgreSQL connection string |
 | `RPC_URL` | — | Ethereum JSON-RPC endpoint |
 
@@ -37,6 +41,15 @@ The public API is available at `http://localhost:8082` by default.
 
 All requests are rate-limited by client IP address using a sliding window algorithm.
 **Default: 100 requests per minute.**
+
+The client IP comes from `X-Forwarded-For`, counted from the right: the API
+trusts `RATE_LIMIT_TRUSTED_HOPS` proxies (default `1`, an ingress such as an
+Envoy/Istio gateway or the frontend's nginx) and uses the address the outermost
+one appended. Entries further left are set by the client and are ignored. Set
+`RATE_LIMIT_TRUSTED_HOPS=0` when clients reach the API directly, with no proxy;
+the limiter then uses the TCP peer address. With too high a value, clients can
+choose their own key; with too low a value, every client shares the proxy's
+bucket.
 
 | Response header | Description |
 |--------|-------------|
