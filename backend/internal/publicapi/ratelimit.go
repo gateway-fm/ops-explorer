@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -20,21 +21,43 @@ type clientEntry struct {
 	windowEnd time.Time
 }
 
+// DefaultTrustedHops is the number of proxies in front of the public API that
+// append the caller's address to X-Forwarded-For: one, the ingress (for
+// example an Istio/Envoy gateway, or the frontend's nginx).
+const DefaultTrustedHops = 1
+
 // RateLimiter implements an IP-based sliding window rate limiter.
 type RateLimiter struct {
 	limit  int
 	window time.Duration
 	store  sync.Map
+	// trustedHops is how many proxies in front of this service append to
+	// X-Forwarded-For. The client is the entry the outermost of them appended:
+	// the trustedHops-th from the RIGHT. Entries left of it were sent by the
+	// client and are never trusted. 0 means no proxy: key on the TCP peer.
+	trustedHops int
 }
 
-// NewRateLimiter creates a rate limiter with the given request limit per window duration.
+// NewRateLimiter creates a rate limiter with the given request limit per
+// window duration, trusting DefaultTrustedHops proxies.
 func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
 	rl := &RateLimiter{
-		limit:  limit,
-		window: window,
+		limit:       limit,
+		window:      window,
+		trustedHops: DefaultTrustedHops,
 	}
 	go rl.cleanup()
 	return rl
+}
+
+// SetTrustedHops sets how many proxies in front of the service append to
+// X-Forwarded-For (0 = clients connect directly). Negative values become 0.
+// Call before serving.
+func (rl *RateLimiter) SetTrustedHops(n int) {
+	if n < 0 {
+		n = 0
+	}
+	rl.trustedHops = n
 }
 
 // Middleware returns an HTTP middleware that enforces rate limiting.
@@ -85,16 +108,31 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	})
 }
 
+// clientIP is the rate-limit key. Behind trustedHops proxies it is the
+// address the outermost trusted proxy appended to X-Forwarded-For (the
+// trustedHops-th entry from the right); a client can prepend anything it
+// likes to the header, so entries left of that one are never used. When
+// the header has fewer entries, or that entry is not an IP, the TCP peer is
+// used.
+//
+// The limiter cannot tell a proxy from a client: a caller that reaches the
+// service directly while trustedHops > 0 can send its own header and choose
+// its key. Where the API is reachable both directly and through a proxy,
+// only the proxied path is protected; set trustedHops to 0 if direct access
+// is the one that matters.
 func (rl *RateLimiter) clientIP(r *http.Request) string {
-	// Check X-Forwarded-For first for proxy support.
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first IP in the list.
-		for i := 0; i < len(xff); i++ {
-			if xff[i] == ',' {
-				return xff[:i]
+	if rl.trustedHops > 0 {
+		var hops []string
+		for _, v := range r.Header.Values("X-Forwarded-For") {
+			for _, h := range strings.Split(v, ",") {
+				hops = append(hops, strings.TrimSpace(h))
 			}
 		}
-		return xff
+		if i := len(hops) - rl.trustedHops; i >= 0 && i < len(hops) {
+			if ip := net.ParseIP(hops[i]); ip != nil {
+				return ip.String()
+			}
+		}
 	}
 
 	host, _, err := net.SplitHostPort(r.RemoteAddr)

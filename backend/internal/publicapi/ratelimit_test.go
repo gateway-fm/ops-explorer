@@ -6,9 +6,10 @@ package publicapi
 //   - enforcement: the first `limit` requests in a window pass; the next is 429.
 //   - window reset: once the window elapses, the bucket resets and requests pass.
 //   - per-key isolation: distinct RemoteAddr values get INDEPENDENT buckets
-//     (driven via RemoteAddr, NOT via X-Forwarded-For — we deliberately do not
-//     assert "leftmost XFF is trusted", which would lock in the W-4 spoofing bug;
-//     the XFF-trust half is left to the dedicated W-4 work).
+//     (driven via RemoteAddr).
+//   - client key behind proxies: the key is the X-Forwarded-For entry the
+//     outermost trusted proxy appended, never the client-supplied leftmost one
+//     (the W-4 XFF-trust half).
 //   - concurrency safety: many concurrent requests for the SAME key must be
 //     counted without a data race.
 //
@@ -199,4 +200,69 @@ func itoa3(n int) string {
 		n /= 10
 	}
 	return string(b[pos:])
+}
+
+// --- Client key behind proxies (X-Forwarded-For trust) ---
+
+// tcKey returns the limiter key for a request from peer with the given
+// X-Forwarded-For header lines.
+func tcKey(hops int, peer string, xff ...string) string {
+	rl := &RateLimiter{limit: 1, window: time.Minute, trustedHops: hops}
+	req := httptest.NewRequest(http.MethodGet, "/llm.md", nil)
+	req.RemoteAddr = peer
+	for _, v := range xff {
+		req.Header.Add("X-Forwarded-For", v)
+	}
+	return rl.clientIP(req)
+}
+
+func TestRateLimiterKeyIgnoresForgedLeftmostXFF(t *testing.T) {
+	const gw = "10.1.2.3:4567" // the ingress gateway pod: the TCP peer
+	// Envoy appends the client it saw (198.51.100.7) after whatever the client sent.
+	honest := tcKey(1, gw, "198.51.100.7")
+	forged := tcKey(1, gw, "203.0.113.99, 198.51.100.7")
+	forgedMany := tcKey(1, gw, "1.1.1.1, 2.2.2.2", "198.51.100.7")
+	if honest != "198.51.100.7" || forged != honest || forgedMany != honest {
+		t.Fatalf("keys: honest %q forged %q forgedMany %q; want all 198.51.100.7", honest, forged, forgedMany)
+	}
+}
+
+func TestRateLimiterKeyHops(t *testing.T) {
+	cases := []struct {
+		name string
+		hops int
+		peer string
+		xff  []string
+		want string
+	}{
+		{"direct deployment ignores XFF", 0, "192.0.2.5:1", []string{"203.0.113.99"}, "192.0.2.5"},
+		{"no XFF falls back to peer", 1, "192.0.2.5:1", nil, "192.0.2.5"},
+		{"two proxies: second from the right", 2, "10.0.0.2:1", []string{"203.0.113.99, 198.51.100.7, 10.0.0.1"}, "198.51.100.7"},
+		{"fewer entries than hops: peer", 2, "10.0.0.2:1", []string{"198.51.100.7"}, "10.0.0.2"},
+		{"non-IP entry: peer", 1, "10.0.0.2:1", []string{"203.0.113.99, not-an-ip"}, "10.0.0.2"},
+		{"IPv6 entry", 1, "10.0.0.2:1", []string{"2001:db8::1"}, "2001:db8::1"},
+	}
+	for _, c := range cases {
+		if got := tcKey(c.hops, c.peer, c.xff...); got != c.want {
+			t.Errorf("%s: key %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// A client rotating a forged leftmost XFF entry stays in one bucket.
+func TestRateLimiterForgedXFFDoesNotEscapeLimit(t *testing.T) {
+	rl := NewRateLimiter(2, time.Minute)
+	h := rl.Middleware(tcOKHandler())
+	codes := []int{}
+	for i, forged := range []string{"203.0.113.1", "203.0.113.2", "203.0.113.3"} {
+		req := httptest.NewRequest(http.MethodGet, "/llm.md", nil)
+		req.RemoteAddr = "10.1.2.3:" + string(rune('1'+i))
+		req.Header.Set("X-Forwarded-For", forged+", 198.51.100.7")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		codes = append(codes, w.Code)
+	}
+	if codes[2] != http.StatusTooManyRequests {
+		t.Fatalf("codes %v: the third request from the same client must be limited", codes)
+	}
 }
