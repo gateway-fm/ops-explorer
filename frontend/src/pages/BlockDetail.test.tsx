@@ -83,6 +83,7 @@ describe('BlockDetail', () => {
     await waitFor(() => expect(screen.getByTestId('page-header-title')).toHaveTextContent('Block #0'));
     expect(screen.getByTitle('Next block').closest('a')).toHaveAttribute('href', '/block/1');
     expect(screen.queryByTitle('Previous block')).not.toBeInTheDocument();
+    expect(screen.getByText(makeBlock(0).parentHash).closest('a')).toBeNull();
   });
 
   it('does not request a block for a non-decimal route param', async () => {

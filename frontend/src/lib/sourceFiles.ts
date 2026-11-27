@@ -52,9 +52,13 @@ export function displayPath(path: string): string {
 }
 
 // A file header as storeVerification writes it: at the start of the text, or
-// after the blank line that ends the previous file, naming a .sol file (the
-// name is the uploaded file's, verbatim, so it may contain spaces).
-const FILE_HEADER = /(?:^|\n\n)\/\/ File: ([^\n]*?\.sol)[ \t]*\n/g;
+// after the blank line that ends the previous file. Only names ending in .sol
+// are recognised, on purpose: storeVerification writes any key verbatim (so
+// names may contain spaces), but requiring the suffix keeps a prose comment
+// such as "// File: handles transfers" from being taken for a header. A file
+// stored under another name stays inside its neighbour; Full source still
+// shows the stored text.
+const FILE_HEADER = /(?:^|\n\n)\/\/ File: ([^\n]*?\.[sS][oO][lL])[ \t]*\n/g;
 
 // splitFileHeaders splits text made of "// File: <path>" sections into files.
 // Only text that starts with such a header qualifies, so a single source that

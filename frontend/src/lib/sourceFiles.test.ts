@@ -63,6 +63,11 @@ describe('parseSources', () => {
     ]);
   });
 
+  it('splits verifier output whose file names end in an upper-case .SOL', () => {
+    const raw = '// File: Token.SOL\ncontract Token {}\n\n// File: Lib.Sol\nlibrary Lib {}\n\n';
+    expect(parseSources(raw, 'Token').map((f) => f.path)).toEqual(['Token.SOL', 'Lib.Sol']);
+  });
+
   it('does not split verifier output on a // File: comment inside a contract body', () => {
     const raw =
       '// File: contracts/Token.sol\ncontract Token {\n\n// File: contracts/Fake.sol\n  uint256 x;\n}\n\n';
