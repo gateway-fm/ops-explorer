@@ -163,7 +163,7 @@ services:
 
       # --- MCP server (/mcp) ---
       # SHA-256 hex digests of the accepted API keys, comma-separated; unset = off.
-      # printf '%s' "$KEY" | sha256sum
+      # printf '%s' "$KEY" | sha256sum | cut -d' ' -f1
       MCP_API_KEY_SHA256: ${MCP_API_KEY_SHA256:-}
     depends_on:
       postgres:

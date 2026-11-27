@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -190,6 +191,7 @@ func TestMCP_ToolErrors(t *testing.T) {
 		{"get_address", map[string]any{"address": "nope"}, "Bad request"},
 		{"list_address_transactions", map[string]any{"address": mdAddrA, "kind": "everything"}, "Bad request"},
 		{"get_block", map[string]any{"block": "-1"}, "Bad request"},
+		{"get_token", map[string]any{"address": mdToken, "page": -1}, "Bad request"},
 	} {
 		got, isErr := mcpCall(t, cs, c.tool, c.args)
 		if !isErr || !strings.HasPrefix(got, "# "+c.want) {
@@ -315,5 +317,83 @@ func TestMCP_PlainToolsListWithoutSession(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(resp.Header.Get("Content-Type"), "application/json") || !strings.Contains(string(body), `"get_block"`) {
 		t.Errorf("tools/list: %d %s\n%s", resp.StatusCode, resp.Header.Get("Content-Type"), body)
+	}
+}
+
+func mcpPostBody(t *testing.T, url, body string, header map[string]string) *http.Response {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodPost, url+"/mcp", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+mcpTestKey)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	for k, v := range header {
+		if k == "Host" {
+			req.Host = v // the client sends req.Host, not Header["Host"]
+			continue
+		}
+		req.Header.Set(k, v)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	return resp
+}
+
+func TestMCP_RejectsBatchesAndLargeBodies(t *testing.T) {
+	// A batch would run many tool calls for one rate-limit unit; protocol
+	// 2025-03-26 still defines batches, so refuse them at the edge.
+	_, ts := mcpTestServer(t, &mdProvider{}, 1000, "")
+	call := `{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"name":"get_chain_stats","arguments":{}}}`
+	batch := " \n[" + fmt.Sprintf(call, 1) + "," + fmt.Sprintf(call, 2) + "]"
+	for _, v := range []string{"", "2025-03-26"} {
+		resp := mcpPostBody(t, ts.URL, batch, map[string]string{"MCP-Protocol-Version": v})
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("batch with protocol %q: status %d, want 400", v, resp.StatusCode)
+		}
+	}
+	big := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"pad":"` + strings.Repeat("x", mcpMaxBody) + `"}}`
+	if resp := mcpPostBody(t, ts.URL, big, nil); resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Errorf("oversized body: status %d, want 413", resp.StatusCode)
+	}
+}
+
+func TestMCP_ProxiedHostOnLoopback(t *testing.T) {
+	// A reverse proxy on the same host connects over loopback and forwards
+	// the public Host. The SDK's DNS-rebinding guard would 403 that.
+	_, ts := mcpTestServer(t, &mdProvider{}, 1000, "")
+	if resp := mcpPostBody(t, ts.URL, mcpInitBody, map[string]string{"Host": "explorer.example"}); resp.StatusCode != http.StatusOK {
+		t.Errorf("proxied Host over loopback: status %d, want 200", resp.StatusCode)
+	}
+}
+
+// stallProvider blocks transaction reads until their context ends.
+type stallProvider struct {
+	mdProvider
+	ended chan struct{}
+}
+
+func (p *stallProvider) GetTransactionWithCategories(ctx context.Context, _ string) (*types.Transaction, error) {
+	<-ctx.Done()
+	close(p.ended)
+	return nil, ctx.Err()
+}
+
+func TestMCP_ToolStopsWhenClientLeaves(t *testing.T) {
+	// The SDK runs tools on a context without the request's cancellation;
+	// a stalled data source must still be released when the client goes.
+	p := &stallProvider{ended: make(chan struct{})}
+	_, ts := mcpTestServer(t, p, 1000, "")
+	cs := mcpConnect(t, ts.URL, mcpTestKey)
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	if _, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "get_transaction", Arguments: map[string]any{"hash": mdTxHash}}); err == nil {
+		t.Fatal("call against a stalled source returned without error")
+	}
+	select {
+	case <-p.ended:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the data-source call was not cancelled after the client left")
 	}
 }
