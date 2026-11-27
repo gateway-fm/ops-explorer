@@ -3,8 +3,7 @@
 - **Type:** Wallet (externally owned account)
 - **Balance:** 2 tEX
 - **Transactions:** 5
-- **Token transfers:** 2
-- **Internal transactions:** 1
+- **Tokens held or used:** 2
 
 ## Token holdings (1)
 

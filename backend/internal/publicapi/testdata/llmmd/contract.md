@@ -4,8 +4,7 @@
 - **Token:** [Test \[Token\](http://evil.example) \*bold\* (TST\|X)](https://explorer.example/token/0x3333333333333333333333333333333333333333/llm.md)
 - **Balance:** 2 tEX
 - **Transactions:** 5
-- **Token transfers:** 2
-- **Internal transactions:** 1
+- **Tokens held or used:** 2
 
 ## Contract
 

@@ -17,7 +17,7 @@
 | --- | --- | --- |
 | [0x2222222222222222222222222222222222222222](https://explorer.example/address/0x2222222222222222222222222222222222222222/llm.md) | 2.5 TST\|X | 25.00% |
 
-## Transfers, newest first (page 1 of 1, 1 transfers)
+## Latest 25 transfers, newest first
 
 | Transaction | Block | Token | From | To | Amount |
 | --- | --- | --- | --- | --- | --- |

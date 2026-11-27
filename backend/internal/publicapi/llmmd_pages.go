@@ -175,11 +175,18 @@ func metaFor(m map[string]*types.Token, addr string) *types.Token {
 	return m[strings.ToLower(addr)]
 }
 
-func parseQueryInt(q url.Values, key string, def int) int {
-	if v, err := strconv.Atoi(q.Get(key)); err == nil && v > 0 {
-		return v
+// pageParam reads ?page=: absent means 1; anything but a whole number >= 1
+// is a 400, so an agent never gets page 1 back for a typo.
+func pageParam(q url.Values) (int, error) {
+	v := q.Get("page")
+	if v == "" {
+		return 1, nil
 	}
-	return def
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 {
+		return 0, mdBadRequest("`page` must be a whole number from 1.")
+	}
+	return n, nil
 }
 
 // --- Home ---
@@ -326,7 +333,10 @@ func (s *Server) mdBlocks(ctx context.Context, d *mdDoc, _ string, q url.Values)
 }
 
 func (s *Server) mdTransactions(ctx context.Context, d *mdDoc, _ string, q url.Values) error {
-	page := parseQueryInt(q, "page", 1)
+	page, err := pageParam(q)
+	if err != nil {
+		return err
+	}
 	txs, total, err := s.provider.GetTransactionsPaginatedWithCategories(ctx, page, mdListSize)
 	if err != nil {
 		return err
@@ -342,7 +352,10 @@ func (s *Server) mdTransactions(ctx context.Context, d *mdDoc, _ string, q url.V
 }
 
 func (s *Server) mdTokens(ctx context.Context, d *mdDoc, _ string, q url.Values) error {
-	page := parseQueryInt(q, "page", 1)
+	page, err := pageParam(q)
+	if err != nil {
+		return err
+	}
 	tokens, total, err := s.provider.GetTokens(ctx, mdListSize, (page-1)*mdListSize, "", "")
 	if err != nil {
 		return err
@@ -729,8 +742,10 @@ func (s *Server) mdAddress(ctx context.Context, d *mdDoc, id string, q url.Value
 		mdField{"Token", tokenLink},
 		mdField{"Balance", bal},
 		mdField{"Transactions", strconv.Itoa(stats.TxCount)},
-		mdField{"Token transfers", strconv.Itoa(stats.TokenTransferCount)},
-		mdField{"Internal transactions", strconv.Itoa(stats.InternalTxCount)},
+		// The indexer fills TokenTransferCount with the number of distinct
+		// tokens held or used, and never fills InternalTxCount, so only the
+		// former is shown, under what it really counts.
+		mdField{"Tokens held or used", strconv.Itoa(stats.TokenTransferCount)},
 	)
 
 	if isContract {
@@ -837,54 +852,48 @@ func (s *Server) mdAddressTransfers(ctx context.Context, d *mdDoc, address strin
 	return nil
 }
 
-func (s *Server) mdAddressInternal(ctx context.Context, d *mdDoc, address string, q url.Values) error {
-	page := parseQueryInt(q, "page", 1)
-	items, total, err := s.provider.GetInternalTransactionsByAddress(ctx, address, mdListSize, (page-1)*mdListSize)
+// The internal-transaction and log feeds by address are newest-first with
+// no paging: the indexer ignores the offset for them and reports the row
+// count as the total, so page numbers or totals here would be false.
+
+func (s *Server) mdAddressInternal(ctx context.Context, d *mdDoc, address string, _ url.Values) error {
+	items, _, err := s.provider.GetInternalTransactionsByAddress(ctx, address, mdListSize, 0)
 	if err != nil {
 		return err
 	}
-	pages := computeTotalPages(total, mdListSize)
 	d.h1("Internal transactions of " + address)
-	d.para(fmt.Sprintf("Address: %s. Page %d of %d (%d internal transactions).", d.addr(address), page, pages, total))
+	d.para(fmt.Sprintf("Address: %s. The latest %d, newest first; older ones are not available as Markdown.", d.addr(address), mdListSize))
 	if len(items) == 0 {
 		d.para("None.")
-	} else {
-		rows := make([][]string, 0, len(items))
-		for _, it := range items {
-			rows = append(rows, []string{
-				d.tx(it.TxHash), d.block(it.BlockNumber), mdText(it.CallType), d.addr(it.From), d.addr(optStr(it.To)),
-				s.native(string(it.Value)), mdText(optStr(it.Error)),
-			})
-		}
-		d.table([]string{"Transaction", "Block", "Type", "From", "To", "Value", "Error"}, rows)
+		return nil
 	}
-	if page < pages {
-		d.para("[Next page](" + d.urlQ("/address/"+address, "tab=internal&page="+strconv.Itoa(page+1)) + ")")
+	rows := make([][]string, 0, len(items))
+	for _, it := range items {
+		rows = append(rows, []string{
+			d.tx(it.TxHash), d.block(it.BlockNumber), mdText(it.CallType), d.addr(it.From), d.addr(optStr(it.To)),
+			s.native(string(it.Value)), mdText(optStr(it.Error)),
+		})
 	}
+	d.table([]string{"Transaction", "Block", "Type", "From", "To", "Value", "Error"}, rows)
 	return nil
 }
 
-func (s *Server) mdAddressLogs(ctx context.Context, d *mdDoc, address string, q url.Values) error {
-	page := parseQueryInt(q, "page", 1)
-	logs, total, err := s.provider.GetLogsByAddress(ctx, address, mdListSize, (page-1)*mdListSize)
+func (s *Server) mdAddressLogs(ctx context.Context, d *mdDoc, address string, _ url.Values) error {
+	logs, _, err := s.provider.GetLogsByAddress(ctx, address, mdListSize, 0)
 	if err != nil {
 		return err
 	}
-	pages := computeTotalPages(total, mdListSize)
 	d.h1("Logs emitted by " + address)
-	d.para(fmt.Sprintf("Address: %s. Page %d of %d (%d logs).", d.addr(address), page, pages, total))
+	d.para(fmt.Sprintf("Address: %s. The latest %d, newest first; older ones are not available as Markdown.", d.addr(address), mdListSize))
 	if len(logs) == 0 {
 		d.para("None.")
-	} else {
-		rows := make([][]string, 0, len(logs))
-		for _, l := range logs {
-			rows = append(rows, []string{d.tx(l.TxHash), d.block(l.BlockNumber), strconv.Itoa(l.LogIndex), logTopics(l), "`" + mdCodeSpan(l.Data) + "`"})
-		}
-		d.table([]string{"Transaction", "Block", "Log index", "Topics", "Data"}, rows)
+		return nil
 	}
-	if page < pages {
-		d.para("[Next page](" + d.urlQ("/address/"+address, "tab=logs&page="+strconv.Itoa(page+1)) + ")")
+	rows := make([][]string, 0, len(logs))
+	for _, l := range logs {
+		rows = append(rows, []string{d.tx(l.TxHash), d.block(l.BlockNumber), strconv.Itoa(l.LogIndex), logTopics(l), "`" + mdCodeSpan(l.Data) + "`"})
 	}
+	d.table([]string{"Transaction", "Block", "Log index", "Topics", "Data"}, rows)
 	return nil
 }
 
@@ -1016,13 +1025,16 @@ func (s *Server) mdToken(ctx context.Context, d *mdDoc, id string, q url.Values)
 	if t == nil {
 		return mdNotFound("No token at " + address + ". If it is an ordinary address, see " + d.addr(address) + ".")
 	}
-	// One ?page= pages both lists, like the JSON API's offset paging.
-	page := parseQueryInt(q, "page", 1)
+	// ?page= pages the holders; transfers are the newest page only.
+	page, err := pageParam(q)
+	if err != nil {
+		return err
+	}
 	offset := (page - 1) * mdListSize
 	var (
-		holders                  []types.TokenHolder
-		transfers                []types.TokenTransfer
-		holderTotal, transferTot int64
+		holders     []types.TokenHolder
+		transfers   []types.TokenTransfer
+		holderTotal int64
 	)
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() (err error) {
@@ -1030,7 +1042,9 @@ func (s *Server) mdToken(ctx context.Context, d *mdDoc, id string, q url.Values)
 		return err
 	})
 	g.Go(func() (err error) {
-		transfers, transferTot, err = s.provider.GetTransfersByToken(gctx, address, mdListSize, offset)
+		// Newest first, no paging: the indexer ignores the offset here
+		// and reports the row count as the total.
+		transfers, _, err = s.provider.GetTransfersByToken(gctx, address, mdListSize, 0)
 		return err
 	})
 	if err := g.Wait(); err != nil {
@@ -1062,7 +1076,6 @@ func (s *Server) mdToken(ctx context.Context, d *mdDoc, id string, q url.Values)
 	)
 
 	holderPages := computeTotalPages(holderTotal, mdListSize)
-	transferPages := computeTotalPages(transferTot, mdListSize)
 
 	d.h2(fmt.Sprintf("Holders, largest first (page %d of %d, %d holders)", page, holderPages, holderTotal))
 	if len(holders) == 0 {
@@ -1075,14 +1088,14 @@ func (s *Server) mdToken(ctx context.Context, d *mdDoc, id string, q url.Values)
 		d.table([]string{"Address", "Balance", "Share of supply"}, rows)
 	}
 
-	d.h2(fmt.Sprintf("Transfers, newest first (page %d of %d, %d transfers)", page, transferPages, transferTot))
+	d.h2(fmt.Sprintf("Latest %d transfers, newest first", mdListSize))
 	if len(transfers) == 0 {
 		d.para("None.")
 	} else {
 		s.transfersTable(d, transfers, map[string]*types.Token{strings.ToLower(address): t}, true)
 	}
-	if page < max(holderPages, transferPages) {
-		d.para("[Next page](" + d.urlQ("/token/"+address, "page="+strconv.Itoa(page+1)) + ")")
+	if page < holderPages {
+		d.para("[Next page of holders](" + d.urlQ("/token/"+address, "page="+strconv.Itoa(page+1)) + ")")
 	}
 	return nil
 }
@@ -1163,17 +1176,17 @@ func (s *Server) mdStats(ctx context.Context, d *mdDoc, _ string, _ url.Values) 
 		return nil
 	}
 	sort.Slice(daily, func(i, j int) bool { return daily[i].Date > daily[j].Date })
-	// Only the columns the indexer fills in; the others in DailyStats are
-	// always zero there and would read as measured zeros.
+	// Only the columns the indexer fills in reliably; the others in
+	// DailyStats are always zero there, and AvgGasPrice falls to zero when a
+	// day's fees overflow uint64, so both would read as measured zeros.
 	rows := make([][]string, 0, len(daily))
 	for _, ds := range daily {
 		rows = append(rows, []string{
 			mdText(ds.Date), strconv.Itoa(ds.TotalTransactions), strconv.Itoa(ds.TotalBlocks),
-			strconv.FormatInt(ds.TotalGasUsed, 10), s.native(strconv.FormatInt(ds.AvgGasPrice, 10)),
-			strconv.Itoa(ds.ActiveAddresses), strconv.Itoa(ds.NewAddresses),
+			strconv.FormatInt(ds.TotalGasUsed, 10), strconv.Itoa(ds.ActiveAddresses), strconv.Itoa(ds.NewAddresses),
 		})
 	}
-	d.table([]string{"Date", "Transactions", "Blocks", "Gas used", "Average fee per transaction", "Active addresses", "New addresses"}, rows)
+	d.table([]string{"Date", "Transactions", "Blocks", "Gas used", "Active addresses", "New addresses"}, rows)
 	return nil
 }
 

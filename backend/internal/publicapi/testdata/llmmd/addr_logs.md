@@ -1,6 +1,6 @@
 # Logs emitted by 0x1111111111111111111111111111111111111111
 
-Address: [0x1111111111111111111111111111111111111111](https://explorer.example/address/0x1111111111111111111111111111111111111111/llm.md). Page 1 of 1 (1 logs).
+Address: [0x1111111111111111111111111111111111111111](https://explorer.example/address/0x1111111111111111111111111111111111111111/llm.md). The latest 25, newest first; older ones are not available as Markdown.
 
 | Transaction | Block | Log index | Topics | Data |
 | --- | --- | --- | --- | --- |

@@ -14,7 +14,7 @@
 
 ## Daily activity (last 30 days, UTC)
 
-| Date | Transactions | Blocks | Gas used | Average fee per transaction | Active addresses | New addresses |
-| --- | --- | --- | --- | --- | --- | --- |
-| 2026-11-26 | 1000 | 345600 | 21000000 | 0.000042 tEX | 15 | 3 |
-| 2026-11-25 | 900 | 340000 | 18900000 | 0.000042 tEX | 12 | 2 |
+| Date | Transactions | Blocks | Gas used | Active addresses | New addresses |
+| --- | --- | --- | --- | --- | --- |
+| 2026-11-26 | 1000 | 345600 | 21000000 | 15 | 3 |
+| 2026-11-25 | 900 | 340000 | 18900000 | 12 | 2 |

@@ -47,6 +47,8 @@ type mdProvider struct {
 	contractErr error // GetContract fails
 	blockTxs    int   // block header transaction count; 0 means 1
 	holderTotal int64 // token holder total; 0 means 1
+
+	transferOffsets []int // offsets GetTransfersByToken was called with
 }
 
 func (p *mdProvider) block() *types.Block {
@@ -140,7 +142,9 @@ func (p *mdProvider) GetLogsByTransaction(context.Context, string) ([]types.Log,
 		Topic0: sp("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"), Data: "0x2625a0"}}, nil
 }
 func (p *mdProvider) GetAddressStats(_ context.Context, a string) (*types.AddressStats, error) {
-	return &types.AddressStats{Address: a, TxCount: 5, TokenTransferCount: 2, InternalTxCount: 1}, nil
+	// As the indexer maps it: TokenTransferCount carries the distinct-token
+	// count and InternalTxCount is never set.
+	return &types.AddressStats{Address: a, TxCount: 5, TokenTransferCount: 2}, nil
 }
 func (p *mdProvider) GetBalance(context.Context, string) (*types.JSONString, error) {
 	v := types.JSONString("2000000000000000000")
@@ -193,7 +197,8 @@ func (p *mdProvider) GetTokenHolders(context.Context, string, int, int) ([]types
 	// Percentage stays 0, as the indexer leaves it.
 	return []types.TokenHolder{{Address: mdAddrB, Balance: "2500000"}}, max(p.holderTotal, 1), nil
 }
-func (p *mdProvider) GetTransfersByToken(context.Context, string, int, int) ([]types.TokenTransfer, int64, error) {
+func (p *mdProvider) GetTransfersByToken(_ context.Context, _ string, _ int, offset int) ([]types.TokenTransfer, int64, error) {
+	p.transferOffsets = append(p.transferOffsets, offset)
 	return []types.TokenTransfer{{TxHash: mdTxHash, TokenAddress: mdToken, From: mdAddrA, To: mdAddrB, Value: "2500000", BlockNumber: 120, TokenType: "ERC20"}}, 1, nil
 }
 func (p *mdProvider) GetDailyStats(context.Context, time.Time, time.Time) ([]types.DailyStats, error) {
@@ -209,8 +214,10 @@ func (p *mdProvider) GetTransfersByAddress(_ context.Context, _ string, _ int, c
 	}
 	return []types.TokenTransfer{{TxHash: mdTxHash, TokenAddress: mdToken, From: mdAddrA, To: mdAddrB, Value: "2500000", BlockNumber: 120, TokenType: "ERC20"}}, "t2", nil
 }
+
+// Like the indexer: the offset is ignored and the "total" is the row count.
 func (p *mdProvider) GetInternalTransactionsByAddress(context.Context, string, int, int) ([]types.InternalTransaction, int64, error) {
-	return []types.InternalTransaction{{TxHash: mdTxHash, BlockNumber: 120, From: mdToken, To: sp(mdAddrA), Value: "1000", CallType: "call"}}, 30, nil
+	return []types.InternalTransaction{{TxHash: mdTxHash, BlockNumber: 120, From: mdToken, To: sp(mdAddrA), Value: "1000", CallType: "call"}}, 1, nil
 }
 func (p *mdProvider) GetLogsByAddress(context.Context, string, int, int) ([]types.Log, int64, error) {
 	return []types.Log{{TxHash: mdTxHash, LogIndex: 0, Address: mdToken, BlockNumber: 120,
@@ -313,6 +320,9 @@ func TestLLMMD_StatusCodes(t *testing.T) {
 		{"/address/" + mdAddrA + "/llm.md?tab=coin-history", 400, "no Markdown version"},
 		{"/address/" + mdAddrA + "/llm.md?tab=transfers&cursor=bad", 400, "A query parameter is not valid"},
 		{"/nope/llms.txt", 404, "# Not found"},
+		{"/tokens/llm.md?page=abc", 400, "`page` must be"},
+		{"/transactions/llm.md?page=0", 400, "`page` must be"},
+		{"/token/" + mdToken + "/llm.md?page=-1", 400, "`page` must be"},
 	}
 	for _, c := range cases {
 		w := mdGet(s, c.path)
@@ -439,12 +449,34 @@ func TestLLMMD_BlockCountsFromHeader(t *testing.T) {
 }
 
 func TestLLMMD_TokenPaging(t *testing.T) {
-	s := mdServer(&mdProvider{holderTotal: 60}, 100000)
+	p := &mdProvider{holderTotal: 60}
+	s := mdServer(p, 100000)
 	if body := mdGet(s, "/token/"+mdToken+"/llm.md").Body.String(); !strings.Contains(body, "/llm.md?page=2)") {
 		t.Errorf("no next-page link with 60 holders:\n%s", body)
 	}
 	if body := mdGet(s, "/token/"+mdToken+"/llm.md?page=3").Body.String(); strings.Contains(body, "?page=4") {
 		t.Errorf("next-page link past the last page:\n%s", body)
+	}
+	// Transfers are never paged by offset: the indexer ignores it.
+	for _, off := range p.transferOffsets {
+		if off != 0 {
+			t.Errorf("transfers requested at offset %d", off)
+		}
+	}
+}
+
+// Lists the indexer cannot page show no page numbers, totals or next links.
+func TestLLMMD_UnpagedFeeds(t *testing.T) {
+	s := mdServer(&mdProvider{}, 100000)
+	for _, tab := range []string{"internal", "logs"} {
+		body := mdGet(s, "/address/"+mdAddrA+"/llm.md?tab="+tab).Body.String()
+		if strings.Contains(body, "Page ") || strings.Contains(body, "page=") {
+			t.Errorf("tab=%s shows paging the indexer cannot back:\n%s", tab, body)
+		}
+	}
+	body := mdGet(s, "/address/"+mdAddrA+"/llm.md").Body.String()
+	if strings.Contains(body, "Internal transactions:") || strings.Contains(body, "Token transfers:") {
+		t.Errorf("address page shows counts the indexer does not provide:\n%s", body)
 	}
 }
 

@@ -26,10 +26,10 @@ convention). Behind the frontend image's nginx, a request for an HTML page with
 | Transactions | `/transactions/llm.md` | Latest transactions; more with `?page=<n>` |
 | Transaction | `/tx/<hash>/llm.md` | Status, value, fee, gas, token transfers, internal transactions, logs, input |
 | Address | `/address/<address>/llm.md` | Balance, counts, token holdings, recent transactions; older ones with the page's `?cursor=` link |
-| Address tabs | `/address/<address>/llm.md?tab=transfers`, `tab=internal`, `tab=logs` | Token transfers, internal transactions, logs; each with its own next-page link |
+| Address tabs | `/address/<address>/llm.md?tab=transfers`, `tab=internal`, `tab=logs` | Token transfers (older ones via the page's `?cursor=` link); the latest 25 internal transactions; the latest 25 logs |
 | Contract | `/address/<address>/llm.md?tab=contract` | Verification details, ABI, source code, bytecode |
 | Tokens | `/tokens/llm.md` | Tokens; more with `?page=<n>` |
-| Token | `/token/<contract address>/llm.md` | Supply, holders with their share of supply, transfers; more with `?page=<n>` |
+| Token | `/token/<contract address>/llm.md` | Supply, holders with their share of supply (more with `?page=<n>`), the latest 25 transfers |
 | Statistics | `/stats/llm.md` | Totals, gas prices, daily activity for the last 30 days |
 
 Links between pages point at their `/llm.md` versions, so an agent can follow them.

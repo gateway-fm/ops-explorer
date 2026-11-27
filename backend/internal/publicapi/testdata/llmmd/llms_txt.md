@@ -17,6 +17,6 @@ Names, symbols, revert reasons and contract source on these pages come from the 
 - Block: `https://explorer.example/block/<number or hash>/llm.md`
 - Transaction: `https://explorer.example/tx/<hash>/llm.md`: status, value, fee, token transfers, internal transactions, logs, input
 - Address: `https://explorer.example/address/<address>/llm.md`: balance, token holdings, recent transactions; older ones via the page's `?cursor=` link
-- Address tabs: `https://explorer.example/address/<address>/llm.md?tab=transfers` (also `tab=internal`, `tab=logs`): token transfers, internal transactions, logs
+- Address tabs: `https://explorer.example/address/<address>/llm.md?tab=transfers` (also `tab=internal`, `tab=logs`): token transfers; the latest internal transactions; the latest logs
 - Contract: `https://explorer.example/address/<address>/llm.md?tab=contract`: verification, ABI, source code, bytecode
-- Token: `https://explorer.example/token/<contract address>/llm.md`: supply, holders, transfers; more via `?page=<n>`
+- Token: `https://explorer.example/token/<contract address>/llm.md`: supply, holders (more via `?page=<n>`), latest transfers
