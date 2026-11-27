@@ -95,6 +95,7 @@ func main() {
 
 	serverCfg := &api.ServerConfig{
 		SolcPath:              cfg.SolcPath,
+		NetworkCurrency:       cfg.NetworkCurrency,
 		UseSourcifyFallback:   cfg.UseSourcifyFallback,
 		MetricsEnabled:        cfg.MetricsEnabled,
 		PostLoginRedirectURL:  cfg.PostLoginRedirectURL,

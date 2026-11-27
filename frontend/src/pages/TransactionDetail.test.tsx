@@ -5,7 +5,7 @@ import { renderWithProviders } from '../test/render';
 import { server, http, HttpResponse, API, makeTx } from '../test/msw';
 import { TransactionDetail } from './TransactionDetail';
 
-// Focus: the tab-VISIBILITY logic (tabs only render when logs/internal exist),
+// Focus: the tab-VISIBILITY logic (Flow always; Logs/Trace only when data exists),
 // plus restricted + not-found states (PLAN §6).
 
 describe('TransactionDetail', () => {
@@ -16,21 +16,54 @@ describe('TransactionDetail', () => {
     return renderWithProviders(<TransactionDetail />, { path: '/tx/:hash', initialEntries: [`/tx/${h}`] });
   }
 
-  function txEndpoints(over: { logs?: unknown[]; internal?: unknown[] } = {}) {
+  function txEndpoints(over: { logs?: unknown[]; internal?: unknown[]; onFlow?: () => void } = {}) {
     return [
       http.get(`${API}/transactions/${hash}`, () => HttpResponse.json(makeTx(1, { hash }))),
       http.get(`${API}/transactions/${hash}/transfers`, () => HttpResponse.json([])),
       http.get(`${API}/transactions/${hash}/logs`, () => HttpResponse.json(over.logs ?? [])),
       http.get(`${API}/transactions/${hash}/internal`, () => HttpResponse.json(over.internal ?? [])),
+      http.get(`${API}/transactions/${hash}/flow`, () => {
+        over.onFlow?.();
+        return HttpResponse.json({
+          txHash: hash, status: 'success', currency: 'ETH', hasCallData: false, totalSteps: 1, truncated: false,
+          summary: 'The sender sent 1 ETH to 0x2222…2222.',
+          participants: [
+            { address: '0x' + '1'.repeat(40), label: '0x1111…1111', kind: 'account' },
+            { address: '0x' + '2'.repeat(40), label: '0x2222…2222', kind: 'account' },
+          ],
+          steps: [{ index: 0, kind: 'value_transfer', depth: 0, from: '0x' + '1'.repeat(40), to: '0x' + '2'.repeat(40), value: '1', amount: '1', text: 'The sender sent 1 ETH to 0x2222…2222' }],
+        });
+      }),
     ];
   }
 
-  it('renders no tabs when there are neither logs nor internal txns', async () => {
+  it('shows only Overview and Flow when there are neither logs nor internal txns', async () => {
     server.use(...txEndpoints());
     mount();
     await waitFor(() => expect(screen.getByTestId('tx-status')).toBeInTheDocument());
+    expect(screen.getByTestId('tab-flow')).toBeInTheDocument();
     expect(screen.queryByTestId('tab-logs')).not.toBeInTheDocument();
     expect(screen.queryByTestId('tab-trace')).not.toBeInTheDocument();
+  });
+
+  it('loads the flow only when the Flow tab opens', async () => {
+    let flowCalls = 0;
+    server.use(...txEndpoints({ onFlow: () => { flowCalls++; } }));
+    mount();
+    await waitFor(() => expect(screen.getByTestId('tx-status')).toBeInTheDocument());
+    expect(flowCalls).toBe(0);
+    await userEvent.click(screen.getByTestId('tab-flow'));
+    await waitFor(() => expect(screen.getByTestId('flow-step-text')).toHaveTextContent('The sender sent 1 ETH'));
+    expect(flowCalls).toBe(1);
+  });
+
+  it('shows an error state when the flow cannot be loaded', async () => {
+    // The first matching handler wins, so the failing flow goes before the defaults.
+    server.use(http.get(`${API}/transactions/${hash}/flow`, () => HttpResponse.json({}, { status: 500 })), ...txEndpoints());
+    mount();
+    await waitFor(() => expect(screen.getByTestId('tx-status')).toBeInTheDocument());
+    await userEvent.click(screen.getByTestId('tab-flow'));
+    await waitFor(() => expect(screen.getByText('The flow for this transaction is not available')).toBeInTheDocument());
   });
 
   it('renders Logs + Trace tabs only when their data is present, and switches', async () => {

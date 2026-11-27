@@ -10,6 +10,7 @@ import { useTokenMap } from '../hooks/useTokenMap';
 import { AddressLink, TokenAddressLink } from '../components/AddressLink';
 import { AddressLabel } from '../components/AddressLabel';
 import { CallTraceTree } from '../components/CallTraceTree';
+import { TransactionFlow } from '../components/TransactionFlow';
 
 import { PageHeader } from '../components/PageHeader';
 import { CopyButton } from '../components/CopyButton';
@@ -51,7 +52,7 @@ function TxCategoryBadges({ categories }: { categories?: TxCategory[] }) {
 
 export function TransactionDetail() {
   const { hash } = useParams<{ hash: string }>();
-  const [activeTab, setActiveTab] = useState<'overview' | 'logs' | 'trace'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'flow' | 'logs' | 'trace'>('overview');
   const [showMore, setShowMore] = useState(false);
 
   const { data: tx, isLoading, error } = useQuery({
@@ -79,6 +80,14 @@ export function TransactionDetail() {
     queryKey: ['transaction-internal', hash],
     queryFn: () => api.getTransactionInternalTxs(hash!),
     enabled: !!hash,
+    retry: false,
+  });
+
+  // Fetched only while the Flow tab is open: the other tabs never pay for it.
+  const { data: flow, isLoading: flowLoading, error: flowError } = useQuery({
+    queryKey: ['transaction-flow', hash],
+    queryFn: () => api.getTransactionFlow(hash!),
+    enabled: !!hash && activeTab === 'flow',
     retry: false,
   });
 
@@ -119,42 +128,49 @@ export function TransactionDetail() {
     <div className="space-y-6">
       <PageHeader title="Transaction Details" />
 
-      {/* Tabs - only show when there are logs or internal calls to display */}
-      {(hasLogs || hasTrace) && (
-        <div className="tabs" role="tablist">
+      {/* Tabs - Flow is always available; Logs and Internal Txns only when there is data */}
+      <div className="tabs" role="tablist">
+        <button
+          onClick={() => setActiveTab('overview')}
+          role="tab"
+          data-testid="tab-overview"
+          aria-selected={activeTab === 'overview'}
+          className={activeTab === 'overview' ? 'tab-active' : 'tab'}
+        >
+          Overview
+        </button>
+        <button
+          onClick={() => setActiveTab('flow')}
+          role="tab"
+          data-testid="tab-flow"
+          aria-selected={activeTab === 'flow'}
+          className={activeTab === 'flow' ? 'tab-active' : 'tab'}
+        >
+          Flow
+        </button>
+        {hasLogs && (
           <button
-            onClick={() => setActiveTab('overview')}
+            onClick={() => setActiveTab('logs')}
             role="tab"
-            data-testid="tab-overview"
-            aria-selected={activeTab === 'overview'}
-            className={activeTab === 'overview' ? 'tab-active' : 'tab'}
+            data-testid="tab-logs"
+            aria-selected={activeTab === 'logs'}
+            className={activeTab === 'logs' ? 'tab-active' : 'tab'}
           >
-            Overview
+            Logs ({logs?.length || 0})
           </button>
-          {hasLogs && (
-            <button
-              onClick={() => setActiveTab('logs')}
-              role="tab"
-              data-testid="tab-logs"
-              aria-selected={activeTab === 'logs'}
-              className={activeTab === 'logs' ? 'tab-active' : 'tab'}
-            >
-              Logs ({logs?.length || 0})
-            </button>
-          )}
-          {hasTrace && (
-            <button
-              onClick={() => setActiveTab('trace')}
-              role="tab"
-              data-testid="tab-trace"
-              aria-selected={activeTab === 'trace'}
-              className={activeTab === 'trace' ? 'tab-active' : 'tab'}
-            >
-              Internal Txns ({internalTxs?.length || 0})
-            </button>
-          )}
-        </div>
-      )}
+        )}
+        {hasTrace && (
+          <button
+            onClick={() => setActiveTab('trace')}
+            role="tab"
+            data-testid="tab-trace"
+            aria-selected={activeTab === 'trace'}
+            className={activeTab === 'trace' ? 'tab-active' : 'tab'}
+          >
+            Internal Txns ({internalTxs?.length || 0})
+          </button>
+        )}
+      </div>
 
       {/* Overview Tab */}
       {activeTab === 'overview' && (
@@ -349,6 +365,13 @@ export function TransactionDetail() {
             </div>
           )}
         </div>
+      )}
+
+      {/* Flow Tab */}
+      {activeTab === 'flow' && (
+        flowLoading ? <StateMessage variant="loading" />
+          : flowError || !flow ? <StateMessage variant="error" title="The flow for this transaction is not available" />
+            : <TransactionFlow flow={flow} />
       )}
 
       {/* Logs Tab */}

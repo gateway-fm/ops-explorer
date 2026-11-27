@@ -22,7 +22,12 @@ type Server struct {
 	port        int
 	rateLimiter *RateLimiter
 	router      *chi.Mux
+	// currency is the native currency symbol in transaction flow text.
+	currency string
 }
+
+// SetNetworkCurrency sets the native currency symbol used in transaction flow text.
+func (s *Server) SetNetworkCurrency(symbol string) { s.currency = symbol }
 
 // NewServer creates a new public API server. The gasTracker parameter
 // is retained for call-site compatibility but is ignored — gas prices
@@ -73,6 +78,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/transactions/{hash}/logs", s.handleGetTransactionLogs)
 		r.Get("/transactions/{hash}/transfers", s.handleGetTransactionTransfers)
 		r.Get("/transactions/{hash}/internal", s.handleGetTransactionInternalTxs)
+		r.Get("/transactions/{hash}/flow", s.handleGetTransactionFlow)
 
 		// Addresses
 		r.Get("/addresses/{address}", s.handleGetAddress)

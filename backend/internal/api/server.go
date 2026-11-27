@@ -106,6 +106,7 @@ func (s *Server) sourcifyBase() string {
 
 type ServerConfig struct {
 	SolcPath             string
+	NetworkCurrency      string // native currency symbol in transaction flow text
 	UseSourcifyFallback  bool
 	MetricsEnabled       bool
 	PostLoginRedirectURL string
@@ -531,6 +532,7 @@ func (s *Server) setupAPIRoutes(r chi.Router) {
 		r.Get("/{hash}/transfers", s.handleGetTransactionTransfers)
 		r.Get("/{hash}/logs", s.handleGetTransactionLogs)
 		r.Get("/{hash}/internal", s.handleGetTransactionInternalTxs)
+		r.Get("/{hash}/flow", s.handleGetTransactionFlow)
 	})
 
 	r.Route("/addresses/{address}", func(r chi.Router) {

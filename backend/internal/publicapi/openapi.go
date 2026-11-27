@@ -66,6 +66,11 @@ func buildPaths() map[string]any {
 				pathParam("hash", "string", "Transaction hash"),
 			}, arrayOf(ref("InternalTransaction"))),
 		},
+		"/transactions/{hash}/flow": map[string]any{
+			"get": endpoint("Get transaction flow", "Returns the transaction as ordered plain-language steps: calls, native and token transfers, and events. Built only from indexed data; capped at 250 steps.", []param{
+				pathParam("hash", "string", "Transaction hash"),
+			}, map[string]any{"type": "object"}),
+		},
 		"/addresses/{address}": map[string]any{
 			"get": endpoint("Get address info", "Returns address information including balance, tx count, and contract status.", []param{
 				pathParam("address", "string", "Ethereum address"),

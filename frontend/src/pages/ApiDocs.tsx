@@ -168,6 +168,22 @@ const endpointGroups: EndpointGroup[] = [
           ],
         },
       },
+      {
+        method: 'GET',
+        path: '/api/v1/transactions/{hash}/flow',
+        description: 'Get the transaction as ordered plain-language steps: calls, native and token transfers, and events. Built from indexed data only; at most 250 steps.',
+        params: [
+          { name: 'hash', type: 'string', required: true, description: 'Transaction hash, 0x-prefixed (path parameter).' },
+        ],
+        exampleResponse: {
+          summary: 'The sender 0x1234…5678 called deposit on Vault. It led to 3 internal calls, 1 token transfer and 2 events.',
+          steps: [
+            { index: 0, kind: 'call', from: '0x1234...', to: '0xabcd...', method: 'deposit', text: 'The sender 0x1234…5678 called deposit on Vault' },
+            { index: 1, kind: 'token_transfer', from: '0x1234...', to: '0xabcd...', token: { symbol: 'USDC', amount: '100' }, text: 'The sender 0x1234…5678 sent 100 USDC to Vault' },
+          ],
+          truncated: false,
+        },
+      },
     ],
   },
   {

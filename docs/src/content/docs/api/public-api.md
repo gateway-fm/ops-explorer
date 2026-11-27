@@ -80,8 +80,11 @@ return blocks before this number).
 | GET | `/api/v1/transactions/{hash}/logs` | Get transaction event logs |
 | GET | `/api/v1/transactions/{hash}/transfers` | Get token transfers in transaction |
 | GET | `/api/v1/transactions/{hash}/internal` | Get internal transactions |
+| GET | `/api/v1/transactions/{hash}/flow` | Get the transaction as ordered plain-language steps |
 
 **Query parameters for list:** `page` (int, default 1), `pageSize` (int, default 25, max 100).
+
+**Transaction flow.** `/flow` returns `summary`, `participants` (one per address, with a contract name or token symbol when known) and `steps` in execution order. Each step has a `kind` (`call`, `create`, `value_transfer`, `token_transfer`, `event`), `from`, `to`, a decoded `method` and `args` when the contract is verified or the function is a standard token one (otherwise the 4-byte selector or event topic), and `text`, the step in plain words. Identical consecutive steps are merged (`repeat`), and at most 250 steps are returned (`truncated`, `totalSteps`). The flow is built only from indexed data: internal calls appear only when the indexer ran with tracing on for that block, and events are placed inside the call that emitted them, since their exact position among that call's sub-calls is not recorded.
 
 ### Addresses
 

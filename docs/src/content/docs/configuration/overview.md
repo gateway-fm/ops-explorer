@@ -97,4 +97,5 @@ wallet's target there. See [Wallet Access](../../privacy/wallet-access/).
 | `ENABLE_PRICE` | `true` (standalone) | Enables the CoinGecko price refresher and `/price` data source. |
 | `PRICE_COIN_ID` | `ethereum` | CoinGecko coin id to price (set per chain). |
 | `PRICE_CURRENCY` | `usd` | Fiat currency for the price quote. |
+| `NETWORK_CURRENCY` | `ETH` | Native currency symbol in transaction flow text (api and public-api). Set it to the same value as the frontend's `VITE_NETWORK_CURRENCY`. |
 | `SSO_CLIENT_ID` | `explorer` | OAuth client id (privacy mode — must match the Open Privacy Suite). |

@@ -1,0 +1,393 @@
+package txflow
+
+import (
+	"context"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"math/big"
+	"strings"
+	"testing"
+
+	"explorer/internal/types"
+	"explorer/pkg/eth/crypto"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+const (
+	sender = "0x1111111111111111111111111111111111111111"
+	alice  = "0x2222222222222222222222222222222222222222"
+	vault  = "0x3333333333333333333333333333333333333333"
+	usdc   = "0x4444444444444444444444444444444444444444"
+	impl   = "0x5555555555555555555555555555555555555555"
+	oracle = "0x6666666666666666666666666666666666666666"
+)
+
+func ptr[T any](v T) *T { return &v }
+
+func word(v any) string {
+	switch x := v.(type) {
+	case string: // address
+		return strings.Repeat("0", 24) + strings.TrimPrefix(strings.ToLower(x), "0x")
+	case int:
+		return fmt.Sprintf("%064x", x)
+	case *big.Int:
+		return fmt.Sprintf("%064x", x)
+	}
+	panic("unsupported")
+}
+
+func topicOf(sig string) string { return "0x" + hex.EncodeToString(crypto.Keccak256([]byte(sig))) }
+func selectorOf(sig string) string {
+	return hex.EncodeToString(crypto.Keccak256([]byte(sig))[:4])
+}
+
+func transferLog(idx int, token, from, to string, amount int) types.Log {
+	return types.Log{
+		LogIndex: idx, Address: token,
+		Topic0: ptr(topicOf("Transfer(address,address,uint256)")),
+		Topic1: ptr("0x" + word(from)), Topic2: ptr("0x" + word(to)),
+		Data: word(amount),
+	}
+}
+
+func TestSimpleValueTransfer(t *testing.T) {
+	f := Build(Input{Tx: types.Transaction{
+		Hash: "0xabc", From: sender, To: ptr(alice), Value: "1500000000000000000", Status: 1,
+	}}, Options{Currency: "tTEST"})
+
+	require.Len(t, f.Steps, 1)
+	s := f.Steps[0]
+	assert.Equal(t, KindValueTransfer, s.Kind)
+	assert.Equal(t, "1.5", s.Amount)
+	assert.Equal(t, "The sender 0x1111…1111 sent 1.5 tTEST to 0x2222…2222", s.Text)
+	assert.Equal(t, "success", f.Status)
+	assert.False(t, f.HasCallData)
+	assert.Empty(t, f.Notes, "a plain transfer needs no note about missing call data")
+	require.Len(t, f.Participants, 2)
+	assert.Equal(t, "account", f.Participants[0].Kind)
+	assert.Equal(t, "The sender 0x1111…1111 sent 1.5 tTEST to 0x2222…2222.", f.Summary)
+}
+
+func TestTokenTransferUnverified(t *testing.T) {
+	input := selectorOf("transfer(address,uint256)") + word(alice) + word(100_000_000)
+	f := Build(Input{
+		Tx:        types.Transaction{Hash: "0xabc", From: sender, To: ptr(usdc), Value: "0", InputData: input, Status: 1},
+		Logs:      []types.Log{transferLog(0, usdc, sender, alice, 100_000_000)},
+		Transfers: []types.TokenTransfer{{LogIndex: 0, TokenAddress: usdc, From: sender, To: alice, Value: "100000000", TokenType: "ERC20"}},
+		Contracts: map[string]*types.Contract{usdc: {Address: usdc}},
+		Tokens:    map[string]*types.Token{usdc: {Address: usdc, Symbol: "USDC", Decimals: 6, TokenType: "ERC20"}},
+	}, Options{})
+
+	require.Len(t, f.Steps, 2)
+	call := f.Steps[0]
+	assert.Equal(t, "transfer", call.Method)
+	assert.Equal(t, DecodedCommon, call.Decoded)
+	assert.Equal(t, []Arg{{Name: "to", Type: "address", Value: alice}, {Name: "amount", Type: "uint256", Value: "100000000"}}, call.Args)
+	assert.Equal(t, "The sender 0x1111…1111 called transfer on the USDC token", call.Text)
+
+	tr := f.Steps[1]
+	assert.Equal(t, KindTokenTransfer, tr.Kind)
+	assert.Equal(t, "100", tr.Token.Amount)
+	assert.Equal(t, "The sender 0x1111…1111 sent 100 USDC to 0x2222…2222", tr.Text)
+	assert.Equal(t, "token", f.Participants[1].Kind)
+	assert.Equal(t, "USDC", f.Participants[1].Label)
+	assert.Contains(t, f.Notes[0], "No internal calls are recorded")
+}
+
+func TestUnknownSelectorAndEventFallBack(t *testing.T) {
+	f := Build(Input{
+		Tx:   types.Transaction{Hash: "0xabc", From: sender, To: ptr(vault), Value: "0", InputData: "aaa51e42" + word(1), Status: 1},
+		Logs: []types.Log{{LogIndex: 0, Address: vault, Topic0: ptr(topicOf("Mystery(uint256)")), Data: word(7)}},
+	}, Options{})
+	require.Len(t, f.Steps, 2)
+	assert.Equal(t, "0xaaa51e42", f.Steps[0].Method)
+	assert.Equal(t, "The sender 0x1111…1111 called function 0xaaa51e42 on 0x3333…3333", f.Steps[0].Text)
+	assert.Equal(t, KindEvent, f.Steps[1].Kind)
+	assert.Contains(t, f.Steps[1].Text, "reported event 0x")
+}
+
+// vaultABI is a verified contract with a function and an event.
+var vaultABI = json.RawMessage(`[
+ {"type":"function","name":"deposit","inputs":[{"name":"token","type":"address"},{"name":"amount","type":"uint256"}]},
+ {"type":"event","name":"Deposited","inputs":[{"name":"user","type":"address","indexed":true},{"name":"amount","type":"uint256","indexed":false}]}
+]`)
+
+// complexInput is a tx that calls a verified vault through a proxy: the vault pulls
+// tokens, reads an oracle many times, makes a failing call, then emits Deposited.
+func complexInput() Input {
+	deposit := selectorOf("deposit(address,uint256)") + word(usdc) + word(5_000_000)
+	pull := "0x" + selectorOf("transferFrom(address,address,uint256)") + word(sender) + word(vault) + word(5_000_000)
+	price := "0x" + selectorOf("latestAnswer()")
+	internal := []types.InternalTransaction{
+		{TraceAddress: "0", From: vault, To: ptr(impl), CallType: "delegatecall", Value: "0", Input: ptr("0x" + deposit)},
+		{TraceAddress: "0,0", From: vault, To: ptr(usdc), CallType: "call", Value: "0", Input: ptr(pull)},
+	}
+	for i := 1; i <= 30; i++ {
+		internal = append(internal, types.InternalTransaction{TraceAddress: fmt.Sprintf("0,%d", i), From: vault, To: ptr(oracle), CallType: "staticcall", Value: "0", Input: ptr(price)})
+	}
+	internal = append(internal,
+		types.InternalTransaction{TraceAddress: "0,31", From: vault, To: ptr(alice), CallType: "call", Value: "1000", Error: ptr("out of gas")},
+		types.InternalTransaction{TraceAddress: "0,32", From: vault, To: ptr(alice), CallType: "call", Value: "2000000000000000000"},
+	)
+	// Stored order is not guaranteed; Build must sort numerically ("0,10" after "0,9").
+	internal[3], internal[20] = internal[20], internal[3]
+	return Input{
+		Tx:       types.Transaction{Hash: "0xabc", From: sender, To: ptr(vault), Value: "0", InputData: deposit, Status: 1},
+		Internal: internal,
+		Logs: []types.Log{
+			transferLog(0, usdc, sender, vault, 5_000_000),
+			{LogIndex: 1, Address: vault, Topic0: ptr(topicOf("Deposited(address,uint256)")), Topic1: ptr("0x" + word(sender)), Data: word(5_000_000)},
+		},
+		Transfers: []types.TokenTransfer{{LogIndex: 0, TokenAddress: usdc, From: sender, To: vault, Value: "5000000", TokenType: "ERC20"}},
+		Contracts: map[string]*types.Contract{
+			vault:  {Address: vault, IsVerified: true, ContractName: ptr("Vault"), ABI: vaultABI},
+			impl:   {Address: impl},
+			usdc:   {Address: usdc},
+			oracle: {Address: oracle},
+		},
+		Tokens: map[string]*types.Token{usdc: {Address: usdc, Symbol: "USDC", Decimals: 6}},
+	}
+}
+
+func TestManyCallTrace(t *testing.T) {
+	f := Build(complexInput(), Options{})
+	require.True(t, f.HasCallData)
+
+	var kinds []string
+	for _, s := range f.Steps {
+		kinds = append(kinds, fmt.Sprintf("%s:%s:%d", s.Kind, s.Method, s.Repeat))
+	}
+	assert.Equal(t, []string{
+		"call:deposit:0",      // the sender calls the verified Vault
+		"call:deposit:0",      // Vault delegates to its implementation (decoded with Vault's ABI)
+		"call:transferFrom:0", // Vault pulls USDC
+		"token_transfer:Transfer:0",
+	}, kinds[:4])
+
+	assert.Equal(t, "Vault ran deposit using the code of contract 0x5555…5555", f.Steps[1].Text)
+	assert.Equal(t, "The sender 0x1111…1111 sent 5 USDC to Vault", f.Steps[3].Text)
+
+	// 30 identical oracle reads merge into one step.
+	reads := f.Steps[4]
+	assert.Equal(t, 30, reads.Repeat)
+	assert.True(t, reads.ReadOnly)
+	assert.Equal(t, "Vault read function "+"0x"+selectorOf("latestAnswer()")+" from contract 0x6666…6666 (30 times in a row)", reads.Text)
+
+	failed := f.Steps[5]
+	assert.Equal(t, "out of gas", failed.Error)
+	assert.Contains(t, failed.Text, "This call failed: out of gas")
+
+	sent := f.Steps[6]
+	assert.Equal(t, KindValueTransfer, sent.Kind)
+	assert.Equal(t, "Vault sent 2 ETH to 0x2222…2222", sent.Text)
+
+	// Deposited is emitted by Vault (via its implementation): shown at the end of its call.
+	ev := f.Steps[7]
+	assert.Equal(t, "Deposited", ev.Method)
+	assert.Equal(t, DecodedVerified, ev.Decoded)
+	assert.Equal(t, "Vault reported Deposited (user: the sender 0x1111…1111, amount: 5000000)", ev.Text)
+	assert.Equal(t, 1, ev.Depth, "emitted by Vault's code running in the delegatecall")
+	assert.Equal(t, 2, f.Steps[3].Depth, "the USDC transfer is emitted inside transferFrom")
+	assert.Len(t, f.Steps, 8)
+	for i, s := range f.Steps {
+		assert.Equal(t, i, s.Index)
+	}
+	assert.Contains(t, strings.Join(f.Notes, " "), "exact position")
+	assert.Equal(t, "The sender 0x1111…1111 called deposit on Vault. It led to 34 internal calls, 1 token transfer and 2 events.", f.Summary)
+}
+
+func TestRolledBackDescendants(t *testing.T) {
+	f := Build(Input{
+		Tx: types.Transaction{Hash: "0xabc", From: sender, To: ptr(vault), Value: "0", InputData: "deadbeef", Status: 0, RevertReason: ptr("not allowed")},
+		Internal: []types.InternalTransaction{
+			{TraceAddress: "0", From: vault, To: ptr(alice), CallType: "call", Value: "5"},
+		},
+	}, Options{})
+	assert.Equal(t, "failed", f.Status)
+	assert.Equal(t, "not allowed", f.Steps[0].Error)
+	assert.True(t, f.Steps[1].RolledBack)
+	assert.Contains(t, f.Steps[1].Text, "Undone, because a call above it failed")
+}
+
+func TestLogPlacementAfterSubcall(t *testing.T) {
+	// A pair contract sends tokens out, then emits Swap: Swap must follow the transfer.
+	pair := vault
+	in := Input{
+		Tx: types.Transaction{Hash: "0x1", From: sender, To: ptr(pair), Value: "0", InputData: "12345678", Status: 1},
+		Internal: []types.InternalTransaction{
+			{TraceAddress: "0", From: pair, To: ptr(usdc), CallType: "call", Value: "0", Input: ptr("0x" + selectorOf("transfer(address,uint256)") + word(alice) + word(1))},
+			{TraceAddress: "1", From: pair, To: ptr(usdc), CallType: "staticcall", Value: "0", Input: ptr("0x" + selectorOf("balanceOf(address)") + word(pair))},
+		},
+		Logs: []types.Log{
+			transferLog(0, usdc, pair, alice, 1),
+			{LogIndex: 1, Address: pair, Topic0: ptr(topicOf("Swap(uint256)")), Data: word(1)},
+		},
+	}
+	f := Build(in, Options{})
+	var order []string
+	for _, s := range f.Steps {
+		order = append(order, s.Method)
+	}
+	assert.Equal(t, []string{"0x12345678", "transfer", "Transfer", "balanceOf", "0x" + strings.TrimPrefix(topicOf("Swap(uint256)"), "0x")}, order)
+}
+
+func TestCapAndCollapse(t *testing.T) {
+	var internal []types.InternalTransaction
+	for i := 0; i < 2000; i++ {
+		// Alternate targets so nothing merges: every call is its own step.
+		to := alice
+		if i%2 == 1 {
+			to = oracle
+		}
+		internal = append(internal, types.InternalTransaction{TraceAddress: fmt.Sprint(i), From: vault, To: ptr(to), CallType: "staticcall", Value: "0", Input: ptr("0x12345678")})
+	}
+	f := Build(Input{Tx: types.Transaction{Hash: "0x1", From: sender, To: ptr(vault), Value: "0", InputData: "aabbccdd", Status: 1}, Internal: internal}, Options{})
+	assert.Len(t, f.Steps, DefaultMaxSteps)
+	assert.Equal(t, 2001, f.TotalSteps)
+	assert.True(t, f.Truncated)
+	assert.Contains(t, f.Notes[0], "Showing the first 250 of 2001 steps")
+	assert.LessOrEqual(t, len(f.Participants), 4)
+
+	same := make([]types.InternalTransaction, 5000)
+	for i := range same {
+		same[i] = types.InternalTransaction{TraceAddress: fmt.Sprint(i), From: vault, To: ptr(oracle), CallType: "staticcall", Value: "0", Input: ptr("0x12345678")}
+	}
+	f = Build(Input{Tx: types.Transaction{Hash: "0x1", From: sender, To: ptr(vault), Value: "0", InputData: "aabbccdd", Status: 1}, Internal: same}, Options{})
+	require.Len(t, f.Steps, 2)
+	assert.Equal(t, 5000, f.Steps[1].Repeat)
+	assert.False(t, f.Truncated)
+}
+
+func TestContractCreation(t *testing.T) {
+	f := Build(Input{Tx: types.Transaction{Hash: "0x1", From: sender, ContractAddress: ptr(vault), Value: "0", InputData: "6080", Status: 1}}, Options{})
+	require.Len(t, f.Steps, 1)
+	assert.Equal(t, KindCreate, f.Steps[0].Kind)
+	assert.Equal(t, "The sender 0x1111…1111 created a new contract at 0x3333…3333", f.Steps[0].Text)
+}
+
+func TestMintBurnAndNFT(t *testing.T) {
+	n := newNamer(Input{Tokens: map[string]*types.Token{usdc: {Symbol: "USDC", Decimals: 6}}})
+	mint := Step{Kind: KindTokenTransfer, From: zeroAddress, To: alice, Token: &TokenAmount{Address: usdc, Symbol: "USDC", Amount: "3", Raw: "3000000"}}
+	assert.Equal(t, "3 USDC were created (minted) for 0x2222…2222", stepText(mint, n, ""))
+	burn := Step{Kind: KindTokenTransfer, From: alice, To: zeroAddress, Token: &TokenAmount{Address: usdc, Symbol: "USDC", Amount: "3", Raw: "3000000"}}
+	assert.Equal(t, "0x2222…2222 destroyed (burned) 3 USDC", stepText(burn, n, ""))
+	nft := Step{Kind: KindTokenTransfer, From: alice, To: sender, Token: &TokenAmount{Address: impl, Standard: "ERC721", Raw: "1", TokenID: ptr("42")}}
+	assert.Equal(t, "0x2222…2222 sent tokens of 0x5555…5555 #42 to 0x1111…1111", stepText(nft, n, ""))
+}
+
+func TestDecodeInputs(t *testing.T) {
+	str := "hello"
+	params := []abiParam{
+		{Name: "a", Type: "int256"},
+		{Name: "pt", Type: "tuple", Components: []abiParam{{Type: "uint8"}, {Type: "uint8"}}},
+		{Name: "s", Type: "string"},
+		{Name: "ok", Type: "bool"},
+		{Name: "b4", Type: "bytes4"},
+	}
+	minus2 := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(2))
+	data := word(minus2) + word(1) + word(2) + word(6*32) + word(1) + "deadbeef" + strings.Repeat("0", 56) +
+		word(len(str)) + hex.EncodeToString([]byte(str)) + strings.Repeat("0", 64-2*len(str))
+	raw, err := hexBytes(data)
+	require.NoError(t, err)
+	args := decodeInputs(params, raw)
+	require.Len(t, args, 5)
+	assert.Equal(t, "-2", args[0].Value)
+	assert.Equal(t, "(uint8,uint8)", args[1].Type)
+	assert.Equal(t, "", args[1].Value)
+	assert.Equal(t, "hello", args[2].Value)
+	assert.Equal(t, "true", args[3].Value)
+	assert.Equal(t, "0xdeadbeef", args[4].Value)
+
+	// Truncated data yields fewer args, not a panic.
+	assert.Len(t, decodeInputs(params, raw[:40]), 1)
+	// A bogus offset for a string leaves its value empty.
+	bad, _ := hexBytes(word(1 << 40))
+	assert.Equal(t, []Arg{{Name: "s", Type: "string", Value: ""}}, decodeInputs([]abiParam{{Name: "s", Type: "string"}}, bad))
+}
+
+func TestParseABIStringForm(t *testing.T) {
+	quoted, _ := json.Marshal(string(vaultABI))
+	idx := parseABI(quoted)
+	_, ok := idx.function("0x" + selectorOf("deposit(address,uint256)"))
+	assert.True(t, ok)
+	assert.Empty(t, parseABI(json.RawMessage(`{not json`)).functions)
+}
+
+func TestFormatUnits(t *testing.T) {
+	for _, c := range []struct {
+		v    string
+		d    int
+		want string
+	}{{"1500000", 6, "1.5"}, {"1", 18, "0.000000000000000001"}, {"1000", 0, "1000"}, {"0", 6, "0"}, {"-25", 1, "-2.5"}} {
+		v, _ := new(big.Int).SetString(c.v, 10)
+		assert.Equal(t, c.want, formatUnits(v, c.d), c.v)
+	}
+}
+
+func TestMarkdown(t *testing.T) {
+	in := complexInput()
+	in.Contracts[vault].ContractName = ptr("Vault_[v2]*")
+	md := Build(in, Options{}).Markdown()
+	assert.Contains(t, md, "## Flow\n\n")
+	assert.Contains(t, md, "\n1. The sender 0x1111…1111 called deposit on Vault\\_\\[v2\\]\\*\n")
+	assert.Contains(t, md, "\n  2. Vault\\_\\[v2\\]\\* ran deposit")
+	assert.Contains(t, md, "> Events are shown")
+}
+
+// fakeSource implements Source over fixed data.
+type fakeSource struct {
+	in          Input
+	internalErr error
+	logsErr     error
+	lookups     int
+}
+
+func (f *fakeSource) GetTransaction(_ context.Context, hash string) (*types.Transaction, error) {
+	if hash != f.in.Tx.Hash {
+		return nil, nil
+	}
+	return &f.in.Tx, nil
+}
+func (f *fakeSource) GetInternalTransactionsByTx(context.Context, string) ([]types.InternalTransaction, error) {
+	return f.in.Internal, f.internalErr
+}
+func (f *fakeSource) GetLogsByTransaction(context.Context, string) ([]types.Log, error) {
+	return f.in.Logs, f.logsErr
+}
+func (f *fakeSource) GetTransfersByTransaction(context.Context, string) ([]types.TokenTransfer, error) {
+	return f.in.Transfers, nil
+}
+func (f *fakeSource) GetContract(_ context.Context, a string) (*types.Contract, error) {
+	return f.in.Contracts[a], nil
+}
+func (f *fakeSource) GetToken(_ context.Context, a string) (*types.Token, error) {
+	if t := f.in.Tokens[a]; t != nil {
+		return t, nil
+	}
+	return nil, errors.New("not a token")
+}
+
+func TestLoad(t *testing.T) {
+	src := &fakeSource{in: complexInput()}
+	f, err := Load(context.Background(), src, "0xabc", Options{})
+	require.NoError(t, err)
+	assert.Equal(t, "Vault reported Deposited (user: the sender 0x1111…1111, amount: 5000000)", f.Steps[len(f.Steps)-1].Text)
+	assert.Equal(t, "USDC", f.Steps[3].Token.Symbol)
+
+	_, err = Load(context.Background(), src, "0xother", Options{})
+	assert.ErrorIs(t, err, ErrNotFound)
+
+	src.internalErr = errors.New("indexer down")
+	f, err = Load(context.Background(), src, "0xabc", Options{})
+	require.NoError(t, err)
+	assert.False(t, f.HasCallData)
+	assert.Contains(t, strings.Join(f.Notes, " "), "Internal calls could not be read")
+
+	src.internalErr, src.logsErr = nil, errors.New("boom")
+	_, err = Load(context.Background(), src, "0xabc", Options{})
+	assert.Error(t, err)
+}
