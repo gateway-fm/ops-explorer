@@ -64,16 +64,32 @@ func (d *mdDoc) table(head []string, rows [][]string) {
 }
 
 // code writes a fenced block whose fence is longer than any backtick run in
-// body, so untrusted source code cannot close the block early.
+// body, so untrusted source code cannot close the block early. The body is
+// kept byte for byte (verified source must not be trimmed); only a final
+// newline is added when missing so the closing fence starts its own line.
 func (d *mdDoc) code(lang, body string) {
-	fence := "```"
-	for strings.Contains(body, fence) {
-		fence += "`"
-	}
+	fence := strings.Repeat("`", max(3, longestRun(body, '`')+1))
 	d.line(fence + lang)
-	d.line(strings.TrimRight(body, "\n"))
+	d.b.WriteString(body)
+	if !strings.HasSuffix(body, "\n") {
+		d.b.WriteByte('\n')
+	}
 	d.line(fence)
 	d.line("")
+}
+
+// longestRun is the length of the longest run of c in s, in one pass.
+func longestRun(s string, c byte) int {
+	best, cur := 0, 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == c {
+			cur++
+			best = max(best, cur)
+		} else {
+			cur = 0
+		}
+	}
+	return best
 }
 
 // url is the Markdown URL of an explorer page. path is the HTML page path

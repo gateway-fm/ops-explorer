@@ -19,3 +19,5 @@
 | [0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa](https://explorer.example/tx/0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/llm.md) | [120](https://explorer.example/block/120/llm.md) | 2025-11-27 13:00:00 UTC | [0x1111111111111111111111111111111111111111](https://explorer.example/address/0x1111111111111111111111111111111111111111/llm.md) | [0x3333333333333333333333333333333333333333](https://explorer.example/address/0x3333333333333333333333333333333333333333/llm.md) | 1.5 tEX | Success |
 
 [Older transactions](https://explorer.example/address/0x1111111111111111111111111111111111111111/llm.md?cursor=c2)
+
+More: [Token transfers](https://explorer.example/address/0x1111111111111111111111111111111111111111/llm.md?tab=transfers) · [Internal transactions](https://explorer.example/address/0x1111111111111111111111111111111111111111/llm.md?tab=internal) · [Logs](https://explorer.example/address/0x1111111111111111111111111111111111111111/llm.md?tab=logs)

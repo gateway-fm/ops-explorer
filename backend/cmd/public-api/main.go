@@ -104,11 +104,12 @@ func main() {
 
 	server := publicapi.NewServer(dataProvider, nil, chainInfo, port, rateLimit, rateWindow)
 	server.SetTrustedProxyHops(trustedHops)
-	// Title, currency and link origin of the `/llm.md` pages. All optional:
-	// without EXPLORER_PUBLIC_URL, links use the request's host.
+	// Title, currency and link origin of the `/llm.md` pages. All optional.
+	// NETWORK_NAME / NETWORK_CURRENCY are the names the frontend's settings
+	// already use; without EXPLORER_PUBLIC_URL, links use the request's host.
 	server.SetSiteInfo(publicapi.SiteInfo{
-		Name:           os.Getenv("EXPLORER_NAME"),
-		CurrencySymbol: os.Getenv("EXPLORER_CURRENCY_SYMBOL"),
+		NetworkName:    os.Getenv("NETWORK_NAME"),
+		CurrencySymbol: os.Getenv("NETWORK_CURRENCY"),
 		PublicURL:      os.Getenv("EXPLORER_PUBLIC_URL"),
 	})
 

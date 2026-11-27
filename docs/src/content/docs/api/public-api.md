@@ -31,8 +31,8 @@ The public API is available at `http://localhost:8082` by default.
 | `RATE_LIMIT` | `100` | Maximum requests per time window |
 | `RATE_LIMIT_WINDOW` | `1m` | Rate limit time window (e.g. `1m`, `30s`, `5m`) |
 | `RATE_LIMIT_TRUSTED_HOPS` | `1` | Proxies in front of the API that append to `X-Forwarded-For`. See [Rate limiting](#rate-limiting) |
-| `EXPLORER_NAME` | `Block Explorer` | Title of the [Markdown pages](../llm-md/) |
-| `EXPLORER_CURRENCY_SYMBOL` | `ETH` | Native currency shown on the Markdown pages |
+| `NETWORK_NAME` | — | Chain name in the title of the [Markdown pages](../llm-md/). Same variable the frontend uses |
+| `NETWORK_CURRENCY` | `ETH` | Native currency shown on the Markdown pages. Same variable the frontend uses |
 | `EXPLORER_PUBLIC_URL` | — | Public origin used in Markdown page links. When unset, the request's host is used |
 | `DATABASE_URL` | — | PostgreSQL connection string |
 | `RPC_URL` | — | Ethereum JSON-RPC endpoint |
@@ -50,6 +50,12 @@ one appended. Entries further left are set by the client and are ignored. Set
 the limiter then uses the TCP peer address. With too high a value, clients can
 choose their own key; with too low a value, every client shares the proxy's
 bucket.
+
+The limiter cannot tell a proxy from a client. If the API is reachable both
+directly and through a proxy, as in the Docker Compose files (port `8082` is
+published for the browser, and the frontend's nginx forwards the Markdown
+pages), a direct caller can send its own `X-Forwarded-For` and choose its key.
+For a public deployment, expose the API only through the proxy.
 
 | Response header | Description |
 |--------|-------------|

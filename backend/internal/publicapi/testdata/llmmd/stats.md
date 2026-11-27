@@ -3,7 +3,6 @@
 - **Total blocks:** 121
 - **Total transactions:** 3000
 - **Total addresses:** 40
-- **Total tokens:** 2
 - **Average block time:** 0.25 s
 
 ## Gas prices
@@ -15,7 +14,7 @@
 
 ## Daily activity (last 30 days, UTC)
 
-| Date | Transactions | Failed | Blocks | Avg block time (s) | Active addresses | New addresses | New contracts | Token transfers |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2026-11-26 | 1000 | 0 | 345600 | 0.25 | 15 | 3 | 0 | 40 |
-| 2026-11-25 | 900 | 3 | 340000 | 0.25 | 12 | 2 | 1 | 30 |
+| Date | Transactions | Blocks | Gas used | Average fee per transaction | Active addresses | New addresses |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2026-11-26 | 1000 | 345600 | 21000000 | 0.000042 tEX | 15 | 3 |
+| 2026-11-25 | 900 | 340000 | 18900000 | 0.000042 tEX | 12 | 2 |

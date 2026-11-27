@@ -1,4 +1,4 @@
-# Example Testnet Explorer
+# Example Testnet block explorer
 
 > Markdown version of this block explorer, for AI agents. Every explorer page has a Markdown version at its URL followed by `/llm.md`. The index of pages is at [llms.txt](https://explorer.example/llms.txt).
 
@@ -8,7 +8,6 @@
 - **Total blocks:** 121
 - **Total transactions:** 3000
 - **Total addresses:** 40
-- **Total tokens:** 2
 - **Average block time:** 0.25 s
 
 More: [Blocks](https://explorer.example/blocks/llm.md) · [Transactions](https://explorer.example/transactions/llm.md) · [Tokens](https://explorer.example/tokens/llm.md) · [Statistics](https://explorer.example/stats/llm.md)

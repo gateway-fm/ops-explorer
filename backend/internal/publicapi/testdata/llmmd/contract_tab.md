@@ -23,6 +23,7 @@
 contract TestToken {
     // a ``` fence inside source must not close the block
 }
+
 ````
 
 ## Deployed bytecode

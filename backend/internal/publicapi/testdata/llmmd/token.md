@@ -5,19 +5,19 @@
 - **Symbol:** TST\|X
 - **Type:** ERC20
 - **Decimals:** 6
-- **Total supply:** 1000000 TST\|X
+- **Total supply:** 10 TST\|X
 - **Holders:** 2
 - **Transfers:** 3
 - **Created in block:** [100](https://explorer.example/block/100/llm.md)
 - **Creation transaction:** [0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa](https://explorer.example/tx/0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/llm.md)
 
-## Top holders
+## Holders, largest first (page 1 of 1, 1 holders)
 
-| Address | Balance | Share |
+| Address | Balance | Share of supply |
 | --- | --- | --- |
-| [0x2222222222222222222222222222222222222222](https://explorer.example/address/0x2222222222222222222222222222222222222222/llm.md) | 2.5 TST\|X | 0.25% |
+| [0x2222222222222222222222222222222222222222](https://explorer.example/address/0x2222222222222222222222222222222222222222/llm.md) | 2.5 TST\|X | 25.00% |
 
-## Latest transfers
+## Transfers, newest first (page 1 of 1, 1 transfers)
 
 | Transaction | Block | Token | From | To | Amount |
 | --- | --- | --- | --- | --- | --- |

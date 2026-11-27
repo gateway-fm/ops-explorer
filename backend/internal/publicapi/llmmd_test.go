@@ -21,6 +21,9 @@ import (
 
 	"explorer/internal/api"
 	"explorer/internal/types"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var updateGolden = flag.Bool("update", false, "rewrite golden files")
@@ -39,14 +42,18 @@ func up(v uint64) *uint64 { return &v }
 // mdProvider serves one small, fixed chain. Unknown keys return nil (not found).
 type mdProvider struct {
 	api.DataProvider
-	fail error // when set, every read fails with it
+	fail        error // when set, every read fails with it
+	statsErr    error // GetChainStats fails
+	contractErr error // GetContract fails
+	blockTxs    int   // block header transaction count; 0 means 1
+	holderTotal int64 // token holder total; 0 means 1
 }
 
 func (p *mdProvider) block() *types.Block {
 	return &types.Block{
 		Number: 120, Hash: mdBlkHsh, ParentHash: "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
 		Timestamp: 1764248400, GasUsed: 50000, GasLimit: 100000, BaseFeePerGas: up(100000000),
-		TransactionCount: 1, Size: 812, Difficulty: "1", TotalDifficulty: "121", Nonce: "0x0000000000000000",
+		TransactionCount: max(p.blockTxs, 1), Size: 812, Difficulty: "1", TotalDifficulty: "121", Nonce: "0x0000000000000000",
 		Miner: mdAddrB, ExtraData: "0x", StateRoot: "0x01", TransactionsRoot: "0x02", ReceiptsRoot: "0x03",
 	}
 }
@@ -65,7 +72,7 @@ func (p *mdProvider) tx() *types.Transaction {
 func (p *mdProvider) token() *types.Token {
 	return &types.Token{
 		Address: mdToken, Symbol: "TST|X", Name: sp("Test [Token](http://evil.example) *bold*"), Decimals: 6,
-		TokenType: "ERC20", TotalSupply: sp("1000000000000"), HolderCount: 2, TransferCount: 3,
+		TokenType: "ERC20", TotalSupply: sp("10000000"), HolderCount: 2, TransferCount: 3,
 		BlockNumber: 100, CreationTx: sp(mdTxHash),
 	}
 }
@@ -74,7 +81,11 @@ func (p *mdProvider) GetChainStats(context.Context) (*types.ChainStats, error) {
 	if p.fail != nil {
 		return nil, p.fail
 	}
-	return &types.ChainStats{TotalBlocks: 121, TotalTransactions: 3000, TotalAddresses: 40, TotalTokens: 2, AvgBlockTime: 0.25}, nil
+	if p.statsErr != nil {
+		return nil, p.statsErr
+	}
+	// Only the fields the indexer fills in (no TotalTokens).
+	return &types.ChainStats{TotalBlocks: 121, TotalTransactions: 3000, TotalAddresses: 40, AvgBlockTime: 0.25}, nil
 }
 func (p *mdProvider) GetBlocks(context.Context, int, *uint64) ([]types.Block, error) {
 	if p.fail != nil {
@@ -160,6 +171,9 @@ func (p *mdProvider) GetToken(_ context.Context, a string) (*types.Token, error)
 	return p.token(), nil
 }
 func (p *mdProvider) GetContract(_ context.Context, a string) (*types.Contract, error) {
+	if p.contractErr != nil {
+		return nil, p.contractErr
+	}
 	if a != mdToken {
 		return nil, nil
 	}
@@ -168,7 +182,7 @@ func (p *mdProvider) GetContract(_ context.Context, a string) (*types.Contract, 
 		IsVerified: true, ContractName: sp("TestToken"), CompilerVersion: sp("v0.8.30+commit.73712a01"),
 		OptimizationUsed: func() *bool { b := true; return &b }(), OptimizationRuns: func() *int { n := 200; return &n }(),
 		EVMVersion: sp("cancun"), LicenseType: sp("MIT"),
-		SourceCode: sp("contract TestToken {\n    // a ``` fence inside source must not close the block\n}\n"),
+		SourceCode: sp("contract TestToken {\n    // a ``` fence inside source must not close the block\n}\n\n"),
 		ABI:        json.RawMessage(`[{"type":"function","name":"transfer","inputs":[{"type":"address"},{"type":"uint256"}]}, {"type":"event","name":"Transfer","inputs":[{"type":"address"},{"type":"address"},{"type":"uint256"}]}]`),
 	}, nil
 }
@@ -176,16 +190,31 @@ func (p *mdProvider) GetTokens(context.Context, int, int, string, string) ([]typ
 	return []types.Token{*p.token()}, 1, nil
 }
 func (p *mdProvider) GetTokenHolders(context.Context, string, int, int) ([]types.TokenHolder, int64, error) {
-	return []types.TokenHolder{{Address: mdAddrB, Balance: "2500000", Percentage: 0.25}}, 1, nil
+	// Percentage stays 0, as the indexer leaves it.
+	return []types.TokenHolder{{Address: mdAddrB, Balance: "2500000"}}, max(p.holderTotal, 1), nil
 }
 func (p *mdProvider) GetTransfersByToken(context.Context, string, int, int) ([]types.TokenTransfer, int64, error) {
 	return []types.TokenTransfer{{TxHash: mdTxHash, TokenAddress: mdToken, From: mdAddrA, To: mdAddrB, Value: "2500000", BlockNumber: 120, TokenType: "ERC20"}}, 1, nil
 }
 func (p *mdProvider) GetDailyStats(context.Context, time.Time, time.Time) ([]types.DailyStats, error) {
+	// Only the fields the indexer fills in.
 	return []types.DailyStats{
-		{Date: "2026-11-25", TotalTransactions: 900, TotalBlocks: 340000, AvgBlockTime: 0.25, ActiveAddresses: 12, NewAddresses: 2, NewContracts: 1, TokenTransferCount: 30, FailedTxs: 3},
-		{Date: "2026-11-26", TotalTransactions: 1000, TotalBlocks: 345600, AvgBlockTime: 0.25, ActiveAddresses: 15, NewAddresses: 3, TokenTransferCount: 40},
+		{Date: "2026-11-25", TotalTransactions: 900, TotalBlocks: 340000, TotalGasUsed: 18900000, AvgGasPrice: 42000000000000, ActiveAddresses: 12, NewAddresses: 2},
+		{Date: "2026-11-26", TotalTransactions: 1000, TotalBlocks: 345600, TotalGasUsed: 21000000, AvgGasPrice: 42000000000000, ActiveAddresses: 15, NewAddresses: 3},
 	}, nil
+}
+func (p *mdProvider) GetTransfersByAddress(_ context.Context, _ string, _ int, cursor string, _ *uint64) ([]types.TokenTransfer, string, error) {
+	if cursor == "bad" {
+		return nil, "", status.Error(codes.InvalidArgument, "invalid cursor")
+	}
+	return []types.TokenTransfer{{TxHash: mdTxHash, TokenAddress: mdToken, From: mdAddrA, To: mdAddrB, Value: "2500000", BlockNumber: 120, TokenType: "ERC20"}}, "t2", nil
+}
+func (p *mdProvider) GetInternalTransactionsByAddress(context.Context, string, int, int) ([]types.InternalTransaction, int64, error) {
+	return []types.InternalTransaction{{TxHash: mdTxHash, BlockNumber: 120, From: mdToken, To: sp(mdAddrA), Value: "1000", CallType: "call"}}, 30, nil
+}
+func (p *mdProvider) GetLogsByAddress(context.Context, string, int, int) ([]types.Log, int64, error) {
+	return []types.Log{{TxHash: mdTxHash, LogIndex: 0, Address: mdToken, BlockNumber: 120,
+		Topic0: sp("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"), Data: "0x2625a0"}}, 1, nil
 }
 func (p *mdProvider) GetGasPrices(context.Context, int) (*uint64, *uint64, *uint64, *uint64, error) {
 	return up(100000000), up(150000000), up(200000000), up(100000000), nil
@@ -193,7 +222,7 @@ func (p *mdProvider) GetGasPrices(context.Context, int) (*uint64, *uint64, *uint
 
 func mdServer(p api.DataProvider, limit int) *Server {
 	s := NewServer(p, nil, nil, 0, limit, time.Minute)
-	s.SetSiteInfo(SiteInfo{Name: "Example Testnet Explorer", CurrencySymbol: "tEX", PublicURL: "https://explorer.example/"})
+	s.SetSiteInfo(SiteInfo{NetworkName: "Example Testnet", CurrencySymbol: "tEX", PublicURL: "https://explorer.example/"})
 	return s
 }
 
@@ -228,19 +257,22 @@ func checkGolden(t *testing.T, name, got string) {
 func TestLLMMD_Pages(t *testing.T) {
 	s := mdServer(&mdProvider{}, 100000)
 	pages := map[string]string{
-		"home":         "/llm.md",
-		"blocks":       "/blocks/llm.md",
-		"block":        "/block/120/llm.md",
-		"block_hash":   "/block/" + mdBlkHsh + "/llm.md",
-		"transactions": "/transactions/llm.md",
-		"tx":           "/tx/" + mdTxHash + "/llm.md",
-		"wallet":       "/address/" + mdAddrA + "/llm.md",
-		"contract":     "/address/" + mdToken + "/llm.md",
-		"contract_tab": "/address/" + mdToken + "/llm.md?tab=contract",
-		"tokens":       "/tokens/llm.md",
-		"token":        "/token/" + mdToken + "/llm.md",
-		"stats":        "/stats/llm.md",
-		"llms_txt":     "/llms.txt",
+		"home":           "/llm.md",
+		"blocks":         "/blocks/llm.md",
+		"block":          "/block/120/llm.md",
+		"block_hash":     "/block/" + mdBlkHsh + "/llm.md",
+		"transactions":   "/transactions/llm.md",
+		"tx":             "/tx/" + mdTxHash + "/llm.md",
+		"wallet":         "/address/" + mdAddrA + "/llm.md",
+		"contract":       "/address/" + mdToken + "/llm.md",
+		"contract_tab":   "/address/" + mdToken + "/llm.md?tab=contract",
+		"addr_transfers": "/address/" + mdAddrA + "/llm.md?tab=transfers",
+		"addr_internal":  "/address/" + mdAddrA + "/llm.md?tab=internal",
+		"addr_logs":      "/address/" + mdAddrA + "/llm.md?tab=logs",
+		"tokens":         "/tokens/llm.md",
+		"token":          "/token/" + mdToken + "/llm.md",
+		"stats":          "/stats/llm.md",
+		"llms_txt":       "/llms.txt",
 	}
 	for name, path := range pages {
 		t.Run(name, func(t *testing.T) {
@@ -278,6 +310,9 @@ func TestLLMMD_StatusCodes(t *testing.T) {
 		{"/address/0xnothex/llm.md", 400, "# Bad request"},
 		{"/token/" + mdAddrA + "/llm.md", 404, "No token at"},
 		{"/address/" + mdAddrA + "/llm.md?tab=contract", 404, "No contract at"},
+		{"/address/" + mdAddrA + "/llm.md?tab=coin-history", 400, "no Markdown version"},
+		{"/address/" + mdAddrA + "/llm.md?tab=transfers&cursor=bad", 400, "A query parameter is not valid"},
+		{"/nope/llms.txt", 404, "# Not found"},
 	}
 	for _, c := range cases {
 		w := mdGet(s, c.path)
@@ -291,9 +326,11 @@ func TestLLMMD_StatusCodes(t *testing.T) {
 			t.Errorf("GET %s: body lacks %q:\n%s", c.path, c.want, w.Body)
 		}
 	}
-	// Non-Markdown unknown paths keep the plain 404.
-	if w := mdGet(s, "/nope"); w.Code != 404 || strings.Contains(w.Header().Get("Content-Type"), "markdown") {
-		t.Errorf("/nope: status %d, type %q", w.Code, w.Header().Get("Content-Type"))
+	// Non-Markdown unknown paths keep the plain 404, .md files included.
+	for _, path := range []string{"/nope", "/api/v1/README.md"} {
+		if w := mdGet(s, path); w.Code != 404 || strings.Contains(w.Header().Get("Content-Type"), "markdown") {
+			t.Errorf("%s: status %d, type %q", path, w.Code, w.Header().Get("Content-Type"))
+		}
 	}
 }
 
@@ -376,5 +413,57 @@ func TestFormatUnits(t *testing.T) {
 		if got := formatUnits(c.raw, c.dec); got != c.want {
 			t.Errorf("formatUnits(%q, %d) = %q, want %q", c.raw, c.dec, got, c.want)
 		}
+	}
+}
+
+// Missing data is reported as missing, never as zeros or "not verified".
+func TestLLMMD_UnavailableDataIsNotZero(t *testing.T) {
+	s := mdServer(&mdProvider{statsErr: errors.New("indexer down")}, 100000)
+	for _, path := range []string{"/llm.md", "/stats/llm.md"} {
+		body := mdGet(s, path).Body.String()
+		if strings.Contains(body, "Total blocks") || !strings.Contains(body, mdStatsUnavailable) {
+			t.Errorf("%s: totals not reported as unavailable:\n%s", path, body)
+		}
+	}
+	body := mdGet(mdServer(&mdProvider{contractErr: errors.New("timeout")}, 100000), "/address/"+mdToken+"/llm.md").Body.String()
+	if strings.Contains(body, "**Verified:** No") || !strings.Contains(body, "**Verified:** Unknown") {
+		t.Errorf("contract read failure shown as a verification result:\n%s", body)
+	}
+}
+
+func TestLLMMD_BlockCountsFromHeader(t *testing.T) {
+	body := mdGet(mdServer(&mdProvider{blockTxs: 300}, 100000), "/block/120/llm.md").Body.String()
+	if !strings.Contains(body, "## Transactions (300)") || !strings.Contains(body, "Showing the first 1 of 300 transactions.") {
+		t.Errorf("block page does not count from the header:\n%s", body)
+	}
+}
+
+func TestLLMMD_TokenPaging(t *testing.T) {
+	s := mdServer(&mdProvider{holderTotal: 60}, 100000)
+	if body := mdGet(s, "/token/"+mdToken+"/llm.md").Body.String(); !strings.Contains(body, "/llm.md?page=2)") {
+		t.Errorf("no next-page link with 60 holders:\n%s", body)
+	}
+	if body := mdGet(s, "/token/"+mdToken+"/llm.md?page=3").Body.String(); strings.Contains(body, "?page=4") {
+		t.Errorf("next-page link past the last page:\n%s", body)
+	}
+}
+
+func TestMDCode(t *testing.T) {
+	// A huge backtick run picks its fence in one pass, not one allocation per length.
+	run := strings.Repeat("`", 100000)
+	start := time.Now()
+	d := newMDDoc("")
+	d.code("", "x"+run+"y")
+	if time.Since(start) > time.Second {
+		t.Fatalf("fence selection took %s", time.Since(start))
+	}
+	if !strings.HasPrefix(d.String(), run+"`\n") {
+		t.Errorf("fence is not one longer than the longest run")
+	}
+	// The body is kept byte for byte, trailing blank lines included.
+	d = newMDDoc("")
+	d.code("", "a\n\n")
+	if got := d.String(); got != "```\na\n\n```\n" {
+		t.Errorf("code body changed: %q", got)
 	}
 }

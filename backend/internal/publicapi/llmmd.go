@@ -15,12 +15,15 @@ import (
 	"explorer/pkg/log"
 
 	"github.com/go-chi/chi/v5"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // SiteInfo describes the explorer to the Markdown pages.
 type SiteInfo struct {
-	// Name is the page title of the home page, e.g. "Example Testnet Explorer".
-	Name string
+	// NetworkName names the chain, e.g. "Example Testnet"; pages title the
+	// explorer "<NetworkName> block explorer".
+	NetworkName string
 	// CurrencySymbol is the native currency, e.g. "ETH".
 	CurrencySymbol string
 	// PublicURL is the explorer's public origin ("https://explorer.example").
@@ -29,10 +32,10 @@ type SiteInfo struct {
 }
 
 func (si SiteInfo) name() string {
-	if n := strings.TrimSpace(si.Name); n != "" {
-		return mdText(n)
+	if n := strings.TrimSpace(si.NetworkName); n != "" {
+		return mdText(n) + " block explorer"
 	}
-	return "Block Explorer"
+	return "Block explorer"
 }
 
 func (si SiteInfo) currency() string {
@@ -90,7 +93,11 @@ func writeMarkdown(w http.ResponseWriter, status int, body string) {
 // is logged, not echoed, so internal addresses never reach the page.
 func (s *Server) writeMDError(w http.ResponseWriter, r *http.Request, d *mdDoc, err error) {
 	var me *mdError
-	if errors.As(err, &me) {
+	if status.Code(err) == codes.InvalidArgument {
+		// The indexer rejected a client-supplied value (a malformed cursor).
+		me = &mdError{status: http.StatusBadRequest, title: "Bad request", detail: "A query parameter is not valid. Follow the page's own links for paging."}
+	}
+	if me != nil || errors.As(err, &me) {
 		out := newMDDoc(d.base)
 		out.h1(me.title)
 		out.para(me.detail)
@@ -105,10 +112,10 @@ func (s *Server) writeMDError(w http.ResponseWriter, r *http.Request, d *mdDoc, 
 	writeMarkdown(w, http.StatusServiceUnavailable, out.String())
 }
 
-// handleNotFound answers unknown `…/llm.md` and `…/llms.txt` paths in
-// Markdown, and everything else with the plain default 404.
+// handleNotFound answers unknown `…/llm.md` and `…/llms.txt` paths with a
+// Markdown 404, and everything else with the plain default 404.
 func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {
-	if strings.HasSuffix(r.URL.Path, "/llm.md") || strings.HasSuffix(r.URL.Path, ".md") {
+	if strings.HasSuffix(r.URL.Path, "/llm.md") || strings.HasSuffix(r.URL.Path, "/llms.txt") {
 		s.writeMDError(w, r, newMDDoc(s.baseURL(r)), mdNotFound("There is no explorer page at `"+mdCodeSpan(r.URL.Path)+"`."))
 		return
 	}
@@ -155,8 +162,9 @@ func (s *Server) handleLLMsTxt(w http.ResponseWriter, r *http.Request) {
 	d.line("- Block: `" + base + "/block/<number or hash>/llm.md`")
 	d.line("- Transaction: `" + base + "/tx/<hash>/llm.md`: status, value, fee, token transfers, internal transactions, logs, input")
 	d.line("- Address: `" + base + "/address/<address>/llm.md`: balance, token holdings, recent transactions; older ones via the page's `?cursor=` link")
+	d.line("- Address tabs: `" + base + "/address/<address>/llm.md?tab=transfers` (also `tab=internal`, `tab=logs`): token transfers, internal transactions, logs")
 	d.line("- Contract: `" + base + "/address/<address>/llm.md?tab=contract`: verification, ABI, source code, bytecode")
-	d.line("- Token: `" + base + "/token/<contract address>/llm.md`: supply, holders, latest transfers")
+	d.line("- Token: `" + base + "/token/<contract address>/llm.md`: supply, holders, transfers; more via `?page=<n>`")
 	d.line("")
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")

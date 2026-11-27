@@ -111,9 +111,15 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 // clientIP is the rate-limit key. Behind trustedHops proxies it is the
 // address the outermost trusted proxy appended to X-Forwarded-For (the
 // trustedHops-th entry from the right); a client can prepend anything it
-// likes to the header, so the leftmost entry is never used. When the header
-// has fewer entries than that, or the entry is not an IP, the request did
-// not come through the proxies and the TCP peer is used.
+// likes to the header, so entries left of that one are never used. When
+// the header has fewer entries, or that entry is not an IP, the TCP peer is
+// used.
+//
+// The limiter cannot tell a proxy from a client: a caller that reaches the
+// service directly while trustedHops > 0 can send its own header and choose
+// its key. Where the API is reachable both directly and through a proxy,
+// only the proxied path is protected; set trustedHops to 0 if direct access
+// is the one that matters.
 func (rl *RateLimiter) clientIP(r *http.Request) string {
 	if rl.trustedHops > 0 {
 		var hops []string

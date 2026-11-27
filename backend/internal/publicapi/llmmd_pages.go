@@ -21,6 +21,7 @@ import (
 
 	"explorer/internal/types"
 	"explorer/pkg/eth/common"
+	"explorer/pkg/log"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -191,11 +192,11 @@ func (s *Server) mdHome(ctx context.Context, d *mdDoc, _ string, _ url.Values) e
 	)
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		st, err := s.provider.GetChainStats(gctx)
-		if err != nil || st == nil {
-			st = &types.ChainStats{}
+		// Optional: on failure the totals are reported as unavailable, never
+		// as zeros an agent would read as facts.
+		if st, err := s.provider.GetChainStats(gctx); err == nil {
+			stats = st
 		}
-		stats = st
 		return nil
 	})
 	g.Go(func() (err error) {
@@ -223,6 +224,9 @@ func (s *Server) mdHome(ctx context.Context, d *mdDoc, _ string, _ url.Values) e
 		{"Chain ID", chainID},
 		{"Native currency", s.site.currency()},
 	}, statsFields(stats)...)...)
+	if stats == nil {
+		d.para(mdStatsUnavailable)
+	}
 	d.para("More: " + d.link("Blocks", "/blocks") + " · " + d.link("Transactions", "/transactions") + " · " + d.link("Tokens", "/tokens") + " · " + d.link("Statistics", "/stats"))
 
 	d.h2("Latest blocks")
@@ -232,12 +236,18 @@ func (s *Server) mdHome(ctx context.Context, d *mdDoc, _ string, _ url.Values) e
 	return nil
 }
 
+const mdStatsUnavailable = "Network totals are unavailable right now."
+
+// statsFields lists the chain totals the indexer provides. TotalTokens is
+// not among them (it is always zero there), so it is not shown.
 func statsFields(st *types.ChainStats) []mdField {
+	if st == nil {
+		return nil
+	}
 	return []mdField{
 		{"Total blocks", strconv.FormatInt(st.TotalBlocks, 10)},
 		{"Total transactions", strconv.FormatInt(st.TotalTransactions, 10)},
 		{"Total addresses", strconv.FormatInt(st.TotalAddresses, 10)},
-		{"Total tokens", strconv.FormatInt(st.TotalTokens, 10)},
 		{"Average block time", strconv.FormatFloat(st.AvgBlockTime, 'f', 2, 64) + " s"},
 	}
 }
@@ -430,14 +440,16 @@ func (s *Server) mdBlock(ctx context.Context, d *mdDoc, id string, _ url.Values)
 	nav = append(nav, d.link("Next block", "/block/"+u64(block.Number+1)))
 	d.para(strings.Join(nav, " · "))
 
-	d.h2(fmt.Sprintf("Transactions (%d)", len(txs)))
+	// The header count is the total; the list may be one indexer page.
+	total := max(block.TransactionCount, len(txs))
+	d.h2(fmt.Sprintf("Transactions (%d)", total))
 	shown := txs
 	if len(shown) > mdMaxBlockTxs {
 		shown = shown[:mdMaxBlockTxs]
 	}
 	s.txTable(d, shown, false)
-	if len(txs) > len(shown) {
-		d.para(fmt.Sprintf("Showing the first %d of %d transactions.", len(shown), len(txs)))
+	if len(shown) < total {
+		d.para(fmt.Sprintf("Showing the first %d of %d transactions.", len(shown), total))
 	}
 	return nil
 }
@@ -585,15 +597,9 @@ func (s *Server) mdTransaction(ctx context.Context, d *mdDoc, id string, _ url.V
 		}
 		d.line(fmt.Sprintf("### Log %d", l.LogIndex))
 		d.line("")
-		topics := []string{}
-		for _, t := range []*string{l.Topic0, l.Topic1, l.Topic2, l.Topic3} {
-			if t != nil && *t != "" {
-				topics = append(topics, "`"+mdCodeSpan(*t)+"`")
-			}
-		}
 		d.fields(
 			mdField{"Address", d.addr(l.Address)},
-			mdField{"Topics", strings.Join(topics, ", ")},
+			mdField{"Topics", logTopics(l)},
 			mdField{"Data", "`" + mdCodeSpan(l.Data) + "`"},
 		)
 	}
@@ -627,7 +633,7 @@ func (s *Server) transfersTable(d *mdDoc, transfers []types.TokenTransfer, meta 
 		if t.TokenID != nil && *t.TokenID != "" {
 			amount = "token ID " + mdText(*t.TokenID)
 			if t.TokenType == "ERC1155" {
-				amount = tokenAmountPlain(string(t.Value)) + " × " + amount
+				amount = formatUnits(string(t.Value), 0) + " × " + amount
 			}
 		}
 		r := []string{}
@@ -640,8 +646,6 @@ func (s *Server) transfersTable(d *mdDoc, transfers []types.TokenTransfer, meta 
 	d.table(head, rows)
 }
 
-func tokenAmountPlain(raw string) string { return formatUnits(raw, 0) }
-
 // --- Address ---
 
 func (s *Server) mdAddress(ctx context.Context, d *mdDoc, id string, q url.Values) error {
@@ -649,8 +653,18 @@ func (s *Server) mdAddress(ctx context.Context, d *mdDoc, id string, q url.Value
 		return mdBadRequest("An address is 0x followed by 40 hex characters.")
 	}
 	address := common.HexToAddress(id).Hex()
-	if q.Get("tab") == "contract" {
+	switch q.Get("tab") {
+	case "contract":
 		return s.mdContract(ctx, d, address)
+	case "transfers":
+		return s.mdAddressTransfers(ctx, d, address, q)
+	case "internal":
+		return s.mdAddressInternal(ctx, d, address, q)
+	case "logs":
+		return s.mdAddressLogs(ctx, d, address, q)
+	case "", "details", "transactions", "tokens":
+	default:
+		return mdBadRequest("This address tab has no Markdown version. Tabs: `transactions` (default), `transfers`, `internal`, `logs`, `contract`.")
 	}
 	cursor := q.Get("cursor")
 
@@ -684,10 +698,13 @@ func (s *Server) mdAddress(ctx context.Context, d *mdDoc, id string, q url.Value
 		return err
 	}
 	isContract := len(code) > 0 && string(code) != "0x"
+	var contractErr error
 	if isContract {
-		c, err := s.provider.GetContract(ctx, address)
-		if err == nil {
-			contract = c
+		// The indexer answers (nil, nil) for "no contract record"; an error
+		// is a failed read, reported as unknown rather than "not verified".
+		contract, contractErr = s.provider.GetContract(ctx, address)
+		if contractErr != nil {
+			log.Warn("llm.md contract read failed", "address", address, "error", contractErr)
 		}
 	}
 	if stats == nil {
@@ -718,7 +735,10 @@ func (s *Server) mdAddress(ctx context.Context, d *mdDoc, id string, q url.Value
 
 	if isContract {
 		d.h2("Contract")
-		if contract != nil && contract.IsVerified {
+		switch {
+		case contractErr != nil:
+			d.fields(mdField{"Verified", "Unknown (contract data is unavailable right now)"})
+		case contract != nil && contract.IsVerified:
 			d.fields(
 				mdField{"Verified", "Yes"},
 				mdField{"Name", mdText(optStr(contract.ContractName))},
@@ -729,7 +749,7 @@ func (s *Server) mdAddress(ctx context.Context, d *mdDoc, id string, q url.Value
 			if fns := abiSignatures(contract.ABI); len(fns) > 0 {
 				d.para("Functions and events: " + strings.Join(fns, ", "))
 			}
-		} else {
+		default:
 			creator, creationTx := "", ""
 			if contract != nil {
 				creator, creationTx = d.addr(contract.Creator), d.tx(contract.CreationTx)
@@ -787,7 +807,96 @@ func (s *Server) mdAddress(ctx context.Context, d *mdDoc, id string, q url.Value
 	if next != "" {
 		d.para("[Older transactions](" + d.urlQ("/address/"+address, "cursor="+url.QueryEscape(next)) + ")")
 	}
+	base := "/address/" + address
+	d.para("More: [Token transfers](" + d.urlQ(base, "tab=transfers") + ") · [Internal transactions](" +
+		d.urlQ(base, "tab=internal") + ") · [Logs](" + d.urlQ(base, "tab=logs") + ")")
 	return nil
+}
+
+func (s *Server) mdAddressTransfers(ctx context.Context, d *mdDoc, address string, q url.Values) error {
+	cursor := q.Get("cursor")
+	transfers, next, err := s.provider.GetTransfersByAddress(ctx, address, mdListSize, cursor, nil)
+	if err != nil {
+		return err
+	}
+	addrs := make([]string, 0, len(transfers))
+	for _, t := range transfers {
+		addrs = append(addrs, t.TokenAddress)
+	}
+	meta := s.tokenMeta(ctx, addrs)
+	d.h1("Token transfers of " + address)
+	d.para("Address: " + d.addr(address) + ". Newest first.")
+	if len(transfers) == 0 {
+		d.para("None.")
+	} else {
+		s.transfersTable(d, transfers, meta, true)
+	}
+	if next != "" {
+		d.para("[Older transfers](" + d.urlQ("/address/"+address, "tab=transfers&cursor="+url.QueryEscape(next)) + ")")
+	}
+	return nil
+}
+
+func (s *Server) mdAddressInternal(ctx context.Context, d *mdDoc, address string, q url.Values) error {
+	page := parseQueryInt(q, "page", 1)
+	items, total, err := s.provider.GetInternalTransactionsByAddress(ctx, address, mdListSize, (page-1)*mdListSize)
+	if err != nil {
+		return err
+	}
+	pages := computeTotalPages(total, mdListSize)
+	d.h1("Internal transactions of " + address)
+	d.para(fmt.Sprintf("Address: %s. Page %d of %d (%d internal transactions).", d.addr(address), page, pages, total))
+	if len(items) == 0 {
+		d.para("None.")
+	} else {
+		rows := make([][]string, 0, len(items))
+		for _, it := range items {
+			rows = append(rows, []string{
+				d.tx(it.TxHash), d.block(it.BlockNumber), mdText(it.CallType), d.addr(it.From), d.addr(optStr(it.To)),
+				s.native(string(it.Value)), mdText(optStr(it.Error)),
+			})
+		}
+		d.table([]string{"Transaction", "Block", "Type", "From", "To", "Value", "Error"}, rows)
+	}
+	if page < pages {
+		d.para("[Next page](" + d.urlQ("/address/"+address, "tab=internal&page="+strconv.Itoa(page+1)) + ")")
+	}
+	return nil
+}
+
+func (s *Server) mdAddressLogs(ctx context.Context, d *mdDoc, address string, q url.Values) error {
+	page := parseQueryInt(q, "page", 1)
+	logs, total, err := s.provider.GetLogsByAddress(ctx, address, mdListSize, (page-1)*mdListSize)
+	if err != nil {
+		return err
+	}
+	pages := computeTotalPages(total, mdListSize)
+	d.h1("Logs emitted by " + address)
+	d.para(fmt.Sprintf("Address: %s. Page %d of %d (%d logs).", d.addr(address), page, pages, total))
+	if len(logs) == 0 {
+		d.para("None.")
+	} else {
+		rows := make([][]string, 0, len(logs))
+		for _, l := range logs {
+			rows = append(rows, []string{d.tx(l.TxHash), d.block(l.BlockNumber), strconv.Itoa(l.LogIndex), logTopics(l), "`" + mdCodeSpan(l.Data) + "`"})
+		}
+		d.table([]string{"Transaction", "Block", "Log index", "Topics", "Data"}, rows)
+	}
+	if page < pages {
+		d.para("[Next page](" + d.urlQ("/address/"+address, "tab=logs&page="+strconv.Itoa(page+1)) + ")")
+	}
+	return nil
+}
+
+// logTopics renders a log's non-empty topics as code spans.
+func logTopics(l types.Log) string {
+	topics := []string{}
+	for _, t := range []*string{l.Topic0, l.Topic1, l.Topic2, l.Topic3} {
+		if t != nil && *t != "" {
+			topics = append(topics, "`"+mdCodeSpan(*t)+"`")
+		}
+	}
+	return strings.Join(topics, ", ")
 }
 
 func (s *Server) mdContract(ctx context.Context, d *mdDoc, address string) error {
@@ -895,7 +1004,7 @@ func mdCodeSpan(s string) string {
 
 // --- Token ---
 
-func (s *Server) mdToken(ctx context.Context, d *mdDoc, id string, _ url.Values) error {
+func (s *Server) mdToken(ctx context.Context, d *mdDoc, id string, q url.Values) error {
 	if !common.IsHexAddress(id) {
 		return mdBadRequest("A token is identified by its contract address: 0x followed by 40 hex characters.")
 	}
@@ -907,17 +1016,21 @@ func (s *Server) mdToken(ctx context.Context, d *mdDoc, id string, _ url.Values)
 	if t == nil {
 		return mdNotFound("No token at " + address + ". If it is an ordinary address, see " + d.addr(address) + ".")
 	}
+	// One ?page= pages both lists, like the JSON API's offset paging.
+	page := parseQueryInt(q, "page", 1)
+	offset := (page - 1) * mdListSize
 	var (
-		holders   []types.TokenHolder
-		transfers []types.TokenTransfer
+		holders                  []types.TokenHolder
+		transfers                []types.TokenTransfer
+		holderTotal, transferTot int64
 	)
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() (err error) {
-		holders, _, err = s.provider.GetTokenHolders(gctx, address, mdListSize, 0)
+		holders, holderTotal, err = s.provider.GetTokenHolders(gctx, address, mdListSize, offset)
 		return err
 	})
 	g.Go(func() (err error) {
-		transfers, _, err = s.provider.GetTransfersByToken(gctx, address, mdListSize, 0)
+		transfers, transferTot, err = s.provider.GetTransfersByToken(gctx, address, mdListSize, offset)
 		return err
 	})
 	if err := g.Wait(); err != nil {
@@ -948,24 +1061,45 @@ func (s *Server) mdToken(ctx context.Context, d *mdDoc, id string, _ url.Values)
 		mdField{"Creation transaction", d.tx(optStr(t.CreationTx))},
 	)
 
-	d.h2("Top holders")
+	holderPages := computeTotalPages(holderTotal, mdListSize)
+	transferPages := computeTotalPages(transferTot, mdListSize)
+
+	d.h2(fmt.Sprintf("Holders, largest first (page %d of %d, %d holders)", page, holderPages, holderTotal))
 	if len(holders) == 0 {
 		d.para("None.")
 	} else {
 		rows := make([][]string, 0, len(holders))
 		for _, h := range holders {
-			rows = append(rows, []string{d.addr(h.Address), tokenAmount(string(h.Balance), t), strconv.FormatFloat(h.Percentage, 'f', 2, 64) + "%"})
+			rows = append(rows, []string{d.addr(h.Address), tokenAmount(string(h.Balance), t), supplyShare(string(h.Balance), t)})
 		}
-		d.table([]string{"Address", "Balance", "Share"}, rows)
+		d.table([]string{"Address", "Balance", "Share of supply"}, rows)
 	}
 
-	d.h2("Latest transfers")
+	d.h2(fmt.Sprintf("Transfers, newest first (page %d of %d, %d transfers)", page, transferPages, transferTot))
 	if len(transfers) == 0 {
 		d.para("None.")
 	} else {
 		s.transfersTable(d, transfers, map[string]*types.Token{strings.ToLower(address): t}, true)
 	}
+	if page < max(holderPages, transferPages) {
+		d.para("[Next page](" + d.urlQ("/token/"+address, "page="+strconv.Itoa(page+1)) + ")")
+	}
 	return nil
+}
+
+// supplyShare is balance as a percentage of the token's total supply, or ""
+// when the supply is unknown or zero. The indexer does not send a share.
+func supplyShare(balance string, t *types.Token) string {
+	if t == nil || t.TotalSupply == nil {
+		return ""
+	}
+	sup, ok1 := new(big.Int).SetString(strings.TrimSpace(*t.TotalSupply), 10)
+	bal, ok2 := new(big.Int).SetString(strings.TrimSpace(balance), 10)
+	if !ok1 || !ok2 || sup.Sign() <= 0 {
+		return ""
+	}
+	r := new(big.Rat).SetFrac(new(big.Int).Mul(bal, big.NewInt(100)), sup)
+	return r.FloatString(2) + "%"
 }
 
 // --- Stats ---
@@ -981,11 +1115,11 @@ func (s *Server) mdStats(ctx context.Context, d *mdDoc, _ string, _ url.Values) 
 	from := to.AddDate(0, 0, -30)
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		st, err := s.provider.GetChainStats(gctx)
-		if err != nil || st == nil {
-			st = &types.ChainStats{}
+		// Optional: on failure the totals are reported as unavailable, never
+		// as zeros an agent would read as facts.
+		if st, err := s.provider.GetChainStats(gctx); err == nil {
+			stats = st
 		}
-		stats = st
 		return nil
 	})
 	g.Go(func() (err error) { daily, err = s.provider.GetDailyStats(gctx, from, to); return err })
@@ -1003,6 +1137,9 @@ func (s *Server) mdStats(ctx context.Context, d *mdDoc, _ string, _ url.Values) 
 
 	d.h1("Chain statistics")
 	d.fields(statsFields(stats)...)
+	if stats == nil {
+		d.para(mdStatsUnavailable)
+	}
 
 	if gas[1] != nil {
 		d.h2("Gas prices")
@@ -1026,15 +1163,17 @@ func (s *Server) mdStats(ctx context.Context, d *mdDoc, _ string, _ url.Values) 
 		return nil
 	}
 	sort.Slice(daily, func(i, j int) bool { return daily[i].Date > daily[j].Date })
+	// Only the columns the indexer fills in; the others in DailyStats are
+	// always zero there and would read as measured zeros.
 	rows := make([][]string, 0, len(daily))
 	for _, ds := range daily {
 		rows = append(rows, []string{
-			mdText(ds.Date), strconv.Itoa(ds.TotalTransactions), strconv.Itoa(ds.FailedTxs), strconv.Itoa(ds.TotalBlocks),
-			strconv.FormatFloat(ds.AvgBlockTime, 'f', 2, 64), strconv.Itoa(ds.ActiveAddresses), strconv.Itoa(ds.NewAddresses),
-			strconv.Itoa(ds.NewContracts), strconv.Itoa(ds.TokenTransferCount),
+			mdText(ds.Date), strconv.Itoa(ds.TotalTransactions), strconv.Itoa(ds.TotalBlocks),
+			strconv.FormatInt(ds.TotalGasUsed, 10), s.native(strconv.FormatInt(ds.AvgGasPrice, 10)),
+			strconv.Itoa(ds.ActiveAddresses), strconv.Itoa(ds.NewAddresses),
 		})
 	}
-	d.table([]string{"Date", "Transactions", "Failed", "Blocks", "Avg block time (s)", "Active addresses", "New addresses", "New contracts", "Token transfers"}, rows)
+	d.table([]string{"Date", "Transactions", "Blocks", "Gas used", "Average fee per transaction", "Active addresses", "New addresses"}, rows)
 	return nil
 }
 
