@@ -54,4 +54,27 @@ describe('parseSources', () => {
     const src = 'contract A {}\n// File: not/a/header.sol\n';
     expect(parseSources(src, 'A')).toEqual([{ path: 'A.sol', content: src }]);
   });
+
+  it('does not split verifier output on a // File: comment inside a contract body', () => {
+    const raw =
+      '// File: contracts/Token.sol\ncontract Token {\n\n// File: contracts/Fake.sol\n  uint256 x;\n}\n\n';
+    expect(parseSources(raw, 'Token')).toEqual([{ path: 'Token.sol', content: raw }]);
+  });
+
+  it('does not split verifier output on a // File: comment inside a block comment', () => {
+    const raw =
+      '// File: contracts/Token.sol\n/* notes\n\n// File: contracts/Fake.sol\n{ */\ncontract Token {}\n\n';
+    expect(parseSources(raw, 'Token')).toEqual([{ path: 'Token.sol', content: raw }]);
+  });
+
+  it('keeps a // File: line that is not on its own paragraph or not a path inside its file', () => {
+    const raw =
+      '// File: contracts/Token.sol\ncontract A {}\n// File: contracts/B.sol\n\n// File: notes on B\ncontract Token {}\n\n';
+    expect(parseSources(raw, 'Token')).toEqual([
+      {
+        path: 'contracts/Token.sol',
+        content: 'contract A {}\n// File: contracts/B.sol\n\n// File: notes on B\ncontract Token {}\n',
+      },
+    ]);
+  });
 });

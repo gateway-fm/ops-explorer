@@ -16,17 +16,20 @@ type TabId = 'details' | 'transactions' | 'internal';
 export function BlockDetail() {
   const { number } = useParams<{ number: string }>();
   const [activeTab, setActiveTab] = useState<TabId>('details');
+  // The number stays a string: parseInt rounds values above 2^53. The API
+  // takes decimal only, so anything else is not found without a request.
+  const valid = !!number && /^\d+$/.test(number);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['block', number],
-    queryFn: () => api.getBlock(parseInt(number!)),
-    enabled: !!number,
+    queryFn: () => api.getBlock(number!),
+    enabled: valid,
   });
 
   const { data: internalTxs } = useQuery({
     queryKey: ['block-internal-txs', number],
-    queryFn: () => api.getBlockInternalTxs(parseInt(number!)),
-    enabled: !!number,
+    queryFn: () => api.getBlockInternalTxs(number!),
+    enabled: valid,
   });
 
   // Batch-check removed since visibility metadata is locally injected in transactions and logs

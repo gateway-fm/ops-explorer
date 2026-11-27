@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import type { ReactNode } from 'react';
@@ -17,6 +17,8 @@ import type { ReactNode } from 'react';
 // The api client method getAddress is made to reject with a 403-style Error
 // (matching fetchAPI's "API error: 403"). Other queries are harmless.
 const mockGetAddress = vi.fn();
+const mockGetBalances = vi.fn();
+const mockUseTokenMap = vi.fn<(addresses: string[]) => Record<string, never>>(() => ({}));
 
 vi.mock('../lib/api', () => {
   const empty = () => Promise.resolve({ data: [], hasMore: false });
@@ -24,7 +26,7 @@ vi.mock('../lib/api', () => {
     api: {
       getAddress: () => mockGetAddress(),
       getContract: () => Promise.resolve(null),
-      getAddressTokenBalances: () => Promise.resolve([]),
+      getAddressTokenBalances: () => mockGetBalances(),
       getToken: () => Promise.resolve(null),
       getAddressTransactions: empty,
       getAddressTransfers: empty,
@@ -46,7 +48,7 @@ vi.mock('../lib/runtimeConfig', () => ({
 
 // useTokenMap hits the network otherwise; stub it.
 vi.mock('../hooks/useTokenMap', () => ({
-  useTokenMap: () => ({}),
+  useTokenMap: (addresses: string[]) => mockUseTokenMap(addresses),
 }));
 
 // Tooltip provider (Radix needs a provider); render children inline.
@@ -76,6 +78,7 @@ function renderAt(addr: string) {
 describe('Address page — restricted card', () => {
   beforeEach(() => {
     mockGetAddress.mockReset();
+    mockGetBalances.mockReset().mockResolvedValue([]);
   });
 
   it('renders the "Address restricted" card on a 403', async () => {
@@ -103,5 +106,42 @@ describe('Address page — restricted card', () => {
       expect(screen.getByText(/Address not found/i)).toBeInTheDocument();
     });
     expect(screen.queryByText('Address restricted')).not.toBeInTheDocument();
+  });
+});
+
+describe('Address page — overview', () => {
+  const addr = '0x407d73d8a49eeb85d32cf465507dd71d507100c1';
+  beforeEach(() => {
+    mockGetAddress.mockReset().mockResolvedValue({
+      address: addr, balance: '0', txCount: 0, isContract: false, tokenTransferCount: 0, internalTxCount: 0,
+    });
+    mockGetBalances.mockReset();
+    mockUseTokenMap.mockClear();
+  });
+
+  it('bounds the token metadata lookups to a few holdings', async () => {
+    const holdings = Array.from({ length: 25 }, (_, i) => ({
+      address: addr, tokenAddress: '0x' + (i + 1).toString(16).padStart(40, '0'), blockNumber: 1, balance: '1',
+    }));
+    mockGetBalances.mockResolvedValue(holdings);
+
+    renderAt(addr);
+
+    await waitFor(() => expect(screen.getByText('+22 more')).toBeInTheDocument());
+    const largest = Math.max(...mockUseTokenMap.mock.calls.map(([a]) => a.length));
+    expect(largest).toBeGreaterThanOrEqual(3);
+    expect(largest).toBeLessThanOrEqual(10);
+  });
+
+  it('shows an unavailable state when the balances request fails', async () => {
+    mockGetBalances.mockRejectedValue(new Error('API error: 503'));
+
+    renderAt(addr);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('address-overview')).toHaveTextContent(/token balances unavailable/i);
+    });
+    fireEvent.click(screen.getByTestId('tab-tokens'));
+    expect(screen.getByText(/token balances are unavailable/i)).toBeInTheDocument();
   });
 });

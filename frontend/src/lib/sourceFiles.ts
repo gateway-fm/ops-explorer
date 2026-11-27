@@ -51,18 +51,45 @@ export function displayPath(path: string): string {
   return path.replace(/^(\.\.?\/)+/, '');
 }
 
-const FILE_HEADER = /^\/\/ File: (.+)$/gm;
+// A file header as storeVerification writes it: at the start of the text, or
+// after the blank line that ends the previous file, naming a single path.
+const FILE_HEADER = /(?:^|\n\n)\/\/ File: (\S+)[ \t]*\n/g;
 
 // splitFileHeaders splits text made of "// File: <path>" sections into files.
 // Only text that starts with such a header qualifies, so a single source that
-// merely mentions one in a comment further down stays one file.
+// merely mentions one in a comment further down stays one file. The format has
+// no escaping, so a verified file can contain a line that looks like a header:
+// the split is kept only if every section is a complete piece of source
+// (balanced braces, no unterminated comment or string); otherwise the stored
+// text is shown as one file rather than cutting a contract in two.
 function splitFileHeaders(raw: string): SourceFile[] | null {
   if (!raw.startsWith('// File: ')) return null;
   const headers = [...raw.matchAll(FILE_HEADER)];
+  if (headers.length === 0 || headers[0].index !== 0) return null;
   const files = headers.map((m, i) => {
-    const start = (m.index ?? 0) + m[0].length + 1;
+    const start = (m.index ?? 0) + m[0].length;
     const end = i + 1 < headers.length ? headers[i + 1].index ?? raw.length : raw.length;
-    return { path: m[1].trim(), content: raw.slice(start, end).replace(/\n+$/, '\n') };
+    return { path: m[1], content: raw.slice(start, end).replace(/\n*$/, '\n') };
   });
-  return files.length > 0 ? files : null;
+  return files.every((f) => isCompleteSource(f.content)) ? files : null;
+}
+
+const SOURCE_TOKEN = /\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$)|"(?:\\.|[^"\\\n])*"?|'(?:\\.|[^'\\\n])*'?|[{}]/g;
+
+// isCompleteSource reports whether text could be a whole source file: its
+// braces balance outside comments and strings, and no block comment or string
+// is left open.
+function isCompleteSource(text: string): boolean {
+  let depth = 0;
+  for (const [t] of text.matchAll(SOURCE_TOKEN)) {
+    if (t === '{') depth++;
+    else if (t === '}') depth--;
+    else if (t.startsWith('/*')) {
+      if (t.length < 4 || !t.endsWith('*/')) return false;
+    } else if (t[0] === '"' || t[0] === "'") {
+      if (t.length < 2 || !t.endsWith(t[0])) return false;
+    }
+    if (depth < 0) return false;
+  }
+  return depth === 0;
 }

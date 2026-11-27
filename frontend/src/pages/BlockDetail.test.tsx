@@ -42,6 +42,42 @@ describe('BlockDetail', () => {
     await waitFor(() => expect(screen.getAllByTestId('tx-row').length).toBe(2));
   });
 
+  it('requests block numbers above 2^53 with every digit intact', async () => {
+    const requested: string[] = [];
+    server.use(
+      http.get(`${API}/blocks/:n`, ({ params }) => {
+        requested.push(String(params.n));
+        return HttpResponse.json({ block: makeBlock(1), transactions: [] });
+      }),
+      http.get(`${API}/blocks/:n/internal`, ({ params }) => {
+        requested.push(`${params.n}/internal`);
+        return HttpResponse.json([]);
+      }),
+    );
+    renderWithProviders(<BlockDetail />, { path: '/block/:number', initialEntries: ['/block/9007199254740993'] });
+
+    await waitFor(() => expect(requested).toHaveLength(2));
+    expect(requested.sort()).toEqual(['9007199254740993', '9007199254740993/internal']);
+  });
+
+  it('does not request a block for a non-decimal route param', async () => {
+    const requested: string[] = [];
+    server.use(
+      http.get(`${API}/blocks/:n`, ({ params }) => {
+        requested.push(String(params.n));
+        return HttpResponse.json({ block: makeBlock(1), transactions: [] });
+      }),
+      http.get(`${API}/blocks/:n/internal`, ({ params }) => {
+        requested.push(`${params.n}/internal`);
+        return HttpResponse.json([]);
+      }),
+    );
+    renderWithProviders(<BlockDetail />, { path: '/block/:number', initialEntries: ['/block/12abc'] });
+
+    await waitFor(() => expect(screen.getByText('Block not found')).toBeInTheDocument());
+    expect(requested).toEqual([]);
+  });
+
   it('renders the error state when the block is not found', async () => {
     server.use(http.get(`${API}/blocks/999`, () => HttpResponse.json({ error: 'not found' }, { status: 404 })));
     mount(999);

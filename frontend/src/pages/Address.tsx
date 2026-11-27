@@ -120,7 +120,7 @@ export function Address() {
     retry: false,
   });
 
-  const { data: balances } = useQuery({
+  const { data: balances, isError: balancesFailed } = useQuery({
     queryKey: ['addressBalances', address],
     queryFn: () => api.getAddressTokenBalances(address!),
     enabled: !!address,
@@ -306,6 +306,7 @@ export function Address() {
       <AddressOverview
         info={info}
         balances={balances}
+        balancesFailed={balancesFailed}
         onShowTokens={() => setTab('tokens')}
         onShowTransactions={() => setTab('transactions')}
       />
@@ -355,7 +356,7 @@ export function Address() {
             }}
           />
         )}
-        {activeTab === 'tokens' && <TokensPanel balances={balances} />}
+        {activeTab === 'tokens' && <TokensPanel balances={balances} failed={balancesFailed} />}
         {activeTab === 'internal' && (
           <InternalPanel
             data={internalTxs?.data}
@@ -463,21 +464,28 @@ function Hero({
   );
 }
 
+// The overview looks up token metadata for at most this many holdings (in API
+// order); it shows three, and the Tokens tab has the full list.
+const OVERVIEW_TOKEN_LOOKUPS = 10;
+
 // Always-visible summary above the tabs, so balance and holdings are in view
 // on every tab (Contract, Transactions, ...), not only under Details.
 function AddressOverview({
   info,
   balances,
+  balancesFailed,
   onShowTokens,
   onShowTransactions,
 }: {
   info: import('../lib/api').AddressInfo;
   balances: Balance[] | undefined;
+  balancesFailed: boolean;
   onShowTokens: () => void;
   onShowTransactions: () => void;
 }) {
-  const tokenMap = useTokenMap(balances?.map((b) => b.tokenAddress) ?? []);
-  const holdings = (balances ?? [])
+  const looked = (balances ?? []).slice(0, OVERVIEW_TOKEN_LOOKUPS);
+  const tokenMap = useTokenMap(looked.map((b) => b.tokenAddress));
+  const holdings = looked
     .map((b) => {
       const meta = tokenMap[b.tokenAddress.toLowerCase()];
       const isNft = meta?.tokenType === 'ERC721' || meta?.tokenType === 'ERC1155';
@@ -487,7 +495,9 @@ function AddressOverview({
     })
     .sort((x, y) => Number(x.isNft) - Number(y.isNft) || (y.valueUSD ?? 0) - (x.valueUSD ?? 0));
   const shown = holdings.slice(0, 3);
-  const totalUsd = holdings.reduce((acc, h) => acc + (h.valueUSD ?? 0), 0);
+  const more = (balances?.length ?? 0) - shown.length;
+  // A total over only the looked-up holdings would understate; leave it to the Tokens tab.
+  const totalUsd = holdings.length === balances?.length ? holdings.reduce((acc, h) => acc + (h.valueUSD ?? 0), 0) : 0;
 
   const tile = 'flex min-w-0 flex-col gap-1.5 rounded-2xl border border-neutral-200 bg-neutral-50 px-5 py-4';
   const label = 'text-xs font-medium uppercase tracking-wider text-neutral-500';
@@ -513,7 +523,9 @@ function AddressOverview({
             </button>
           )}
         </div>
-        {!balances ? (
+        {!balances && balancesFailed ? (
+          <span className="text-sm text-neutral-500">Token balances unavailable</span>
+        ) : !balances ? (
           <span className="h-5 w-32 animate-pulse rounded bg-neutral-200" />
         ) : holdings.length === 0 ? (
           <span className="text-sm text-neutral-500">No token holdings</span>
@@ -530,8 +542,8 @@ function AddressOverview({
                 </span>
               </li>
             ))}
-            {holdings.length > shown.length && (
-              <li className="text-xs text-neutral-500">+{(holdings.length - shown.length).toLocaleString()} more</li>
+            {more > 0 && (
+              <li className="text-xs text-neutral-500">+{more.toLocaleString()} more</li>
             )}
             {totalUsd > 0 && (
               <li className="text-xs text-neutral-500">
@@ -1071,11 +1083,14 @@ function TransfersPanel({
 
 // ---------- Tokens (balances) ----------
 
-function TokensPanel({ balances }: { balances: Balance[] | undefined }) {
+function TokensPanel({ balances, failed }: { balances: Balance[] | undefined; failed: boolean }) {
   const [filter, setFilter] = useState<'all' | 'ERC20' | 'ERC721'>('all');
   const addresses = balances?.map((b) => b.tokenAddress) ?? [];
   const tokenMap = useTokenMap(addresses);
 
+  if (!balances && failed) {
+    return <PanelShell><EmptyRow>Token balances are unavailable right now.</EmptyRow></PanelShell>;
+  }
   if (!balances) return <RowsSkeleton rows={3} />;
   if (balances.length === 0) {
     return <PanelShell><EmptyRow>This address doesn't hold any indexed tokens.</EmptyRow></PanelShell>;

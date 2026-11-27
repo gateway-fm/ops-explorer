@@ -506,10 +506,11 @@ export const api = {
     return fetchAPI<PaginatedResponse<Block>>(`/blocks?${params}`);
   },
 
-  getBlock: (number: number) =>
+  // number is a string so block numbers above 2^53 keep every digit.
+  getBlock: (number: string) =>
     fetchAPI<{ block: Block; transactions: Transaction[] }>(`/blocks/${number}`),
 
-  getBlockInternalTxs: (number: number) =>
+  getBlockInternalTxs: (number: string) =>
     fetchAPI<InternalTransaction[]>(`/blocks/${number}/internal`),
 
   getLatestBlock: () => fetchAPI<Block>('/blocks/latest'),

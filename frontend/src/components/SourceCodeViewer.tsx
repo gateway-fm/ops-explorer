@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { FileCode2 } from 'lucide-react';
+import { FileCode2, Files } from 'lucide-react';
 import { CopyButton } from './CopyButton';
 import { displayPath, parseSources } from '../lib/sourceFiles';
 
@@ -46,10 +46,15 @@ function highlightLines(content: string): Tok[][] {
   return lines;
 }
 
+const FULL_SOURCE = -1;
+
 export function SourceCodeViewer({ sourceCode, contractName }: { sourceCode: string; contractName?: string }) {
   const files = useMemo(() => parseSources(sourceCode, contractName), [sourceCode, contractName]);
+  // FULL_SOURCE selects the stored text as verified, unsplit, so the original is
+  // always one click away when the split into files is wrong.
   const [selected, setSelected] = useState(0);
-  const file = files[Math.min(selected, files.length - 1)];
+  const full = files.length > 1 && selected === FULL_SOURCE;
+  const file = full ? { path: 'Full source', content: sourceCode } : files[Math.min(selected, files.length - 1)];
   const lines = useMemo(() => highlightLines(file.content), [file.content]);
   const gutter = String(lines.length).length;
 
@@ -67,10 +72,26 @@ export function SourceCodeViewer({ sourceCode, contractName }: { sourceCode: str
             aria-label="Source files"
             className="max-h-48 shrink-0 overflow-y-auto border-b border-neutral-200 py-2 md:max-h-[32rem] md:w-72 md:border-b-0 md:border-r"
           >
+            <button
+              type="button"
+              data-testid="source-full"
+              aria-current={full ? 'true' : undefined}
+              onClick={() => setSelected(FULL_SOURCE)}
+              title="The source as stored at verification, not split into files"
+              className={`flex w-full items-start gap-2 px-4 py-1.5 text-left transition-colors ${
+                full ? 'bg-primary/10 text-primary' : 'text-neutral-700 hover:bg-neutral-100'
+              }`}
+            >
+              <Files className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0">
+                <span className="block truncate text-xs font-medium">Full source</span>
+                <span className="block truncate text-[11px] text-neutral-500">as verified, unsplit</span>
+              </span>
+            </button>
             {files.map((f, i) => {
               const path = displayPath(f.path);
               const slash = path.lastIndexOf('/');
-              const active = f === file;
+              const active = !full && f === file;
               return (
                 <button
                   key={`${i}:${f.path}`}
