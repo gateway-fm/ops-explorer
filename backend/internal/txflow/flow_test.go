@@ -1,11 +1,13 @@
 package txflow
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"strings"
 	"sync"
@@ -14,6 +16,7 @@ import (
 	"explorer/internal/types"
 	ethcommon "explorer/pkg/eth/common"
 	"explorer/pkg/eth/crypto"
+	"explorer/pkg/log"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -507,4 +510,175 @@ func TestMarkdownEscapesSummary(t *testing.T) {
 	in.Contracts[vault].ContractName = ptr("V*ult")
 	md := Build(in, Options{}).Markdown()
 	assert.Contains(t, md, "called deposit on V\\*ult. It led to")
+}
+
+// order renders each step as method@depth, for placement tests.
+func order(f *Flow) []string {
+	var out []string
+	for _, s := range f.Steps {
+		out = append(out, fmt.Sprintf("%s@%d", s.Method, s.Depth))
+	}
+	return out
+}
+
+func call(trace, from, to, input string) types.InternalTransaction {
+	return types.InternalTransaction{TraceAddress: trace, From: from, To: ptr(to), CallType: "call", Value: "0", Input: ptr("0x" + input)}
+}
+
+func eventLog(idx int, addr, sig string) types.Log {
+	return types.Log{LogIndex: idx, Address: addr, Topic0: ptr(topicOf(sig)), Data: word(1)}
+}
+
+func TestOuterEventComesBeforeNestedCall(t *testing.T) {
+	// The vault reports Withdrawing, then calls a strategy that calls the token. The
+	// vault does not run while the strategy does, so its event comes before that call.
+	strategy := impl
+	in := Input{
+		Tx: types.Transaction{Hash: "0x1", From: sender, To: ptr(vault), Value: "0", InputData: "12345678", Status: 1},
+		Internal: []types.InternalTransaction{
+			call("0", vault, strategy, "aabbccdd"),
+			call("0,0", strategy, usdc, selectorOf("transfer(address,uint256)")+word(alice)+word(1)),
+		},
+		Logs: []types.Log{eventLog(0, vault, "Withdrawing(uint256)"), transferLog(1, usdc, strategy, alice, 1)},
+	}
+	assert.Equal(t, []string{"0x12345678@0", topicOf("Withdrawing(uint256)") + "@0", "0xaabbccdd@1", "transfer@2", "Transfer@2"}, order(Build(in, Options{})))
+}
+
+func TestPullThenPayKeepsEachTransferInItsCall(t *testing.T) {
+	// Two calls to the same token, a Transfer each, nothing in between.
+	in := Input{
+		Tx: types.Transaction{Hash: "0x1", From: sender, To: ptr(vault), Value: "0", InputData: "12345678", Status: 1},
+		Internal: []types.InternalTransaction{
+			call("0", vault, usdc, selectorOf("transferFrom(address,address,uint256)")+word(sender)+word(vault)+word(1)),
+			call("1", vault, usdc, selectorOf("transfer(address,uint256)")+word(alice)+word(1)),
+		},
+		Logs: []types.Log{transferLog(0, usdc, sender, vault, 1), transferLog(1, usdc, vault, alice, 1)},
+	}
+	assert.Equal(t, []string{"0x12345678@0", "transferFrom@1", "Transfer@1", "transfer@1", "Transfer@1"}, order(Build(in, Options{})))
+}
+
+func TestReentrantCallbackEvents(t *testing.T) {
+	// vault -> a -> b -> a again (a callback). b reports Before, the callback reports
+	// Callback, then b reports After once the callback returned.
+	a, b := impl, oracle
+	in := Input{
+		Tx: types.Transaction{Hash: "0x1", From: sender, To: ptr(vault), Value: "0", InputData: "12345678", Status: 1},
+		Internal: []types.InternalTransaction{
+			call("0", vault, a, "aaaaaaaa"),
+			call("0,0", a, b, "bbbbbbbb"),
+			call("0,0,0", b, a, "cccccccc"),
+		},
+		Logs: []types.Log{eventLog(0, b, "Before()"), eventLog(1, a, "Callback()"), eventLog(2, b, "After()")},
+	}
+	assert.Equal(t, []string{
+		"0x12345678@0", "0xaaaaaaaa@1", "0xbbbbbbbb@2", topicOf("Before()") + "@2",
+		"0xcccccccc@3", topicOf("Callback()") + "@3", topicOf("After()") + "@2",
+	}, order(Build(in, Options{})))
+}
+
+func TestReadOnlyCallsEmitNothing(t *testing.T) {
+	// A staticcall to the token cannot have emitted its Transfer; the later call did.
+	in := Input{
+		Tx: types.Transaction{Hash: "0x1", From: sender, To: ptr(vault), Value: "0", InputData: "12345678", Status: 1},
+		Internal: []types.InternalTransaction{
+			{TraceAddress: "0", From: vault, To: ptr(usdc), CallType: "staticcall", Value: "0", Input: ptr("0x" + selectorOf("balanceOf(address)") + word(vault))},
+			call("1", vault, usdc, selectorOf("transfer(address,uint256)")+word(alice)+word(1)),
+		},
+		Logs: []types.Log{transferLog(0, usdc, vault, alice, 1)},
+	}
+	assert.Equal(t, []string{"0x12345678@0", "balanceOf@1", "transfer@1", "Transfer@1"}, order(Build(in, Options{})))
+}
+
+func TestRepeatedCallsWithDifferentArgsStayApart(t *testing.T) {
+	transfer := func(trace string, amount int) types.InternalTransaction {
+		return call(trace, vault, usdc, selectorOf("transfer(address,uint256)")+word(alice)+word(amount))
+	}
+	in := Input{
+		Tx:       types.Transaction{Hash: "0x1", From: sender, To: ptr(vault), Value: "0", InputData: "12345678", Status: 1},
+		Internal: []types.InternalTransaction{transfer("0", 1), transfer("1", 2), call("2", vault, oracle, "aaaaaaaa"+word(1)), call("3", vault, oracle, "aaaaaaaa"+word(2))},
+	}
+	f := Build(in, Options{})
+	require.Len(t, f.Steps, 5, "same function and text, different calldata: nothing merges")
+	assert.Equal(t, f.Steps[1].Text, f.Steps[2].Text)
+	assert.Equal(t, "1", f.Steps[1].Args[1].Value)
+	assert.Equal(t, "2", f.Steps[2].Args[1].Value)
+	for _, s := range f.Steps {
+		assert.Zero(t, s.Repeat)
+	}
+}
+
+func TestRawItemCeiling(t *testing.T) {
+	same := make([]types.InternalTransaction, 2*maxRawItems)
+	for i := range same {
+		same[i] = types.InternalTransaction{TraceAddress: fmt.Sprint(i), From: vault, To: ptr(oracle), CallType: "staticcall", Value: "0", Input: ptr("0x12345678")}
+	}
+	f := Build(Input{Tx: types.Transaction{Hash: "0x1", From: sender, To: ptr(vault), Value: "0", InputData: "aabbccdd", Status: 1}, Internal: same}, Options{})
+	require.Len(t, f.Steps, 2)
+	assert.Equal(t, maxRawItems-1, f.Steps[1].Repeat)
+	assert.True(t, f.Truncated)
+	assert.Equal(t, 2*maxRawItems+1, f.TotalSteps)
+	assert.Contains(t, f.Notes[0], "Showing the first 2 steps")
+}
+
+func TestTransferBatchRespectsTheCap(t *testing.T) {
+	batch := make([]types.TokenTransfer, 1000)
+	for i := range batch {
+		batch[i] = types.TokenTransfer{LogIndex: 0, TokenAddress: usdc, From: vault, To: alice, Value: "1", TokenType: "ERC1155", TokenID: ptr(fmt.Sprint(i))}
+	}
+	f := Build(Input{
+		Tx:        types.Transaction{Hash: "0x1", From: sender, To: ptr(vault), Value: "0", InputData: "aabbccdd", Status: 1},
+		Logs:      []types.Log{eventLog(0, usdc, "TransferBatch(address,address,address,uint256[],uint256[])")},
+		Transfers: batch,
+	}, Options{})
+	assert.Len(t, f.Steps, DefaultMaxSteps)
+	assert.True(t, f.Truncated)
+	assert.Equal(t, 1001, f.TotalSteps)
+}
+
+func TestDelegatecallWithoutInput(t *testing.T) {
+	f := Build(Input{
+		Tx:       types.Transaction{Hash: "0x1", From: sender, To: ptr(vault), Value: "0", Status: 1},
+		Internal: []types.InternalTransaction{{TraceAddress: "0", From: vault, To: ptr(impl), CallType: "delegatecall", Value: "0"}},
+	}, Options{})
+	require.Len(t, f.Steps, 2)
+	assert.Equal(t, "0x3333…3333 ran the code of 0x5555…5555", f.Steps[1].Text)
+}
+
+func TestLongStringsAreMarkedCut(t *testing.T) {
+	long := strings.Repeat("a", maxDecodedBytes+10)
+	data := word(32) + word(len(long)) + hex.EncodeToString([]byte(long)) + strings.Repeat("0", 64-2*(len(long)%32))
+	args := decodeInputs([]abiParam{{Name: "s", Type: "string"}}, ethcommon.FromHex(data))
+	require.Len(t, args, 1)
+	assert.Equal(t, strings.Repeat("a", maxDecodedBytes)+"…", args[0].Value)
+
+	short := word(32) + word(2) + "6869" + strings.Repeat("0", 60)
+	assert.Equal(t, "hi", decodeInputs([]abiParam{{Name: "s", Type: "string"}}, ethcommon.FromHex(short))[0].Value)
+}
+
+func TestUnsupportedDecimalsLeaveAmountUnknown(t *testing.T) {
+	assert.Equal(t, "", formatUnits(big.NewInt(1), 78))
+	assert.Equal(t, "", formatUnits(big.NewInt(1), -1))
+	f := Build(Input{
+		Tx:        types.Transaction{Hash: "0x1", From: sender, To: ptr(usdc), Value: "0", Status: 1},
+		Logs:      []types.Log{transferLog(0, usdc, sender, alice, 1)},
+		Transfers: []types.TokenTransfer{{LogIndex: 0, TokenAddress: usdc, From: sender, To: alice, Value: "1", TokenType: "ERC20"}},
+		Tokens:    map[string]*types.Token{usdc: {Address: usdc, Symbol: "ODD", Decimals: 78, TokenType: "ERC20"}},
+	}, Options{})
+	assert.Equal(t, "The sender 0x1111…1111 sent 1 units ODD to 0x2222…2222", f.Steps[len(f.Steps)-1].Text)
+}
+
+func TestLoadWarningCarriesNoHash(t *testing.T) {
+	var buf bytes.Buffer
+	prev := log.Default()
+	log.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	defer log.SetDefault(prev)
+
+	hash := "0x" + strings.Repeat("ab", 32)
+	in := complexInput()
+	in.Tx.Hash = hash
+	src := &fakeSource{in: in, internalErr: errors.New(`Get "http://proxy/api/v1/explorer/transactions/` + hash + `/internal": dial tcp: refused`)}
+	_, err := Load(context.Background(), src, hash, Options{})
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "internal calls could not be read")
+	assert.NotContains(t, strings.ToLower(buf.String()), strings.Repeat("ab", 32))
 }

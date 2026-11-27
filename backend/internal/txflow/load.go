@@ -3,6 +3,7 @@ package txflow
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -24,6 +25,9 @@ type Source interface {
 
 // ErrNotFound means the transaction is not indexed. Load never indexes on demand.
 var ErrNotFound = errors.New("transaction not found")
+
+// hashPattern matches a transaction or block hash.
+var hashPattern = regexp.MustCompile(`0[xX][0-9a-fA-F]{64}`)
 
 // maxLookups bounds the contract and token lookups for one flow, so a trace that
 // touches hundreds of contracts costs a bounded number of reads. Addresses past the
@@ -52,7 +56,9 @@ func Load(ctx context.Context, src Source, hash string, opts Options) (*Flow, er
 		in.Internal, e = src.GetInternalTransactionsByTx(gctx, tx.Hash)
 		if e != nil && gctx.Err() == nil {
 			// Degrade to events and transfers, but leave the operator a trace of why.
-			log.Warn("transaction flow: internal calls could not be read", "tx", tx.Hash, "error", e)
+			// P-3: no transaction hash, and none left in the error text either (a
+			// transport error quotes the request URL, which carries it).
+			log.Warn("transaction flow: internal calls could not be read", "error", hashPattern.ReplaceAllString(e.Error(), "0x…"))
 			in.InternalUnavailable, in.Internal = true, nil
 			return nil
 		}

@@ -12,7 +12,6 @@ package txflow
 
 import (
 	"math/big"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -47,7 +46,8 @@ type Participant struct {
 }
 
 // Arg is a decoded function or event argument. Value is empty for types the decoder
-// does not expand (arrays and tuples).
+// does not expand (arrays and tuples). A string or bytes value longer than 256 bytes
+// is cut there and ends in "…".
 type Arg struct {
 	Name  string `json:"name"`
 	Type  string `json:"type"`
@@ -92,6 +92,11 @@ type Step struct {
 	Repeat     int    `json:"repeat,omitempty"`     // >1 when this many identical steps in a row were merged
 
 	Text string `json:"text"` // the step in plain words
+
+	// key identifies a step by its raw data (call input, event topics and data), so
+	// repeats merge only when they are byte-for-byte the same, whatever the decoder
+	// shows. Empty for steps that never merge.
+	key string
 }
 
 // Flow is the whole walkthrough for a transaction.
@@ -118,6 +123,10 @@ type Options struct {
 
 // DefaultMaxSteps keeps a large trace to a size a browser draws without stalling.
 const DefaultMaxSteps = 250
+
+// maxRawItems bounds the calls and events Build looks at, merged repeats included, so a
+// trace of thousands of identical calls costs a bounded amount of work.
+const maxRawItems = 10_000
 
 // Input is everything Build reads. Contracts and Tokens are keyed by lower-case address
 // and may be missing entries: an address without metadata is shown by its short form.
@@ -148,6 +157,7 @@ type frame struct {
 	input        string
 	err          string
 	failedAbove  bool // an ancestor failed
+	static       bool // a staticcall or inside one: cannot emit logs
 	subtreeEnd   int  // index of the last frame in this frame's subtree
 }
 
@@ -163,44 +173,72 @@ func Build(in Input, opts Options) *Flow {
 
 	frames := buildFrames(in.Tx, in.Internal)
 	logs := sortedLogs(in.Logs)
-	slots, emitters := placeLogs(frames, logs)
+	moments := walk(frames)
+	at := placeLogs(frames, moments, logs)
 
 	transfersByLog := map[int][]types.TokenTransfer{}
 	for _, t := range in.Transfers {
 		transfersByLog[t.LogIndex] = append(transfersByLog[t.LogIndex], t)
 	}
 
-	// Steps are merged as they are built, and building stops one step past the cap,
-	// so a huge trace costs decoding work for the steps returned, not for all of it.
+	// Steps are merged as they are built: a call or event whose raw data repeats the
+	// previous step only bumps its count, without being decoded again. Building stops
+	// one step past the cap, or after maxRawItems calls and events, so a huge trace
+	// costs decoding work for about the steps returned, not for all of it.
 	var steps []Step
-	add := func(s Step) bool {
-		if len(steps) > 0 && sameStep(steps[len(steps)-1], s) {
-			last := &steps[len(steps)-1]
-			last.Repeat = max(last.Repeat, 1) + 1
-			return true
+	raw := 0
+	stopped := false
+	merged := func(key string, depth int) bool {
+		if key == "" || len(steps) == 0 {
+			return false
 		}
-		steps = append(steps, s)
-		return len(steps) <= opts.MaxSteps
+		last := &steps[len(steps)-1]
+		if last.key != key || last.Depth != depth {
+			return false
+		}
+		last.Repeat = max(last.Repeat, 1) + 1
+		return true
 	}
+	full := func() bool { return len(steps) > opts.MaxSteps || raw >= maxRawItems }
 	li := 0
 build:
-	for fi, f := range frames {
-		if !add(frameStep(f, n, opts.Currency)) {
-			break
+	for mi, m := range moments {
+		f := frames[m.frame]
+		if m.enter {
+			if full() {
+				stopped = true
+				break
+			}
+			raw++
+			if k := frameKey(f); !merged(k, f.depth) {
+				s := frameStep(f, n, opts.Currency)
+				s.key = k
+				steps = append(steps, s)
+			}
+			continue
 		}
-		for li < len(logs) && slots[li] == fi {
-			// A log sits at the depth of the call that emitted it, when known.
-			depth := frames[fi].depth
-			if e := emitters[li]; e >= 0 {
-				depth = frames[e].depth
+		// A log sits at the depth of the call running when it was emitted.
+		for ; li < len(logs) && at[li] == mi; li++ {
+			if full() {
+				stopped = true
+				break build
 			}
-			for _, s := range logSteps(logs[li], transfersByLog[logs[li].LogIndex], n) {
-				s.Depth = depth
-				if !add(s) {
-					break build
+			raw++
+			l := logs[li]
+			transfers := transfersByLog[l.LogIndex]
+			if len(transfers) == 0 {
+				if k := logKey(l); !merged(k, f.depth) {
+					s := eventStep(l, n)
+					s.Depth, s.key = f.depth, k
+					steps = append(steps, s)
 				}
+				continue
 			}
-			li++
+			// One log can carry a whole batch of transfers: build only what still fits.
+			for _, s := range transferSteps(l, transfers, n, opts.MaxSteps+1-len(steps)) {
+				s.Depth = f.depth
+				steps = append(steps, s)
+			}
 		}
 	}
 	for i := range steps {
@@ -221,6 +259,9 @@ build:
 	}
 	if len(steps) > opts.MaxSteps {
 		steps = steps[:opts.MaxSteps]
+		stopped = true
+	}
+	if stopped {
 		flow.Truncated = true
 		flow.TotalSteps = rawSteps(frames, logs, transfersByLog)
 	}
@@ -303,6 +344,7 @@ func buildFrames(tx types.Transaction, internal []types.InternalTransaction) []*
 			f.value = new(big.Int)
 		}
 		f.failedAbove = frames[parent].failedAbove || frames[parent].err != ""
+		f.static = frames[parent].static || f.callType == "staticcall"
 		byAddr[it.TraceAddress] = len(frames)
 		frames = append(frames, f)
 	}
@@ -340,94 +382,112 @@ func sortedLogs(in []types.Log) []types.Log {
 	return out
 }
 
-// placeLogs decides after which frame each log is shown. The stored trace does not record
-// where inside a call a log was emitted, so this is an estimate that keeps three facts true:
-// logs stay in log-index order; each log sits inside a call made by (or on behalf of) the
-// contract that emitted it, while that call is still running; and a log comes before any
-// later call it cannot have run inside. Within those bounds it is shown as late as possible,
-// i.e. after the sub-calls its emitting call made before the next log.
-// It returns each log's slot and the frame that emitted it (-1 when unknown).
-func placeLogs(frames []*frame, logs []types.Log) (slots, emitter []int) {
-	slots = make([]int, len(logs))
-	emitter = make([]int, len(logs))
+// moment is one point in the walk of the call tree: a call starting (enter), or a gap
+// between call boundaries, when frame is the innermost call running. A gap follows each
+// call's start and each sub-call's return; a call emits its logs in its gaps.
+type moment struct {
+	frame int
+	enter bool
+}
+
+// walk lists the moments of the call tree in execution order.
+func walk(frames []*frame) []moment {
+	out := make([]moment, 0, 2*len(frames))
+	var open []int
+	closeTo := func(i int) { // return from every open call whose subtree ends before frame i
+		for len(open) > 1 && frames[open[len(open)-1]].subtreeEnd < i {
+			open = open[:len(open)-1]
+			out = append(out, moment{frame: open[len(open)-1]})
+		}
+	}
+	for i := range frames {
+		closeTo(i)
+		open = append(open, i)
+		out = append(out, moment{frame: i, enter: true}, moment{frame: i})
+	}
+	closeTo(len(frames))
+	return out
+}
+
+// canEmit is whether a call can have emitted logs that were kept: it did not fail, no
+// call above it failed, and it is not read-only.
+func canEmit(f *frame) bool { return f.err == "" && !f.failedAbove && !f.static }
+
+// placeLogs picks the gap (an index into moments) where each log is shown. The stored
+// trace does not record where inside a call a log was emitted, so this is an estimate
+// that keeps these facts true: logs stay in log-index order, and each sits in a gap of a
+// kept, non-read-only call acting for the address that emitted it.
+//
+// A backward pass finds each log's latest gap that still leaves room for the logs after
+// it. A forward pass then picks, between the previous log's gap and that bound, a call
+// no log used yet (the earliest such), else the call of the previous log, and the
+// latest gap of that call: after the sub-calls it made before the log. Preferring an
+// unused call keeps pull-then-pay pairs (two calls to one token, a Transfer each) apart;
+// when one call emits several logs and a later call to the same contract emits none,
+// the extra logs are shown in the later call.
+// A log with no such gap at all stays at the previous log's gap.
+func placeLogs(frames []*frame, moments []moment, logs []types.Log) []int {
+	at := make([]int, len(logs))
 	if len(logs) == 0 {
-		return slots, emitter
+		return at
 	}
-	// byCtx lists, per address, the kept calls acting for it in pre-order, so finding
-	// the next one is a binary search rather than a scan of the whole trace per log.
-	byCtx := map[string][]int{}
-	for j, f := range frames {
-		if live(f) {
+	// The gaps of each emitting call, and per address the gaps of the calls acting for
+	// it, both in walk order, so every lookup is a binary search.
+	gapsOf := map[int][]int{}
+	byAddr := map[string][]int{}
+	for mi, m := range moments {
+		if f := frames[m.frame]; !m.enter && canEmit(f) {
+			gapsOf[m.frame] = append(gapsOf[m.frame], mi)
 			k := strings.ToLower(f.ctx)
-			byCtx[k] = append(byCtx[k], j)
+			byAddr[k] = append(byAddr[k], mi)
 		}
 	}
-	open := 0 // the call executing when the previous log was emitted
-	last := 0 // the last call known to have started by then
-	for i, l := range logs {
-		e := openEmitter(frames, open, l.Address)
-		if e < 0 {
-			cands := byCtx[strings.ToLower(l.Address)]
-			if k := sort.SearchInts(cands, last+1); k < len(cands) {
-				e, last = cands[k], cands[k]
-			}
+	latest := func(list []int, bound int) int { // the last entry <= bound, or -1
+		if k := sort.SearchInts(list, bound+1) - 1; k >= 0 {
+			return list[k]
 		}
-		if e >= 0 {
-			// Execution is inside e now; anything below it that ran earlier has returned.
-			open = e
-		}
-		emitter[i] = e
-		slots[i] = last
+		return -1
 	}
-	// Push each log as late as its emitting call and the next log allow.
-	limit := len(frames) - 1
+
+	bound := make([]int, len(logs))
+	limit := len(moments) - 1
 	for i := len(logs) - 1; i >= 0; i-- {
-		late := slots[i]
-		if e := emitter[i]; e >= 0 {
-			bound := limit
-			// When the next log comes from a call that started after this log's
-			// emitter, this emitter was not running during that call, so this log
-			// came before it started.
-			if i+1 < len(logs) {
-				if n := emitter[i+1]; n > e && n-1 < bound {
-					bound = n - 1
-				}
+		bound[i] = latest(byAddr[strings.ToLower(logs[i].Address)], limit)
+		if bound[i] >= 0 {
+			limit = bound[i]
+		}
+	}
+
+	used := map[int]bool{}
+	prev, prevFrame := 1, -1 // the gap after the top call starts
+	for i, l := range logs {
+		if bound[i] < 0 {
+			at[i] = prev
+			continue
+		}
+		cands := byAddr[strings.ToLower(l.Address)]
+		lo, hi := sort.SearchInts(cands, prev), sort.SearchInts(cands, bound[i]+1)
+		pick := -1
+		for k := lo; k < hi; {
+			f := moments[cands[k]].frame
+			if !used[f] {
+				pick = f
+				break
 			}
-			late = lastLive(frames, e, bound)
+			k = sort.SearchInts(cands, latest(gapsOf[f], bound[i])+1) // skip the rest of f's gaps
 		}
-		if late < slots[i] {
-			late = slots[i]
+		if pick < 0 && prevFrame >= 0 && latest(gapsOf[prevFrame], bound[i]) >= prev &&
+			strings.EqualFold(frames[prevFrame].ctx, l.Address) {
+			pick = prevFrame
 		}
-		slots[i] = late
-		limit = late
-	}
-	return slots, emitter
-}
-
-// live is whether a call's effects, its logs included, were kept.
-func live(f *frame) bool { return f.err == "" && !f.failedAbove }
-
-// openEmitter returns the nearest kept call at or above frame cur that acts for addr, or -1.
-func openEmitter(frames []*frame, cur int, addr string) int {
-	for i := cur; i >= 0; i = frames[i].parent {
-		if live(frames[i]) && strings.EqualFold(frames[i].ctx, addr) {
-			return i
+		if pick < 0 {
+			pick = moments[cands[lo]].frame
 		}
+		at[i] = latest(gapsOf[pick], bound[i])
+		used[pick] = true
+		prev, prevFrame = at[i], pick
 	}
-	return -1
-}
-
-// lastLive is the last frame in e's subtree, not past limit, whose effects were kept
-// (a failed call's logs are discarded, so no kept log follows inside it).
-func lastLive(frames []*frame, e, limit int) int {
-	end := frames[e].subtreeEnd
-	if end > limit {
-		end = limit
-	}
-	for end > e && (frames[end].err != "" || frames[end].failedAbove) && !frames[e].failedAbove {
-		end--
-	}
-	return end
+	return at
 }
 
 func parseBig(s string) *big.Int {
@@ -476,29 +536,53 @@ func frameStep(f *frame, n *namer, currency string) Step {
 	return s
 }
 
-func logSteps(l types.Log, transfers []types.TokenTransfer, n *namer) []Step {
-	li := l.LogIndex
-	if len(transfers) > 0 {
-		out := make([]Step, 0, len(transfers))
-		for _, t := range transfers {
-			idx := li
-			tok := &TokenAmount{Address: t.TokenAddress, Standard: t.TokenType, Raw: string(t.Value), TokenID: t.TokenID}
-			if tk := n.token(t.TokenAddress); tk != nil {
-				tok.Symbol = tk.Symbol
-				if tok.Standard == "" {
-					tok.Standard = tk.TokenType
-				}
-				if tok.Standard != "ERC721" {
-					tok.Amount = formatUnits(parseBig(string(t.Value)), tk.Decimals)
-				}
-			}
-			s := Step{Kind: KindTokenTransfer, From: t.From, To: t.To, Token: tok, LogIndex: &idx, Method: "Transfer"}
-			s.Text = stepText(s, n, "")
-			out = append(out, s)
-		}
-		return out
-	}
+// frameKey is a call's raw identity for merging repeats.
+func frameKey(f *frame) string {
+	return strings.Join([]string{"call", f.callType, strings.ToLower(f.from), strings.ToLower(f.to),
+		f.value.String(), strings.ToLower(f.input), f.err, strconv.FormatBool(f.failedAbove)}, "|")
+}
 
+// logKey is an event's raw identity for merging repeats.
+func logKey(l types.Log) string {
+	parts := []string{"log", strings.ToLower(l.Address)}
+	for _, t := range []*string{l.Topic0, l.Topic1, l.Topic2, l.Topic3} {
+		if t == nil {
+			break
+		}
+		parts = append(parts, strings.ToLower(*t))
+	}
+	return strings.Join(append(parts, strings.ToLower(l.Data)), "|")
+}
+
+// transferSteps builds up to limit token-transfer steps for one log.
+func transferSteps(l types.Log, transfers []types.TokenTransfer, n *namer, limit int) []Step {
+	li := l.LogIndex
+	if len(transfers) > limit {
+		transfers = transfers[:max(limit, 0)]
+	}
+	out := make([]Step, 0, len(transfers))
+	for _, t := range transfers {
+		idx := li
+		tok := &TokenAmount{Address: t.TokenAddress, Standard: t.TokenType, Raw: string(t.Value), TokenID: t.TokenID}
+		if tk := n.token(t.TokenAddress); tk != nil {
+			tok.Symbol = tk.Symbol
+			if tok.Standard == "" {
+				tok.Standard = tk.TokenType
+			}
+			if tok.Standard != "ERC721" {
+				tok.Amount = formatUnits(parseBig(string(t.Value)), tk.Decimals)
+			}
+		}
+		s := Step{Kind: KindTokenTransfer, From: t.From, To: t.To, Token: tok, LogIndex: &idx, Method: "Transfer"}
+		s.Text = stepText(s, n, "")
+		out = append(out, s)
+	}
+	return out
+}
+
+// eventStep builds the step for a log that carries no token transfer.
+func eventStep(l types.Log, n *namer) Step {
+	li := l.LogIndex
 	topics := []string{}
 	for _, t := range []*string{l.Topic0, l.Topic1, l.Topic2, l.Topic3} {
 		if t == nil {
@@ -517,7 +601,7 @@ func logSteps(l types.Log, transfers []types.TokenTransfer, n *namer) []Step {
 		}
 	}
 	s.Text = stepText(s, n, "")
-	return []Step{s}
+	return s
 }
 
 // rawSteps counts the steps a flow has before merging: one per call, and one per log
@@ -528,18 +612,4 @@ func rawSteps(frames []*frame, logs []types.Log, transfersByLog map[int][]types.
 		total += max(1, len(transfersByLog[l.LogIndex]))
 	}
 	return total
-}
-
-// sameStep is whether b repeats a exactly: the same call to the same function with the
-// same arguments (or the same event with the same values), no value and nothing in
-// between. Long traces often repeat the same read many times; merging such runs keeps the
-// diagram readable without hiding any value that differs.
-func sameStep(a, b Step) bool {
-	if a.Kind != b.Kind || (a.Kind != KindCall && a.Kind != KindEvent) {
-		return false
-	}
-	return a.Depth == b.Depth && strings.EqualFold(a.From, b.From) && strings.EqualFold(a.To, b.To) &&
-		a.Method == b.Method && a.Signature == b.Signature && a.CallType == b.CallType &&
-		a.Value == "" && b.Value == "" && a.Error == "" && b.Error == "" && a.RolledBack == b.RolledBack &&
-		a.Text == b.Text && slices.Equal(a.Args, b.Args)
 }

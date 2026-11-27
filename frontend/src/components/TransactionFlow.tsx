@@ -38,16 +38,17 @@ const TONE_TEXT: Record<StepTone, string> = {
   undone: 'fill-neutral-400',
 };
 
-// Same light/dark pairs as the shared .badge-* classes in index.css.
+// Same light/dark pairs as the shared .badge-* classes in index.css. The neutral
+// scale flips by itself in dark mode, so neutral badges need no dark: overrides.
 const TONE_BADGE: Record<StepTone, string> = {
   call: 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400',
-  read: 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400',
-  delegate: 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400',
+  read: 'bg-neutral-100 text-neutral-600',
+  delegate: 'bg-neutral-100 text-neutral-600',
   money: 'bg-success-50 dark:bg-success-500/10 text-success-700 dark:text-success-500',
   create: 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400',
   event: 'bg-warning-50 dark:bg-warning-500/10 text-warning-700 dark:text-warning-500',
   failed: 'bg-error-50 dark:bg-error-500/10 text-error-700 dark:text-error-500',
-  undone: 'bg-neutral-100 dark:bg-neutral-800 text-neutral-500',
+  undone: 'bg-neutral-100 text-neutral-500',
 };
 
 type View = 'diagram' | 'list';

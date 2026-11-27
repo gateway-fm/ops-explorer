@@ -185,6 +185,8 @@ func stepText(s Step, n *namer, currency string) string {
 	case KindCall:
 		m := methodLabel(s)
 		switch {
+		case s.Method == "" && (s.CallType == "delegatecall" || s.CallType == "callcode"):
+			fmt.Fprintf(&b, "%s ran the code of %s", capitalize(from), to)
 		case s.Method == "":
 			fmt.Fprintf(&b, "%s called %s with no function", capitalize(from), to)
 		case s.CallType == "delegatecall" || s.CallType == "callcode":
@@ -287,11 +289,16 @@ func capitalize(s string) string {
 }
 
 // formatUnits scales v down by decimals and trims trailing zeros: 1500000 with 6 -> "1.5".
+// It returns "" for a decimal count outside 0..77 (no uint256 needs more), so callers
+// fall back to the raw amount rather than show raw units as whole tokens.
 func formatUnits(v *big.Int, decimals int) string {
 	if v == nil {
 		return "0"
 	}
-	if decimals <= 0 || decimals > 77 {
+	if decimals < 0 || decimals > 77 {
+		return ""
+	}
+	if decimals == 0 {
 		return v.String()
 	}
 	neg := v.Sign() < 0
@@ -365,7 +372,7 @@ func notes(in Input, f *Flow, hasLogs bool, n *namer) []string {
 		out = append(out, "No internal calls are recorded for this transaction: either it made none, or call tracing was off when its block was indexed. Events and token transfers are still shown.")
 	}
 	if f.HasCallData && hasLogs {
-		out = append(out, "Events are shown inside the call that emitted them; their exact position among that call's own sub-calls is not recorded.")
+		out = append(out, "Events are shown inside a call made by or for the contract that emitted them. Their exact position is not recorded, so it is estimated from the order of events and calls.")
 	}
 	return out
 }

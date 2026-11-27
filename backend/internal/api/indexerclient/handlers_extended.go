@@ -113,12 +113,43 @@ func (p *Provider) GetTransactionsPaginatedWithCategories(ctx context.Context, p
 
 // ----- Logs -----
 
-func (p *Provider) GetLogsByTransaction(ctx context.Context, txHash string) ([]types.Log, error) {
-	resp, err := p.client.ListLogs(ctx, &indexerv1.ListLogsRequest{ByTxHash: txHash})
-	if err != nil {
-		return nil, err
+// Transaction-scoped reads (a transaction's logs, token transfers and internal calls)
+// follow the indexer's cursor, which otherwise stops at its default page of 25 rows,
+// up to maxTxScopedRows. Past that a transaction is shown in part.
+const (
+	txScopedPageSize = 100 // the indexer's usual page cap; it clamps larger requests
+	maxTxScopedRows  = 5000
+)
+
+// collectTxScoped reads pages until the cursor ends or maxTxScopedRows rows are read.
+func collectTxScoped[T any](fetch func(page *indexerv1.PageRequest) ([]T, string, error)) ([]T, error) {
+	var out []T
+	cursor := ""
+	for {
+		rows, next, err := fetch(&indexerv1.PageRequest{PageSize: txScopedPageSize, Cursor: cursor})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rows...)
+		if next == "" || next == cursor || len(rows) == 0 || len(out) >= maxTxScopedRows {
+			break
+		}
+		cursor = next
 	}
-	return mapLogs(resp.GetLogs()), nil
+	if len(out) > maxTxScopedRows {
+		out = out[:maxTxScopedRows]
+	}
+	return out, nil
+}
+
+func (p *Provider) GetLogsByTransaction(ctx context.Context, txHash string) ([]types.Log, error) {
+	return collectTxScoped(func(page *indexerv1.PageRequest) ([]types.Log, string, error) {
+		resp, err := p.client.ListLogs(ctx, &indexerv1.ListLogsRequest{ByTxHash: txHash, Page: page})
+		if err != nil {
+			return nil, "", err
+		}
+		return mapLogs(resp.GetLogs()), resp.GetPage().GetNextCursor(), nil
+	})
 }
 
 func (p *Provider) GetLogsByAddress(ctx context.Context, address string, limit int, offset int) ([]types.Log, int64, error) {
@@ -168,11 +199,13 @@ func (p *Provider) GetLogs(ctx context.Context, address *string, topic0 *string,
 // ----- Token transfers -----
 
 func (p *Provider) GetTransfersByTransaction(ctx context.Context, txHash string) ([]types.TokenTransfer, error) {
-	resp, err := p.client.ListTokenTransfers(ctx, &indexerv1.ListTokenTransfersRequest{ByTxHash: txHash})
-	if err != nil {
-		return nil, err
-	}
-	return mapTokenTransfers(resp.GetTransfers()), nil
+	return collectTxScoped(func(page *indexerv1.PageRequest) ([]types.TokenTransfer, string, error) {
+		resp, err := p.client.ListTokenTransfers(ctx, &indexerv1.ListTokenTransfersRequest{ByTxHash: txHash, Page: page})
+		if err != nil {
+			return nil, "", err
+		}
+		return mapTokenTransfers(resp.GetTransfers()), resp.GetPage().GetNextCursor(), nil
+	})
 }
 
 func (p *Provider) GetTransfersByAddress(ctx context.Context, address string, limit int, cursor string, beforeBlock *uint64) ([]types.TokenTransfer, string, error) {
@@ -232,13 +265,13 @@ func (p *Provider) GetAllTransfers(ctx context.Context, tokenType string, limit 
 // ----- Internal transactions -----
 
 func (p *Provider) GetInternalTransactionsByTx(ctx context.Context, txHash string) ([]types.InternalTransaction, error) {
-	resp, err := p.client.ListInternalTransactions(ctx, &indexerv1.ListInternalTransactionsRequest{
-		ByTxHash: txHash,
+	return collectTxScoped(func(page *indexerv1.PageRequest) ([]types.InternalTransaction, string, error) {
+		resp, err := p.client.ListInternalTransactions(ctx, &indexerv1.ListInternalTransactionsRequest{ByTxHash: txHash, Page: page})
+		if err != nil {
+			return nil, "", err
+		}
+		return mapInternalTxs(resp.GetInternalTransactions()), resp.GetPage().GetNextCursor(), nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	return mapInternalTxs(resp.GetInternalTransactions()), nil
 }
 
 func (p *Provider) GetInternalTransactionsByAddress(ctx context.Context, address string, limit int, offset int) ([]types.InternalTransaction, int64, error) {

@@ -300,6 +300,7 @@ func dynamicParam(p abiParam) bool {
 	return false
 }
 
+// maxDecodedBytes caps a decoded string or bytes value; a longer one ends in "…".
 const maxDecodedBytes = 256
 
 // maxHeadSlots bounds the head size of one static parameter (nested fixed arrays
@@ -325,14 +326,18 @@ func decodeAt(t string, data []byte, slot int) string {
 		}
 		return v.String()
 	case t == "string" || t == "bytes":
-		b, ok := dynamicBytes(data, word)
+		b, cut, ok := dynamicBytes(data, word)
 		if !ok {
 			return ""
 		}
+		v := "0x" + hex.EncodeToString(b)
 		if t == "string" {
-			return string(b)
+			v = string(b)
 		}
-		return "0x" + hex.EncodeToString(b)
+		if cut {
+			v += "…"
+		}
+		return v
 	case strings.HasPrefix(t, "bytes"):
 		n, err := strconv.Atoi(strings.TrimPrefix(t, "bytes"))
 		if err != nil || n < 1 || n > 32 {
@@ -344,26 +349,27 @@ func decodeAt(t string, data []byte, slot int) string {
 }
 
 // dynamicBytes reads a string or bytes value whose head word holds its offset. Long
-// values are cut to maxDecodedBytes so one argument cannot bloat the response.
+// values are cut to maxDecodedBytes so one argument cannot bloat the response; cut
+// reports that.
 //
 // Offsets and lengths are 256-bit words from untrusted data, so each is compared
 // against the bytes actually left before it is converted or added to anything.
-func dynamicBytes(data, head []byte) ([]byte, bool) {
+func dynamicBytes(data, head []byte) (b []byte, cut, ok bool) {
 	off := new(big.Int).SetBytes(head)
 	if off.Cmp(big.NewInt(int64(len(data)))) >= 0 {
-		return nil, false
+		return nil, false, false
 	}
 	o := int(off.Int64())
 	if len(data)-o < 32 {
-		return nil, false
+		return nil, false, false
 	}
 	ln := new(big.Int).SetBytes(data[o : o+32])
 	if ln.Cmp(big.NewInt(int64(len(data)-o-32))) > 0 {
-		return nil, false
+		return nil, false, false
 	}
 	n := int(ln.Int64())
 	if n > maxDecodedBytes {
-		n = maxDecodedBytes
+		n, cut = maxDecodedBytes, true
 	}
-	return data[o+32 : o+32+n], true
+	return data[o+32 : o+32+n], cut, true
 }

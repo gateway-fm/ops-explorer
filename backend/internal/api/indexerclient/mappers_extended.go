@@ -229,6 +229,9 @@ func mapInternalTx(it *indexerv1.InternalTransaction) types.InternalTransaction 
 	}
 	if to := it.GetTo(); to != "" {
 		out.To = &to
+	} else if ca := it.GetContractAddress(); ca != "" {
+		// A CREATE/CREATE2 has no `to`; the new contract's address stands in for it.
+		out.To = &ca
 	}
 	if gas := it.GetGas(); gas != 0 {
 		out.Gas = &gas
