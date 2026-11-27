@@ -41,6 +41,7 @@ describe('txFlow helpers', () => {
 
   it('labels arrows with amounts, token ids and repeats', () => {
     expect(arrowLabel(step({ kind: 'value_transfer', amount: '1.5', value: '1500000000000000000' }), 'tTEST')).toBe('1.5 tTEST');
+    expect(arrowLabel(step({ kind: 'value_transfer', amount: '1', value: '1000000000000000000', repeat: 2 }), 'tTEST')).toBe('1 tTEST ×2');
     expect(arrowLabel(step({ kind: 'token_transfer', token: { address: C, symbol: 'USDC', raw: '5', amount: '0.000005' } }), 'ETH')).toBe('0.000005 USDC');
     expect(arrowLabel(step({ kind: 'token_transfer', token: { address: C, symbol: 'NFT', standard: 'ERC721', raw: '1', tokenId: '7' } }), 'ETH')).toBe('NFT #7');
     expect(arrowLabel(step({ method: 'latestAnswer', decoded: 'common', repeat: 30 }), 'ETH')).toBe('latestAnswer ×30');

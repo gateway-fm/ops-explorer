@@ -124,8 +124,10 @@ type Options struct {
 // DefaultMaxSteps keeps a large trace to a size a browser draws without stalling.
 const DefaultMaxSteps = 250
 
-// maxRawItems bounds the calls and events Build looks at, merged repeats included, so a
-// trace of thousands of identical calls costs a bounded amount of work.
+// maxRawItems bounds the calls and events Build turns into steps, merged repeats
+// included, so decoding and wording a trace of thousands of identical calls costs a
+// bounded amount of work. Ordering the calls and placing the events still covers the
+// whole input, which the reads bound to types.MaxTxScopedRows rows of each kind.
 const maxRawItems = 10_000
 
 // Input is everything Build reads. Contracts and Tokens are keyed by lower-case address
@@ -134,6 +136,9 @@ type Input struct {
 	// InternalUnavailable is set when the internal calls could not be read, as opposed
 	// to there being none recorded.
 	InternalUnavailable bool
+	// Partial is set when the internal calls, logs or token transfers were cut at
+	// types.MaxTxScopedRows, so counts are lower bounds.
+	Partial bool
 
 	Tx        types.Transaction
 	Internal  []types.InternalTransaction
@@ -270,7 +275,7 @@ build:
 	}
 	flow.Steps = steps
 	flow.Participants = n.participants(steps)
-	flow.Summary = summary(in.Tx, frames, logs, in.Transfers, n, opts.Currency)
+	flow.Summary = summary(in.Tx, frames, logs, in.Transfers, n, opts.Currency, in.Partial)
 	flow.Notes = notes(in, flow, len(logs) > 0, n)
 	return flow
 }
@@ -419,13 +424,23 @@ func canEmit(f *frame) bool { return f.err == "" && !f.failedAbove && !f.static 
 // kept, non-read-only call acting for the address that emitted it.
 //
 // A backward pass finds each log's latest gap that still leaves room for the logs after
-// it. A forward pass then picks, between the previous log's gap and that bound, a call
-// no log used yet (the earliest such), else the call of the previous log, and the
-// latest gap of that call: after the sub-calls it made before the log. Preferring an
-// unused call keeps pull-then-pay pairs (two calls to one token, a Transfer each) apart;
-// when one call emits several logs and a later call to the same contract emits none,
-// the extra logs are shown in the later call.
-// A log with no such gap at all stays at the previous log's gap.
+// it. A forward pass then picks a call between the previous log's gap and that bound:
+//   - the previous log's call, while more logs of this address remain than unused calls
+//     that could still take them (that call emitted several, e.g. Approval and Transfer);
+//   - else the earliest call no log used yet, so two calls to one token each keep
+//     their own Transfer;
+//   - else the earliest call that fits, which is the previous log's call when that one
+//     acts for the same address.
+//
+// The log goes in the latest gap of that call that comes before the next unused call
+// to the same address starts: after the sub-calls the call made first, but never past
+// a nested or later call that is still waiting for its logs (a callback into the same
+// contract). A call that hands its work to a delegatecall (a proxy, a multicall) starts
+// as used, since the code it delegates to emits in its name.
+//
+// This assumes every kept, non-read-only call emits at least one log for its address:
+// when a call emits none, a log of an earlier call to the same contract is shown in it.
+// A log with no gap at all for its address stays at the previous log's gap.
 func placeLogs(frames []*frame, moments []moment, logs []types.Log) []int {
 	at := make([]int, len(logs))
 	if len(logs) == 0 {
@@ -448,43 +463,133 @@ func placeLogs(frames []*frame, moments []moment, logs []types.Log) []int {
 		}
 		return -1
 	}
+	// runEnd[a][k] is the index just past the run of byAddr[a] entries that belong to
+	// the same call as entry k, so scans move call by call.
+	runEnd := map[string][]int{}
+	for a, c := range byAddr {
+		r := make([]int, len(c))
+		for k := len(c) - 1; k >= 0; k-- {
+			r[k] = k + 1
+			if k+1 < len(c) && moments[c[k+1]].frame == moments[c[k]].frame {
+				r[k] = r[k+1]
+			}
+		}
+		runEnd[a] = r
+	}
 
+	addrs := make([]string, len(logs))
 	bound := make([]int, len(logs))
 	limit := len(moments) - 1
 	for i := len(logs) - 1; i >= 0; i-- {
-		bound[i] = latest(byAddr[strings.ToLower(logs[i].Address)], limit)
+		addrs[i] = strings.ToLower(logs[i].Address)
+		bound[i] = latest(byAddr[addrs[i]], limit)
 		if bound[i] >= 0 {
 			limit = bound[i]
 		}
 	}
 
 	used := map[int]bool{}
+	for _, f := range frames[1:] {
+		if f.callType == "delegatecall" || f.callType == "callcode" {
+			used[f.parent] = true
+		}
+	}
+
+	// remaining[i] counts the placeable logs from i on with log i's address; lastBound
+	// is the bound of an address's last placeable log.
+	remaining := make([]int, len(logs))
+	lastBound := map[string]int{}
+	count := map[string]int{}
+	for i := len(logs) - 1; i >= 0; i-- {
+		if bound[i] < 0 {
+			continue
+		}
+		a := addrs[i]
+		count[a]++
+		remaining[i] = count[a]
+		if _, ok := lastBound[a]; !ok {
+			lastBound[a] = bound[i]
+		}
+	}
+	// open tracks, per address, the unused calls a remaining log could still go to,
+	// ordered by their last gap so the ones that ended before the previous log drop out.
+	type openCalls struct {
+		frames      []int
+		next, alive int
+	}
+	open := map[string]*openCalls{}
+	counted := map[int]bool{}
+	for a := range lastBound {
+		open[a] = &openCalls{}
+	}
+	for fi, f := range frames {
+		gs := gapsOf[fi]
+		lb, ok := lastBound[strings.ToLower(f.ctx)]
+		if len(gs) == 0 || used[fi] || !ok || gs[0] > lb {
+			continue
+		}
+		o := open[strings.ToLower(f.ctx)]
+		o.frames = append(o.frames, fi)
+		o.alive++
+		counted[fi] = true
+	}
+	for _, o := range open {
+		sort.SliceStable(o.frames, func(x, y int) bool {
+			gx, gy := gapsOf[o.frames[x]], gapsOf[o.frames[y]]
+			return gx[len(gx)-1] < gy[len(gy)-1]
+		})
+	}
+	uncount := func(fi int) {
+		if counted[fi] {
+			counted[fi] = false
+			open[strings.ToLower(frames[fi].ctx)].alive--
+		}
+	}
+
 	prev, prevFrame := 1, -1 // the gap after the top call starts
-	for i, l := range logs {
+	for i := range logs {
 		if bound[i] < 0 {
 			at[i] = prev
 			continue
 		}
-		cands := byAddr[strings.ToLower(l.Address)]
-		lo, hi := sort.SearchInts(cands, prev), sort.SearchInts(cands, bound[i]+1)
-		pick := -1
-		for k := lo; k < hi; {
-			f := moments[cands[k]].frame
-			if !used[f] {
-				pick = f
+		a, c, re := addrs[i], byAddr[addrs[i]], runEnd[addrs[i]]
+		o := open[a]
+		for o.next < len(o.frames) {
+			gs := gapsOf[o.frames[o.next]]
+			if gs[len(gs)-1] >= prev {
 				break
 			}
-			k = sort.SearchInts(cands, latest(gapsOf[f], bound[i])+1) // skip the rest of f's gaps
+			uncount(o.frames[o.next])
+			o.next++
 		}
-		if pick < 0 && prevFrame >= 0 && latest(gapsOf[prevFrame], bound[i]) >= prev &&
-			strings.EqualFold(frames[prevFrame].ctx, l.Address) {
+		prevFits := prevFrame >= 0 && strings.EqualFold(frames[prevFrame].ctx, a) && latest(gapsOf[prevFrame], bound[i]) >= prev
+
+		lo, hi := sort.SearchInts(c, prev), sort.SearchInts(c, bound[i]+1)
+		pick := -1
+		if prevFits && remaining[i] > o.alive {
 			pick = prevFrame
 		}
-		if pick < 0 {
-			pick = moments[cands[lo]].frame
+		for k := lo; pick < 0 && k < hi; k = re[k] {
+			if f := moments[c[k]].frame; !used[f] {
+				pick = f
+			}
 		}
-		at[i] = latest(gapsOf[pick], bound[i])
+		if pick < 0 {
+			pick = moments[c[lo]].frame
+		}
+
+		gs := gapsOf[pick]
+		first := gs[sort.SearchInts(gs, prev)]
+		end := bound[i]
+		for k := sort.SearchInts(c, first+1); k < hi; k = re[k] {
+			if f := moments[c[k]].frame; f != pick && !used[f] {
+				end = c[k] - 1
+				break
+			}
+		}
+		at[i] = latest(gs, end)
 		used[pick] = true
+		uncount(pick)
 		prev, prevFrame = at[i], pick
 	}
 	return at

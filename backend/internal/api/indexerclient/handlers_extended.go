@@ -118,7 +118,7 @@ func (p *Provider) GetTransactionsPaginatedWithCategories(ctx context.Context, p
 // up to maxTxScopedRows. Past that a transaction is shown in part.
 const (
 	txScopedPageSize = 100 // the indexer's usual page cap; it clamps larger requests
-	maxTxScopedRows  = 5000
+	maxTxScopedRows  = types.MaxTxScopedRows
 )
 
 // collectTxScoped reads pages until the cursor ends or maxTxScopedRows rows are read.

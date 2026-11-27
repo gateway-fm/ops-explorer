@@ -107,3 +107,21 @@ func TestInternalTxsByTxPagesAndKeepsCreateTarget(t *testing.T) {
 		t.Errorf("CREATE2 target = %v, want the new contract's address", rows[1].To)
 	}
 }
+
+func TestTxScopedReadsStopOnAnEmptyPage(t *testing.T) {
+	calls := 0
+	p := setupProvider(t, &fakeIndexer{
+		listLogs: func(*indexerv1.ListLogsRequest) (*indexerv1.ListLogsResponse, error) {
+			calls++
+			// No rows, but always a fresh cursor: without the empty-page stop this never ends.
+			return &indexerv1.ListLogsResponse{Page: &indexerv1.PageResponse{NextCursor: strconv.Itoa(calls)}}, nil
+		},
+	})
+	rows, err := p.GetLogsByTransaction(context.Background(), "0xtx")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(rows) != 0 || calls != 1 {
+		t.Errorf("got %d rows in %d calls, want 0 in 1", len(rows), calls)
+	}
+}

@@ -317,7 +317,7 @@ func formatUnits(v *big.Int, decimals int) string {
 }
 
 // summary is one sentence on what the transaction did.
-func summary(tx types.Transaction, frames []*frame, logs []types.Log, transfers []types.TokenTransfer, n *namer, currency string) string {
+func summary(tx types.Transaction, frames []*frame, logs []types.Log, transfers []types.TokenTransfer, n *namer, currency string, partial bool) string {
 	root := frameStep(frames[0], n, currency)
 	var b strings.Builder
 	b.WriteString(root.Text)
@@ -334,7 +334,11 @@ func summary(tx types.Transaction, frames []*frame, logs []types.Log, transfers 
 			if len(logs) > 0 {
 				parts = append(parts, plural(len(logs), "event"))
 			}
-			b.WriteString(". It led to " + joinList(parts))
+			led := ". It led to "
+			if partial {
+				led += "at least "
+			}
+			b.WriteString(led + joinList(parts))
 		}
 	}
 	b.WriteString(".")
@@ -363,6 +367,9 @@ func notes(in Input, f *Flow, hasLogs bool, n *namer) []string {
 	var out []string
 	if f.Truncated {
 		out = append(out, fmt.Sprintf("Showing the first %d steps; the transaction has %d calls and events in all.", len(f.Steps), f.TotalSteps))
+	}
+	if in.Partial {
+		out = append(out, fmt.Sprintf("Only the first %d internal calls, events or token transfers of this transaction were read, so this flow and its counts are partial.", types.MaxTxScopedRows))
 	}
 	calledContract := tx.To != nil && n.contract(*tx.To) != nil || len(strings.TrimPrefix(tx.InputData, "0x")) >= 8
 	switch {

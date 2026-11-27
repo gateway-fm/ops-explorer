@@ -91,7 +91,12 @@ export function TransactionDetail() {
     retry: false,
   });
 
-  const tokenMap = useTokenMap((transfers || []).map(t => t.tokenAddress));
+  // A transaction can carry thousands of transfers and logs: draw them a page at a
+  // time, and look up token details only for the transfers on screen.
+  const [shownTransfers, setShownTransfers] = useState(ROWS_PER_PAGE);
+  const [shownLogs, setShownLogs] = useState(ROWS_PER_PAGE);
+  const visibleTransfers = (transfers || []).slice(0, shownTransfers);
+  const tokenMap = useTokenMap(visibleTransfers.map(t => t.tokenAddress));
 
   // Batch check logic removed; visibility metadata is now attached directly to API responses
 
@@ -258,7 +263,7 @@ export function TransactionDetail() {
                   <span className="text-xs text-neutral-400">({transfers.length})</span>
                 </div>
                 <div className="flex flex-col gap-2">
-                  {transfers.map((transfer) => {
+                  {visibleTransfers.map((transfer) => {
                     const tokenInfo = tokenMap[transfer.tokenAddress.toLowerCase()];
                     return (
                       <TokenTransferRow
@@ -269,6 +274,7 @@ export function TransactionDetail() {
                       />
                     );
                   })}
+                  <ShowMore shown={visibleTransfers.length} total={transfers.length} onMore={() => setShownTransfers(n => n + ROWS_PER_PAGE)} testId="transfers-show-more" />
                 </div>
               </div>
             )}
@@ -377,9 +383,10 @@ export function TransactionDetail() {
       {/* Logs Tab */}
       {activeTab === 'logs' && logs && (
         <div className="space-y-4">
-          {logs.map((log) => (
+          {logs.slice(0, shownLogs).map((log) => (
             <LogCard key={`${log.txHash}-${log.logIndex}`} log={log} />
           ))}
+          <ShowMore shown={Math.min(shownLogs, logs.length)} total={logs.length} onMore={() => setShownLogs(n => n + ROWS_PER_PAGE)} testId="logs-show-more" />
         </div>
       )}
 
@@ -388,6 +395,17 @@ export function TransactionDetail() {
         <CallTraceTree tx={tx} internalTxs={internalTxs} />
       )}
     </div>
+  );
+}
+
+const ROWS_PER_PAGE = 50;
+
+function ShowMore({ shown, total, onMore, testId }: { shown: number; total: number; onMore: () => void; testId: string }) {
+  if (shown >= total) return null;
+  return (
+    <button type="button" className="btn-secondary self-start text-sm" onClick={onMore} data-testid={testId}>
+      Show {Math.min(ROWS_PER_PAGE, total - shown)} more ({total - shown} not shown)
+    </button>
   );
 }
 

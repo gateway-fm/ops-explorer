@@ -16,10 +16,10 @@ describe('TransactionDetail', () => {
     return renderWithProviders(<TransactionDetail />, { path: '/tx/:hash', initialEntries: [`/tx/${h}`] });
   }
 
-  function txEndpoints(over: { logs?: unknown[]; internal?: unknown[]; onFlow?: () => void } = {}) {
+  function txEndpoints(over: { logs?: unknown[]; internal?: unknown[]; transfers?: unknown[]; onFlow?: () => void } = {}) {
     return [
       http.get(`${API}/transactions/${hash}`, () => HttpResponse.json(makeTx(1, { hash }))),
-      http.get(`${API}/transactions/${hash}/transfers`, () => HttpResponse.json([])),
+      http.get(`${API}/transactions/${hash}/transfers`, () => HttpResponse.json(over.transfers ?? [])),
       http.get(`${API}/transactions/${hash}/logs`, () => HttpResponse.json(over.logs ?? [])),
       http.get(`${API}/transactions/${hash}/internal`, () => HttpResponse.json(over.internal ?? [])),
       http.get(`${API}/transactions/${hash}/flow`, () => {
@@ -80,6 +80,33 @@ describe('TransactionDetail', () => {
     await userEvent.click(screen.getByTestId('tab-trace'));
     expect(screen.getByTestId('tab-trace')).toHaveAttribute('aria-selected', 'true');
     await waitFor(() => expect(screen.getAllByTestId('trace-row').length).toBeGreaterThan(0));
+  });
+
+  it('draws transfers a page at a time and looks up only the tokens on screen', async () => {
+    const tokenOf = (i: number) => '0x' + i.toString(16).padStart(40, '0');
+    const transfers = Array.from({ length: 120 }, (_, i) => ({
+      txHash: hash, logIndex: i, blockNumber: 1, tokenAddress: tokenOf(i + 1),
+      from: '0x' + '1'.repeat(40), to: '0x' + '2'.repeat(40), value: '1', tokenType: 'ERC20',
+    }));
+    const looked = new Set<string>();
+    server.use(
+      ...txEndpoints({ transfers }),
+      http.get(`${API}/tokens/:addr`, ({ params }) => {
+        looked.add(String(params.addr).toLowerCase());
+        return HttpResponse.json({ address: params.addr, symbol: 'T', decimals: 0 });
+      }),
+      http.get(`${API}/addresses/:addr/contract`, () => new HttpResponse(null, { status: 404 })),
+    );
+    mount();
+    await waitFor(() => expect(screen.getAllByTestId('transfer-row')).toHaveLength(50));
+    expect(screen.getByTestId('transfers-show-more')).toHaveTextContent('Show 50 more (70 not shown)');
+    await waitFor(() => expect(looked.size).toBe(50));
+    expect(looked.has(tokenOf(51))).toBe(false);
+
+    await userEvent.click(screen.getByTestId('transfers-show-more'));
+    await userEvent.click(screen.getByTestId('transfers-show-more'));
+    expect(screen.getAllByTestId('transfer-row')).toHaveLength(120);
+    expect(screen.queryByTestId('transfers-show-more')).not.toBeInTheDocument();
   });
 
   it('renders the restricted interstitial on a 403', async () => {

@@ -676,9 +676,99 @@ func TestLoadWarningCarriesNoHash(t *testing.T) {
 	hash := "0x" + strings.Repeat("ab", 32)
 	in := complexInput()
 	in.Tx.Hash = hash
-	src := &fakeSource{in: in, internalErr: errors.New(`Get "http://proxy/api/v1/explorer/transactions/` + hash + `/internal": dial tcp: refused`)}
+	src := &fakeSource{in: in, internalErr: errors.New(`Get "http://proxy/api/v1/explorer/transactions/` + hash + `/internal": upstream said ` + alice)}
 	_, err := Load(context.Background(), src, hash, Options{})
 	require.NoError(t, err)
 	assert.Contains(t, buf.String(), "internal calls could not be read")
 	assert.NotContains(t, strings.ToLower(buf.String()), strings.Repeat("ab", 32))
+	assert.NotContains(t, buf.String(), alice, "addresses are masked like in the access log")
+}
+
+func approvalLog(idx int, token, owner, spender string) types.Log {
+	return types.Log{
+		LogIndex: idx, Address: token,
+		Topic0: ptr(topicOf("Approval(address,address,uint256)")),
+		Topic1: ptr("0x" + word(owner)), Topic2: ptr("0x" + word(spender)),
+		Data: word(0),
+	}
+}
+
+func TestPullThenPayWhenThePullEmitsTwoEvents(t *testing.T) {
+	// transferFrom reports Approval and Transfer; the later transfer reports one Transfer.
+	pull := selectorOf("transferFrom(address,address,uint256)") + word(sender) + word(vault) + word(1)
+	pay := selectorOf("transfer(address,uint256)") + word(alice) + word(1)
+	in := Input{
+		Tx:       types.Transaction{Hash: "0x1", From: sender, To: ptr(vault), Value: "0", InputData: "12345678", Status: 1},
+		Internal: []types.InternalTransaction{call("0", vault, usdc, pull), call("1", vault, usdc, pay)},
+		Logs:     []types.Log{approvalLog(0, usdc, sender, vault), transferLog(1, usdc, sender, vault, 1), transferLog(2, usdc, vault, alice, 1)},
+	}
+	assert.Equal(t, []string{"0x12345678@0", "transferFrom@1", "Approval@1", "Transfer@1", "transfer@1", "Transfer@1"}, order(Build(in, Options{})))
+
+	// The same through a token proxy: each call delegates to the implementation, which
+	// emits in the proxy's name.
+	in.Internal = []types.InternalTransaction{
+		call("0", vault, usdc, pull),
+		{TraceAddress: "0,0", From: usdc, To: ptr(impl), CallType: "delegatecall", Value: "0", Input: ptr("0x" + pull)},
+		call("1", vault, usdc, pay),
+		{TraceAddress: "1,0", From: usdc, To: ptr(impl), CallType: "delegatecall", Value: "0", Input: ptr("0x" + pay)},
+	}
+	assert.Equal(t, []string{
+		"0x12345678@0", "transferFrom@1", "transferFrom@2", "Approval@2", "Transfer@2", "transfer@1", "transfer@2", "Transfer@2",
+	}, order(Build(in, Options{})))
+}
+
+func TestCallbackIntoTheSameContract(t *testing.T) {
+	// A token reports TransferSingle, calls the receiver's hook, and the hook calls the
+	// token again, which reports its own event inside that nested call.
+	token, receiver := usdc, alice
+	in := Input{
+		Tx: types.Transaction{Hash: "0x1", From: sender, To: ptr(token), Value: "0", InputData: "12345678", Status: 1},
+		Internal: []types.InternalTransaction{
+			call("0", token, receiver, "aaaaaaaa"),
+			call("0,0", receiver, token, "bbbbbbbb"),
+		},
+		Logs: []types.Log{eventLog(0, token, "TransferSingle()"), eventLog(1, token, "Inner()")},
+	}
+	assert.Equal(t, []string{
+		"0x12345678@0", topicOf("TransferSingle()") + "@0", "0xaaaaaaaa@1", "0xbbbbbbbb@2", topicOf("Inner()") + "@2",
+	}, order(Build(in, Options{})))
+}
+
+func TestMulticallEventsStayInTheirDelegatecall(t *testing.T) {
+	// A multicall delegatecalls its own code twice. The first part calls a pool, then
+	// reports two events; the second reports one. None belongs on the outer call.
+	manager, pool := vault, oracle
+	in := Input{
+		Tx: types.Transaction{Hash: "0x1", From: sender, To: ptr(manager), Value: "0", InputData: "12345678", Status: 1},
+		Internal: []types.InternalTransaction{
+			{TraceAddress: "0", From: manager, To: ptr(manager), CallType: "delegatecall", Value: "0", Input: ptr("0xaaaaaaaa")},
+			call("0,0", manager, pool, "cccccccc"),
+			{TraceAddress: "1", From: manager, To: ptr(manager), CallType: "delegatecall", Value: "0", Input: ptr("0xbbbbbbbb")},
+		},
+		Logs: []types.Log{
+			eventLog(0, pool, "Mint()"), eventLog(1, manager, "Transfer()"), eventLog(2, manager, "IncreaseLiquidity()"), eventLog(3, manager, "Swept()"),
+		},
+	}
+	assert.Equal(t, []string{
+		"0x12345678@0", "0xaaaaaaaa@1", "0xcccccccc@2", topicOf("Mint()") + "@2",
+		topicOf("Transfer()") + "@1", topicOf("IncreaseLiquidity()") + "@1", "0xbbbbbbbb@1", topicOf("Swept()") + "@1",
+	}, order(Build(in, Options{})))
+}
+
+func TestPartialReadsAreSaid(t *testing.T) {
+	logs := make([]types.Log, types.MaxTxScopedRows)
+	for i := range logs {
+		logs[i] = eventLog(i, vault, "Tick()")
+	}
+	src := &fakeSource{in: Input{Tx: types.Transaction{Hash: "0xabc", From: sender, To: ptr(vault), Value: "0", InputData: "12345678", Status: 1}, Logs: logs}}
+	f, err := Load(context.Background(), src, "0xabc", Options{})
+	require.NoError(t, err)
+	assert.Contains(t, f.Summary, "It led to at least 5000 events.")
+	assert.Contains(t, strings.Join(f.Notes, " "), "Only the first 5000 internal calls, events or token transfers")
+
+	src.in.Logs = logs[:10]
+	f, err = Load(context.Background(), src, "0xabc", Options{})
+	require.NoError(t, err)
+	assert.NotContains(t, f.Summary, "at least")
+	assert.NotContains(t, strings.Join(f.Notes, " "), "Only the first")
 }

@@ -75,7 +75,7 @@ export function arrowLabel(step: FlowStep, currency: string): string {
   const times = step.repeat && step.repeat > 1 ? ` ×${step.repeat}` : '';
   switch (step.kind) {
     case 'value_transfer':
-      return `${step.amount ?? step.value} ${currency}`;
+      return `${step.amount ?? step.value} ${currency}${times}`;
     case 'token_transfer': {
       const t = step.token;
       if (!t) return 'Transfer';
