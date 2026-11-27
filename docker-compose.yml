@@ -90,6 +90,12 @@ services:
       PUBLIC_API_PORT: "8082"
       RATE_LIMIT: ${RATE_LIMIT:-100}
       RATE_LIMIT_WINDOW: ${RATE_LIMIT_WINDOW:-1m}
+      # Title and currency of the /llm.md pages; same inputs as the frontend.
+      NETWORK_NAME: ${VITE_NETWORK_NAME:-${NETWORK_NAME:-}}
+      NETWORK_CURRENCY: ${VITE_NETWORK_CURRENCY:-${NETWORK_CURRENCY:-}}
+      # MCP server at /mcp: SHA-256 hex digests of the accepted API keys
+      # (comma-separated). Unset = /mcp is off.
+      MCP_API_KEY_SHA256: ${MCP_API_KEY_SHA256:-}
     depends_on:
       postgres:
         condition: service_healthy

@@ -58,6 +58,18 @@ func main() {
 		}
 	}
 
+	// Proxies in front of the service that append to X-Forwarded-For (an
+	// ingress gateway, the frontend's nginx). The rate limiter keys on the
+	// address the outermost one appended; 0 = key on the TCP peer.
+	trustedHops := publicapi.DefaultTrustedHops
+	if v := os.Getenv("RATE_LIMIT_TRUSTED_HOPS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			trustedHops = n
+		} else {
+			log.Fatal("RATE_LIMIT_TRUSTED_HOPS must be a whole number >= 0", "value", v)
+		}
+	}
+
 	database, err := db.New(databaseURL)
 	if err != nil {
 		log.Fatal("failed to connect to database", "error", err)
@@ -91,6 +103,22 @@ func main() {
 	}
 
 	server := publicapi.NewServer(dataProvider, nil, chainInfo, port, rateLimit, rateWindow)
+	server.SetTrustedProxyHops(trustedHops)
+	// Title, currency and link origin of the `/llm.md` pages. All optional.
+	// NETWORK_NAME / NETWORK_CURRENCY are the compose inputs the frontend's
+	// VITE_NETWORK_NAME / VITE_NETWORK_CURRENCY come from, passed to this
+	// service too; without EXPLORER_PUBLIC_URL, links use the request's host.
+	server.SetSiteInfo(publicapi.SiteInfo{
+		NetworkName:    os.Getenv("NETWORK_NAME"),
+		CurrencySymbol: os.Getenv("NETWORK_CURRENCY"),
+		PublicURL:      os.Getenv("EXPLORER_PUBLIC_URL"),
+	})
+	// MCP server at /mcp: comma-separated SHA-256 hex digests of the accepted
+	// API keys. Unset = /mcp is off. The keys themselves are never configured.
+	if err := server.SetMCPKeyHashes(os.Getenv("MCP_API_KEY_SHA256")); err != nil {
+		log.Fatal("MCP_API_KEY_SHA256 is not valid", "error", err)
+	}
+	log.Info("mcp server", "enabled", server.MCPEnabled())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -103,7 +131,7 @@ func main() {
 		cancel()
 	}()
 
-	log.Info("starting public API server", "port", port, "rateLimit", rateLimit, "rateWindow", rateWindow.String())
+	log.Info("starting public API server", "port", port, "rateLimit", rateLimit, "rateWindow", rateWindow.String(), "trustedHops", trustedHops)
 	if err := server.Start(ctx); err != nil {
 		log.Fatal("server error", "error", err)
 	}

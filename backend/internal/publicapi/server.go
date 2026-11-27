@@ -22,6 +22,8 @@ type Server struct {
 	port        int
 	rateLimiter *RateLimiter
 	router      *chi.Mux
+	site        SiteInfo
+	mcpKeys     [][]byte // SHA-256 digests of the accepted MCP keys
 }
 
 // NewServer creates a new public API server. The gasTracker parameter
@@ -45,6 +47,8 @@ func (s *Server) setupRoutes() {
 	s.router.Use(middleware.Recoverer)
 	s.router.Use(middleware.Timeout(30 * time.Second))
 
+	// `/llm.md` pages are read by agents, not browsers: they also allow GET from
+	// any origin, like the JSON API below.
 	corsOpts := cors.Options{
 		AllowOriginFunc: func(origin string) bool { return true },
 		AllowedMethods:  []string{"GET", "OPTIONS"},
@@ -56,6 +60,9 @@ func (s *Server) setupRoutes() {
 	s.router.Use(s.rateLimiter.Middleware)
 
 	s.router.Get("/health", s.handleHealthCheck)
+	s.setupMarkdownRoutes()
+	// MCP for AI agents: API key required, 404 while no key is configured.
+	s.router.Handle("/mcp", s.mcpHandler())
 	s.router.Get("/version", s.handleVersion)
 
 	s.router.Route("/api/v1", func(r chi.Router) {
@@ -114,6 +121,11 @@ func (s *Server) setupRoutes() {
 		})
 	})
 }
+
+// SetTrustedProxyHops sets how many proxies in front of the public API append
+// the caller's address to X-Forwarded-For; the rate limiter keys on the entry
+// the outermost one appended. 0 = clients connect directly (key on the peer).
+func (s *Server) SetTrustedProxyHops(n int) { s.rateLimiter.SetTrustedHops(n) }
 
 // Start starts the HTTP server, blocking until the context is cancelled.
 func (s *Server) Start(ctx context.Context) error {
