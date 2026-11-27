@@ -18,7 +18,7 @@ import type { ReactNode } from 'react';
 // (matching fetchAPI's "API error: 403"). Other queries are harmless.
 const mockGetAddress = vi.fn();
 const mockGetBalances = vi.fn();
-const mockUseTokenMap = vi.fn<(addresses: string[]) => Record<string, never>>(() => ({}));
+const mockUseTokenMap = vi.fn<(addresses: string[]) => Record<string, unknown>>(() => ({}));
 
 vi.mock('../lib/api', () => {
   const empty = () => Promise.resolve({ data: [], hasMore: false });
@@ -116,14 +116,18 @@ describe('Address page — overview', () => {
       address: addr, balance: '0', txCount: 0, isContract: false, tokenTransferCount: 0, internalTxCount: 0,
     });
     mockGetBalances.mockReset();
-    mockUseTokenMap.mockClear();
+    // Every looked-up token is a $2 ERC-20 with no decimals.
+    mockUseTokenMap.mockReset().mockImplementation((addresses) =>
+      Object.fromEntries(addresses.map((a) => [a.toLowerCase(), { address: a, symbol: 'TKN', decimals: 0, usdPrice: 2, tokenType: 'ERC20' }])),
+    );
   });
 
-  it('bounds the token metadata lookups to a few holdings', async () => {
-    const holdings = Array.from({ length: 25 }, (_, i) => ({
-      address: addr, tokenAddress: '0x' + (i + 1).toString(16).padStart(40, '0'), blockNumber: 1, balance: '1',
-    }));
-    mockGetBalances.mockResolvedValue(holdings);
+  const holdings = (n: number) => Array.from({ length: n }, (_, i) => ({
+    address: addr, tokenAddress: '0x' + (i + 1).toString(16).padStart(40, '0'), blockNumber: 1, balance: '1',
+  }));
+
+  it('bounds the token metadata lookups to a few holdings and hides the partial USD total', async () => {
+    mockGetBalances.mockResolvedValue(holdings(25));
 
     renderAt(addr);
 
@@ -131,6 +135,16 @@ describe('Address page — overview', () => {
     const largest = Math.max(...mockUseTokenMap.mock.calls.map(([a]) => a.length));
     expect(largest).toBeGreaterThanOrEqual(3);
     expect(largest).toBeLessThanOrEqual(10);
+    expect(screen.getByTestId('address-overview')).not.toHaveTextContent(/Total/);
+  });
+
+  it('shows the USD total when every holding was looked up', async () => {
+    mockGetBalances.mockResolvedValue(holdings(5));
+
+    renderAt(addr);
+
+    await waitFor(() => expect(screen.getByText('+2 more')).toBeInTheDocument());
+    expect(screen.getByTestId('address-overview')).toHaveTextContent('Total $10');
   });
 
   it('shows an unavailable state when the balances request fails', async () => {

@@ -50,11 +50,15 @@ const FULL_SOURCE = -1;
 
 export function SourceCodeViewer({ sourceCode, contractName }: { sourceCode: string; contractName?: string }) {
   const files = useMemo(() => parseSources(sourceCode, contractName), [sourceCode, contractName]);
-  // FULL_SOURCE selects the stored text as verified, unsplit, so the original is
-  // always one click away when the split into files is wrong.
+  // FULL_SOURCE selects the stored text as verified (standard JSON with its
+  // settings, or the unsplit "// File:" record), offered whenever what the
+  // files show differs from it, so the original is always one click away.
+  const hasFull = files.length > 1 || files[0].content !== sourceCode;
   const [selected, setSelected] = useState(0);
-  const full = files.length > 1 && selected === FULL_SOURCE;
-  const file = full ? { path: 'Full source', content: sourceCode } : files[Math.min(selected, files.length - 1)];
+  const full = hasFull && selected === FULL_SOURCE;
+  const file = full
+    ? { path: 'Full source', content: sourceCode }
+    : files[Math.min(Math.max(selected, 0), files.length - 1)];
   const lines = useMemo(() => highlightLines(file.content), [file.content]);
   const gutter = String(lines.length).length;
 
@@ -67,7 +71,7 @@ export function SourceCodeViewer({ sourceCode, contractName }: { sourceCode: str
         </span>
       </header>
       <div className="flex flex-col md:flex-row">
-        {files.length > 1 && (
+        {hasFull && (
           <nav
             aria-label="Source files"
             className="max-h-48 shrink-0 overflow-y-auto border-b border-neutral-200 py-2 md:max-h-[32rem] md:w-72 md:border-b-0 md:border-r"

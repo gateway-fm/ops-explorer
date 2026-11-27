@@ -43,7 +43,7 @@ export function BlockDetail() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={`Block #${block.number}`} />
+      <PageHeader title={`Block #${BigInt(number!)}`} />
 
       {/* Tabs */}
       <div className="tabs" role="tablist">
@@ -78,7 +78,7 @@ export function BlockDetail() {
 
       {/* Details Tab */}
       {activeTab === 'details' && (
-        <BlockDetailsTab block={block} />
+        <BlockDetailsTab block={block} number={number!} />
       )}
 
       {/* Transactions Tab */}
@@ -118,7 +118,12 @@ export function BlockDetail() {
   );
 }
 
-function BlockDetailsTab({ block }: { block: Block }) {
+// number is the route's decimal string: block.number arrives through
+// JSON.parse and is rounded above 2^53, so heights and links use the route.
+function BlockDetailsTab({ block, number }: { block: Block; number: string }) {
+  const height = BigInt(number);
+  const prev = height > 0n ? (height - 1n).toString() : null;
+  const next = (height + 1n).toString();
   const [showMore, setShowMore] = useState(false);
   const gasPercent = block.gasLimit > 0 ? ((block.gasUsed / block.gasLimit) * 100).toFixed(2) : '0';
 
@@ -129,11 +134,11 @@ function BlockDetailsTab({ block }: { block: Block }) {
           label="Block Height"
           value={
             <div className="flex items-center gap-2">
-              <span>{block.number.toLocaleString()}</span>
+              <span>{height.toLocaleString()}</span>
               <div className="flex items-center gap-1">
-                {block.number > 0 && (
+                {prev !== null && (
                   <Link
-                    to={`/block/${block.number - 1}`}
+                    to={`/block/${prev}`}
                     className="inline-flex items-center justify-center w-6 h-6 rounded bg-neutral-100 hover:bg-neutral-200 text-neutral-600 transition-colors"
                     title="Previous block"
                   >
@@ -141,7 +146,7 @@ function BlockDetailsTab({ block }: { block: Block }) {
                   </Link>
                 )}
                 <Link
-                  to={`/block/${block.number + 1}`}
+                  to={`/block/${next}`}
                   className="inline-flex items-center justify-center w-6 h-6 rounded bg-neutral-100 hover:bg-neutral-200 text-neutral-600 transition-colors"
                   title="Next block"
                 >
@@ -196,9 +201,13 @@ function BlockDetailsTab({ block }: { block: Block }) {
           label="Parent Hash"
           value={
             <span className="flex items-center gap-1">
-              <Link to={`/block/${block.number - 1}`} className="font-mono text-sm text-primary hover:text-primary-600 break-all transition-colors">
-                {block.parentHash}
-              </Link>
+              {prev !== null ? (
+                <Link to={`/block/${prev}`} className="font-mono text-sm text-primary hover:text-primary-600 break-all transition-colors">
+                  {block.parentHash}
+                </Link>
+              ) : (
+                <span className="font-mono text-sm break-all text-neutral-900">{block.parentHash}</span>
+              )}
               <CopyButton text={block.parentHash} />
             </span>
           }

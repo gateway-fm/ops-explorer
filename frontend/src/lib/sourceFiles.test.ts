@@ -55,6 +55,14 @@ describe('parseSources', () => {
     expect(parseSources(src, 'A')).toEqual([{ path: 'A.sol', content: src }]);
   });
 
+  it('splits verifier output whose file names contain spaces', () => {
+    const raw = '// File: Token (1).sol\ncontract Token {}\n\n// File: my libs/Lib copy.sol\nlibrary Lib {}\n\n';
+    expect(parseSources(raw, 'Token')).toEqual([
+      { path: 'Token (1).sol', content: 'contract Token {}\n' },
+      { path: 'my libs/Lib copy.sol', content: 'library Lib {}\n' },
+    ]);
+  });
+
   it('does not split verifier output on a // File: comment inside a contract body', () => {
     const raw =
       '// File: contracts/Token.sol\ncontract Token {\n\n// File: contracts/Fake.sol\n  uint256 x;\n}\n\n';

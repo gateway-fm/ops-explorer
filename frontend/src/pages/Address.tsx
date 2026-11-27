@@ -1565,7 +1565,7 @@ function ContractOverview({
       </dl>
 
       {contract.isVerified && contract.sourceCode && <UmlDiagram address={contract.address} />}
-      {contract.sourceCode && <SourceCodeViewer sourceCode={contract.sourceCode} contractName={contract.contractName} />}
+      {contract.sourceCode && <SourceCodeViewer key={contract.address} sourceCode={contract.sourceCode} contractName={contract.contractName} />}
       {contract.abi && contract.abi.length > 0 && (
         <CodeBlock title="ABI" rightMeta={`${contract.abi.length} items`}>
           <pre className="max-h-80 overflow-y-auto whitespace-pre-wrap font-mono text-xs leading-relaxed text-neutral-700">
