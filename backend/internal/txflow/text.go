@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"explorer/internal/types"
+	ethcommon "explorer/pkg/eth/common"
 )
 
 // namer resolves addresses to names and ABIs from the contract and token metadata.
@@ -67,13 +68,7 @@ func (n *namer) event(addr, topic0 string, indexed int) (method, string, bool) {
 	return method{}, "", false
 }
 
-func isHexAddress(a string) bool {
-	if len(a) != 42 || !strings.HasPrefix(strings.ToLower(a), "0x") {
-		return false
-	}
-	_, err := hexBytes(a)
-	return err == nil
-}
+func isHexAddress(a string) bool { return ethcommon.IsHexAddress(a) }
 
 func shortAddress(a string) string {
 	if !isHexAddress(a) {
@@ -356,14 +351,18 @@ func joinList(parts []string) string {
 	return strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
 }
 
-func notes(tx types.Transaction, f *Flow, hasLogs bool, n *namer) []string {
+func notes(in Input, f *Flow, hasLogs bool, n *namer) []string {
+	tx := in.Tx
 	var out []string
 	if f.Truncated {
-		out = append(out, fmt.Sprintf("Showing the first %d of %d steps.", len(f.Steps), f.TotalSteps))
+		out = append(out, fmt.Sprintf("Showing the first %d steps; the transaction has %d calls and events in all.", len(f.Steps), f.TotalSteps))
 	}
 	calledContract := tx.To != nil && n.contract(*tx.To) != nil || len(strings.TrimPrefix(tx.InputData, "0x")) >= 8
-	if !f.HasCallData && calledContract {
-		out = append(out, "No internal calls are recorded for this transaction: either it made none, or call tracing was off when its block was indexed. Events and token transfers are shown in full.")
+	switch {
+	case in.InternalUnavailable:
+		out = append(out, "Internal calls could not be read; showing events and token transfers only.")
+	case !f.HasCallData && calledContract:
+		out = append(out, "No internal calls are recorded for this transaction: either it made none, or call tracing was off when its block was indexed. Events and token transfers are still shown.")
 	}
 	if f.HasCallData && hasLogs {
 		out = append(out, "Events are shown inside the call that emitted them; their exact position among that call's own sub-calls is not recorded.")

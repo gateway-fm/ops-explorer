@@ -12,11 +12,13 @@ package txflow
 
 import (
 	"math/big"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
 	"explorer/internal/types"
+	ethcommon "explorer/pkg/eth/common"
 )
 
 // Kind is what a step shows.
@@ -100,7 +102,7 @@ type Flow struct {
 	HasCallData  bool          `json:"hasCallData"` // internal calls were recorded for this transaction
 	Participants []Participant `json:"participants"`
 	Steps        []Step        `json:"steps"`
-	TotalSteps   int           `json:"totalSteps"` // steps before the cap (after merging repeats)
+	TotalSteps   int           `json:"totalSteps"` // len(Steps), or when Truncated the calls and events in all, before merging
 	Truncated    bool          `json:"truncated"`
 	Summary      string        `json:"summary"`
 	Notes        []string      `json:"notes,omitempty"`
@@ -120,6 +122,10 @@ const DefaultMaxSteps = 250
 // Input is everything Build reads. Contracts and Tokens are keyed by lower-case address
 // and may be missing entries: an address without metadata is shown by its short form.
 type Input struct {
+	// InternalUnavailable is set when the internal calls could not be read, as opposed
+	// to there being none recorded.
+	InternalUnavailable bool
+
 	Tx        types.Transaction
 	Internal  []types.InternalTransaction
 	Logs      []types.Log
@@ -164,10 +170,24 @@ func Build(in Input, opts Options) *Flow {
 		transfersByLog[t.LogIndex] = append(transfersByLog[t.LogIndex], t)
 	}
 
+	// Steps are merged as they are built, and building stops one step past the cap,
+	// so a huge trace costs decoding work for the steps returned, not for all of it.
 	var steps []Step
+	add := func(s Step) bool {
+		if len(steps) > 0 && sameStep(steps[len(steps)-1], s) {
+			last := &steps[len(steps)-1]
+			last.Repeat = max(last.Repeat, 1) + 1
+			return true
+		}
+		steps = append(steps, s)
+		return len(steps) <= opts.MaxSteps
+	}
 	li := 0
+build:
 	for fi, f := range frames {
-		steps = append(steps, frameStep(f, n, opts.Currency))
+		if !add(frameStep(f, n, opts.Currency)) {
+			break
+		}
 		for li < len(logs) && slots[li] == fi {
 			// A log sits at the depth of the call that emitted it, when known.
 			depth := frames[fi].depth
@@ -176,13 +196,19 @@ func Build(in Input, opts Options) *Flow {
 			}
 			for _, s := range logSteps(logs[li], transfersByLog[logs[li].LogIndex], n) {
 				s.Depth = depth
-				steps = append(steps, s)
+				if !add(s) {
+					break build
+				}
 			}
 			li++
 		}
 	}
+	for i := range steps {
+		if steps[i].Repeat > 1 {
+			steps[i].Text += " (" + strconv.Itoa(steps[i].Repeat) + " times in a row)"
+		}
+	}
 
-	steps = mergeRepeats(steps)
 	flow := &Flow{
 		TxHash:      in.Tx.Hash,
 		Status:      "success",
@@ -196,6 +222,7 @@ func Build(in Input, opts Options) *Flow {
 	if len(steps) > opts.MaxSteps {
 		steps = steps[:opts.MaxSteps]
 		flow.Truncated = true
+		flow.TotalSteps = rawSteps(frames, logs, transfersByLog)
 	}
 	for i := range steps {
 		steps[i].Index = i
@@ -203,7 +230,7 @@ func Build(in Input, opts Options) *Flow {
 	flow.Steps = steps
 	flow.Participants = n.participants(steps)
 	flow.Summary = summary(in.Tx, frames, logs, in.Transfers, n, opts.Currency)
-	flow.Notes = notes(in.Tx, flow, len(logs) > 0, n)
+	flow.Notes = notes(in, flow, len(logs) > 0, n)
 	return flow
 }
 
@@ -271,6 +298,9 @@ func buildFrames(tx types.Transaction, internal []types.InternalTransaction) []*
 		f.ctx = f.to
 		if f.callType == "delegatecall" || f.callType == "callcode" {
 			f.ctx = frames[parent].ctx
+			// The tracer repeats the caller's value on a delegatecall frame, and a
+			// callcode sends it to the caller itself: no currency moves either way.
+			f.value = new(big.Int)
 		}
 		f.failedAbove = frames[parent].failedAbove || frames[parent].err != ""
 		byAddr[it.TraceAddress] = len(frames)
@@ -311,10 +341,11 @@ func sortedLogs(in []types.Log) []types.Log {
 }
 
 // placeLogs decides after which frame each log is shown. The stored trace does not record
-// where inside a call a log was emitted, so this is an estimate that keeps two facts true:
-// logs stay in log-index order, and each log sits inside a call made by (or on behalf of)
-// the contract that emitted it. Within that call it is shown as late as those facts allow,
-// i.e. after the sub-calls that came before the next log.
+// where inside a call a log was emitted, so this is an estimate that keeps three facts true:
+// logs stay in log-index order; each log sits inside a call made by (or on behalf of) the
+// contract that emitted it, while that call is still running; and a log comes before any
+// later call it cannot have run inside. Within those bounds it is shown as late as possible,
+// i.e. after the sub-calls its emitting call made before the next log.
 // It returns each log's slot and the frame that emitted it (-1 when unknown).
 func placeLogs(frames []*frame, logs []types.Log) (slots, emitter []int) {
 	slots = make([]int, len(logs))
@@ -322,26 +353,47 @@ func placeLogs(frames []*frame, logs []types.Log) (slots, emitter []int) {
 	if len(logs) == 0 {
 		return slots, emitter
 	}
-	cur := 0
+	// byCtx lists, per address, the kept calls acting for it in pre-order, so finding
+	// the next one is a binary search rather than a scan of the whole trace per log.
+	byCtx := map[string][]int{}
+	for j, f := range frames {
+		if live(f) {
+			k := strings.ToLower(f.ctx)
+			byCtx[k] = append(byCtx[k], j)
+		}
+	}
+	open := 0 // the call executing when the previous log was emitted
+	last := 0 // the last call known to have started by then
 	for i, l := range logs {
-		e := openEmitter(frames, cur, l.Address)
+		e := openEmitter(frames, open, l.Address)
 		if e < 0 {
-			for j := cur + 1; j < len(frames); j++ {
-				if frames[j].err == "" && !frames[j].failedAbove && strings.EqualFold(frames[j].ctx, l.Address) {
-					e, cur = j, j
-					break
-				}
+			cands := byCtx[strings.ToLower(l.Address)]
+			if k := sort.SearchInts(cands, last+1); k < len(cands) {
+				e, last = cands[k], cands[k]
 			}
 		}
+		if e >= 0 {
+			// Execution is inside e now; anything below it that ran earlier has returned.
+			open = e
+		}
 		emitter[i] = e
-		slots[i] = cur
+		slots[i] = last
 	}
 	// Push each log as late as its emitting call and the next log allow.
 	limit := len(frames) - 1
 	for i := len(logs) - 1; i >= 0; i-- {
 		late := slots[i]
 		if e := emitter[i]; e >= 0 {
-			late = lastLive(frames, e, limit)
+			bound := limit
+			// When the next log comes from a call that started after this log's
+			// emitter, this emitter was not running during that call, so this log
+			// came before it started.
+			if i+1 < len(logs) {
+				if n := emitter[i+1]; n > e && n-1 < bound {
+					bound = n - 1
+				}
+			}
+			late = lastLive(frames, e, bound)
 		}
 		if late < slots[i] {
 			late = slots[i]
@@ -352,10 +404,13 @@ func placeLogs(frames []*frame, logs []types.Log) (slots, emitter []int) {
 	return slots, emitter
 }
 
-// openEmitter returns the nearest call at or above frame cur that acts for addr, or -1.
+// live is whether a call's effects, its logs included, were kept.
+func live(f *frame) bool { return f.err == "" && !f.failedAbove }
+
+// openEmitter returns the nearest kept call at or above frame cur that acts for addr, or -1.
 func openEmitter(frames []*frame, cur int, addr string) int {
 	for i := cur; i >= 0; i = frames[i].parent {
-		if strings.EqualFold(frames[i].ctx, addr) {
+		if live(frames[i]) && strings.EqualFold(frames[i].ctx, addr) {
 			return i
 		}
 	}
@@ -414,9 +469,7 @@ func frameStep(f *frame, n *namer, currency string) Step {
 		}
 		if ok {
 			s.Method, s.Signature, s.Decoded = m.Name, m.Signature, src
-			if data, err := hexBytes(input[8:]); err == nil {
-				s.Args = decodeInputs(m.Inputs, data)
-			}
+			s.Args = decodeInputs(m.Inputs, ethcommon.FromHex(input[8:]))
 		}
 	}
 	s.Text = stepText(s, n, currency)
@@ -460,45 +513,33 @@ func logSteps(l types.Log, transfers []types.TokenTransfer, n *namer) []Step {
 		s.Method = topics[0]
 		if m, src, ok := n.event(l.Address, topics[0], len(topics)-1); ok {
 			s.Method, s.Signature, s.Decoded = m.Name, m.Signature, src
-			if data, err := hexBytes(l.Data); err == nil {
-				s.Args = decodeEvent(m, topics, data)
-			}
+			s.Args = decodeEvent(m, topics, ethcommon.FromHex(l.Data))
 		}
 	}
 	s.Text = stepText(s, n, "")
 	return []Step{s}
 }
 
-// mergeRepeats folds runs of identical steps (same call to the same function, with no
-// value and nothing in between) into one step with a Repeat count. Long traces often
-// repeat the same read many times; merging keeps the diagram readable.
-func mergeRepeats(steps []Step) []Step {
-	out := make([]Step, 0, len(steps))
-	for _, s := range steps {
-		if len(out) > 0 && sameStep(out[len(out)-1], s) {
-			last := &out[len(out)-1]
-			if last.Repeat == 0 {
-				last.Repeat = 1
-			}
-			last.Repeat++
-			last.Args = nil
-			continue
-		}
-		out = append(out, s)
+// rawSteps counts the steps a flow has before merging: one per call, and one per log
+// (or per token transfer the log carries).
+func rawSteps(frames []*frame, logs []types.Log, transfersByLog map[int][]types.TokenTransfer) int {
+	total := len(frames)
+	for _, l := range logs {
+		total += max(1, len(transfersByLog[l.LogIndex]))
 	}
-	for i := range out {
-		if out[i].Repeat > 1 {
-			out[i].Text += " (" + strconv.Itoa(out[i].Repeat) + " times in a row)"
-		}
-	}
-	return out
+	return total
 }
 
+// sameStep is whether b repeats a exactly: the same call to the same function with the
+// same arguments (or the same event with the same values), no value and nothing in
+// between. Long traces often repeat the same read many times; merging such runs keeps the
+// diagram readable without hiding any value that differs.
 func sameStep(a, b Step) bool {
 	if a.Kind != b.Kind || (a.Kind != KindCall && a.Kind != KindEvent) {
 		return false
 	}
 	return a.Depth == b.Depth && strings.EqualFold(a.From, b.From) && strings.EqualFold(a.To, b.To) &&
-		a.Method == b.Method && a.CallType == b.CallType && a.Value == "" && b.Value == "" &&
-		a.Error == "" && b.Error == "" && a.RolledBack == b.RolledBack
+		a.Method == b.Method && a.Signature == b.Signature && a.CallType == b.CallType &&
+		a.Value == "" && b.Value == "" && a.Error == "" && b.Error == "" && a.RolledBack == b.RolledBack &&
+		a.Text == b.Text && slices.Equal(a.Args, b.Args)
 }

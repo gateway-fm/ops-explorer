@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"explorer/internal/types"
+	"explorer/pkg/log"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -45,13 +46,14 @@ func Load(ctx context.Context, src Source, hash string, opts Options) (*Flow, er
 	}
 
 	in := Input{Tx: *tx}
-	var internalErr error
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		var e error
 		in.Internal, e = src.GetInternalTransactionsByTx(gctx, tx.Hash)
 		if e != nil && gctx.Err() == nil {
-			internalErr, in.Internal = e, nil
+			// Degrade to events and transfers, but leave the operator a trace of why.
+			log.Warn("transaction flow: internal calls could not be read", "tx", tx.Hash, "error", e)
+			in.InternalUnavailable, in.Internal = true, nil
 			return nil
 		}
 		return e
@@ -71,11 +73,7 @@ func Load(ctx context.Context, src Source, hash string, opts Options) (*Flow, er
 	}
 
 	in.Contracts, in.Tokens = lookupMetadata(ctx, src, in)
-	flow := Build(in, opts)
-	if internalErr != nil {
-		flow.Notes = append(flow.Notes, "Internal calls could not be read; showing events and token transfers only.")
-	}
-	return flow, nil
+	return Build(in, opts), nil
 }
 
 // lookupMetadata fetches contract metadata for the addresses in the flow, and token

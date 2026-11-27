@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"sync"
 	"testing"
 
 	"explorer/internal/types"
+	ethcommon "explorer/pkg/eth/common"
 	"explorer/pkg/eth/crypto"
 
 	"github.com/stretchr/testify/assert"
@@ -249,7 +251,7 @@ func TestCapAndCollapse(t *testing.T) {
 	assert.Len(t, f.Steps, DefaultMaxSteps)
 	assert.Equal(t, 2001, f.TotalSteps)
 	assert.True(t, f.Truncated)
-	assert.Contains(t, f.Notes[0], "Showing the first 250 of 2001 steps")
+	assert.Contains(t, f.Notes[0], "Showing the first 250 steps; the transaction has 2001 calls and events in all.")
 	assert.LessOrEqual(t, len(f.Participants), 4)
 
 	same := make([]types.InternalTransaction, 5000)
@@ -291,8 +293,7 @@ func TestDecodeInputs(t *testing.T) {
 	minus2 := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(2))
 	data := word(minus2) + word(1) + word(2) + word(6*32) + word(1) + "deadbeef" + strings.Repeat("0", 56) +
 		word(len(str)) + hex.EncodeToString([]byte(str)) + strings.Repeat("0", 64-2*len(str))
-	raw, err := hexBytes(data)
-	require.NoError(t, err)
+	raw := ethcommon.FromHex(data)
 	args := decodeInputs(params, raw)
 	require.Len(t, args, 5)
 	assert.Equal(t, "-2", args[0].Value)
@@ -305,7 +306,7 @@ func TestDecodeInputs(t *testing.T) {
 	// Truncated data yields fewer args, not a panic.
 	assert.Len(t, decodeInputs(params, raw[:40]), 1)
 	// A bogus offset for a string leaves its value empty.
-	bad, _ := hexBytes(word(1 << 40))
+	bad := ethcommon.FromHex(word(1 << 40))
 	assert.Equal(t, []Arg{{Name: "s", Type: "string", Value: ""}}, decodeInputs([]abiParam{{Name: "s", Type: "string"}}, bad))
 }
 
@@ -343,6 +344,7 @@ type fakeSource struct {
 	in          Input
 	internalErr error
 	logsErr     error
+	mu          sync.Mutex
 	lookups     int
 }
 
@@ -362,6 +364,9 @@ func (f *fakeSource) GetTransfersByTransaction(context.Context, string) ([]types
 	return f.in.Transfers, nil
 }
 func (f *fakeSource) GetContract(_ context.Context, a string) (*types.Contract, error) {
+	f.mu.Lock()
+	f.lookups++
+	f.mu.Unlock()
 	return f.in.Contracts[a], nil
 }
 func (f *fakeSource) GetToken(_ context.Context, a string) (*types.Token, error) {
@@ -386,8 +391,120 @@ func TestLoad(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, f.HasCallData)
 	assert.Contains(t, strings.Join(f.Notes, " "), "Internal calls could not be read")
+	assert.NotContains(t, strings.Join(f.Notes, " "), "No internal calls are recorded", "the two explanations exclude each other")
 
 	src.internalErr, src.logsErr = nil, errors.New("boom")
 	_, err = Load(context.Background(), src, "0xabc", Options{})
 	assert.Error(t, err)
+}
+
+func TestLoadBoundsMetadataLookups(t *testing.T) {
+	var internal []types.InternalTransaction
+	for i := 0; i < 300; i++ {
+		to := fmt.Sprintf("0x%040x", 0x1000+i)
+		internal = append(internal, types.InternalTransaction{TraceAddress: fmt.Sprint(i), From: vault, To: ptr(to), CallType: "call", Value: "0"})
+	}
+	src := &fakeSource{in: Input{Tx: types.Transaction{Hash: "0xabc", From: sender, To: ptr(vault), Value: "0", Status: 1}, Internal: internal}}
+	_, err := Load(context.Background(), src, "0xabc", Options{})
+	require.NoError(t, err)
+	assert.Equal(t, maxLookups, src.lookups)
+}
+
+func TestDynamicBytesHostileOffsets(t *testing.T) {
+	str := []abiParam{{Name: "s", Type: "string"}}
+	maxInt := new(big.Int).SetUint64(1<<63 - 1)
+	maxWord := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
+	cases := map[string]string{
+		"offset near MaxInt64":   word(maxInt),
+		"offset 2^256-1":         word(maxWord),
+		"length near MaxInt64":   word(32) + word(maxInt),
+		"length past the data":   word(32) + word(64) + strings.Repeat("00", 32),
+		"offset leaves <32 left": word(40) + strings.Repeat("00", 20),
+	}
+	for name, data := range cases {
+		t.Run(name, func(t *testing.T) {
+			var args []Arg
+			assert.NotPanics(t, func() { args = decodeInputs(str, ethcommon.FromHex(data)) })
+			require.Len(t, args, 1)
+			assert.Equal(t, "", args[0].Value)
+		})
+	}
+}
+
+func TestArraysAndHugeStaticParams(t *testing.T) {
+	params := []abiParam{
+		{Name: "ids", Type: "uint256[]"},
+		{Name: "pair", Type: "int256[2]"},
+		{Name: "after", Type: "address"},
+	}
+	data := ethcommon.FromHex(word(4*32) + word(7) + word(8) + word(alice) + word(1) + word(99))
+	args := decodeInputs(params, data)
+	require.Len(t, args, 3)
+	assert.Equal(t, "", args[0].Value, "a dynamic array's head word is an offset, not its value")
+	assert.Equal(t, "", args[1].Value, "a fixed array is not its first element")
+	assert.Equal(t, alice, args[2].Value, "a fixed array still advances the head by its size")
+
+	// Nested fixed arrays whose head size would overflow are not decoded at all.
+	huge := []abiParam{{Name: "m", Type: "uint256[1024][1024][1024][1024][1024][1024][1024]"}, {Name: "x", Type: "uint256"}}
+	assert.NotPanics(t, func() { assert.Empty(t, decodeInputs(huge, data)) })
+}
+
+func TestRepeatsKeepDifferentValuesApart(t *testing.T) {
+	ev := func(idx, amount int) types.Log {
+		return types.Log{LogIndex: idx, Address: vault, Topic0: ptr(topicOf("Deposited(address,uint256)")), Topic1: ptr("0x" + word(sender)), Data: word(amount)}
+	}
+	in := Input{
+		Tx:        types.Transaction{Hash: "0x1", From: sender, To: ptr(vault), Value: "0", InputData: "aabbccdd", Status: 1},
+		Logs:      []types.Log{ev(0, 1), ev(1, 2), ev(2, 2)},
+		Contracts: map[string]*types.Contract{vault: {Address: vault, IsVerified: true, ContractName: ptr("Vault"), ABI: vaultABI}},
+	}
+	f := Build(in, Options{})
+	require.Len(t, f.Steps, 3)
+	assert.Equal(t, "Vault reported Deposited (user: the sender 0x1111…1111, amount: 1)", f.Steps[1].Text)
+	assert.Equal(t, "Vault reported Deposited (user: the sender 0x1111…1111, amount: 2) (2 times in a row)", f.Steps[2].Text)
+	assert.Equal(t, "2", f.Steps[2].Args[1].Value, "a merged step keeps its arguments")
+}
+
+func TestDelegatecallValueIsNotAPayment(t *testing.T) {
+	f := Build(Input{
+		Tx: types.Transaction{Hash: "0x1", From: sender, To: ptr(vault), Value: "1000000000000000000", Status: 1},
+		Internal: []types.InternalTransaction{
+			{TraceAddress: "0", From: vault, To: ptr(impl), CallType: "delegatecall", Value: "1000000000000000000"},
+		},
+	}, Options{})
+	require.Len(t, f.Steps, 2)
+	assert.Equal(t, KindCall, f.Steps[1].Kind)
+	assert.Empty(t, f.Steps[1].Value)
+	assert.NotContains(t, f.Steps[1].Text, "ETH")
+}
+
+func TestLogAfterReturnedCallMovesOn(t *testing.T) {
+	// The router pulls tokens (log 0), reports its own event (log 1), then sends tokens
+	// on (log 2). Log 2 belongs to the second token call, not the returned first one,
+	// and log 1 comes between the two calls.
+	in := Input{
+		Tx: types.Transaction{Hash: "0x1", From: sender, To: ptr(vault), Value: "0", InputData: "12345678", Status: 1},
+		Internal: []types.InternalTransaction{
+			{TraceAddress: "0", From: vault, To: ptr(usdc), CallType: "call", Value: "0", Input: ptr("0x" + selectorOf("transferFrom(address,address,uint256)") + word(sender) + word(vault) + word(1))},
+			{TraceAddress: "1", From: vault, To: ptr(usdc), CallType: "call", Value: "0", Input: ptr("0x" + selectorOf("transfer(address,uint256)") + word(alice) + word(1))},
+		},
+		Logs: []types.Log{
+			transferLog(0, usdc, sender, vault, 1),
+			{LogIndex: 1, Address: vault, Topic0: ptr(topicOf("Routed(uint256)")), Data: word(1)},
+			transferLog(2, usdc, vault, alice, 1),
+		},
+	}
+	f := Build(in, Options{})
+	var order []string
+	for _, s := range f.Steps {
+		order = append(order, fmt.Sprintf("%s@%d", s.Method, s.Depth))
+	}
+	assert.Equal(t, []string{"0x12345678@0", "transferFrom@1", "Transfer@1", topicOf("Routed(uint256)") + "@0", "transfer@1", "Transfer@1"}, order)
+}
+
+func TestMarkdownEscapesSummary(t *testing.T) {
+	in := complexInput()
+	in.Contracts[vault].ContractName = ptr("V*ult")
+	md := Build(in, Options{}).Markdown()
+	assert.Contains(t, md, "called deposit on V\\*ult. It led to")
 }

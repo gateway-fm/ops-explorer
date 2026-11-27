@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	ethcommon "explorer/pkg/eth/common"
 	"explorer/pkg/eth/crypto"
 )
 
@@ -171,7 +172,13 @@ func decodeInputs(params []abiParam, data []byte) []Arg {
 		if (slot+size)*32 > len(data) {
 			break
 		}
-		args = append(args, Arg{Name: p.Name, Type: canonicalType(p), Value: decodeAt(p.Type, data, slot)})
+		v := ""
+		if isElementary(p.Type) {
+			// Arrays and tuples keep an empty value: their head word is an offset or
+			// only their first element, never the whole value.
+			v = decodeAt(p.Type, data, slot)
+		}
+		args = append(args, Arg{Name: p.Name, Type: canonicalType(p), Value: v})
 		slot += size
 	}
 	return args
@@ -194,10 +201,10 @@ func decodeEvent(m method, topics []string, data []byte) []Arg {
 			if ti >= len(topics) {
 				break
 			}
-			raw, err := hexBytes(topics[ti])
+			raw := ethcommon.FromHex(topics[ti])
 			ti++
 			v := ""
-			if err == nil && len(raw) == 32 {
+			if len(raw) == 32 {
 				if isElementary(p.Type) && !isDynamic(p.Type) {
 					v = decodeAt(p.Type, raw, 0)
 				} else {
@@ -251,7 +258,10 @@ func headSlots(p abiParam) (int, bool) {
 			return 1, true
 		}
 		s, ok := headSlots(inner)
-		return n * s, ok
+		if !ok || s > maxHeadSlots/n {
+			return 0, false
+		}
+		return n * s, true
 	}
 	if t == "tuple" {
 		if dynamicParam(p) {
@@ -260,7 +270,7 @@ func headSlots(p abiParam) (int, bool) {
 		total := 0
 		for _, c := range p.Components {
 			s, ok := headSlots(c)
-			if !ok {
+			if !ok || total+s > maxHeadSlots {
 				return 0, false
 			}
 			total += s
@@ -291,6 +301,10 @@ func dynamicParam(p abiParam) bool {
 }
 
 const maxDecodedBytes = 256
+
+// maxHeadSlots bounds the head size of one static parameter (nested fixed arrays
+// multiply), so slot arithmetic cannot overflow; a larger parameter is not decoded.
+const maxHeadSlots = 1 << 16
 
 func decodeAt(t string, data []byte, slot int) string {
 	word := data[slot*32 : slot*32+32]
@@ -331,14 +345,20 @@ func decodeAt(t string, data []byte, slot int) string {
 
 // dynamicBytes reads a string or bytes value whose head word holds its offset. Long
 // values are cut to maxDecodedBytes so one argument cannot bloat the response.
+//
+// Offsets and lengths are 256-bit words from untrusted data, so each is compared
+// against the bytes actually left before it is converted or added to anything.
 func dynamicBytes(data, head []byte) ([]byte, bool) {
 	off := new(big.Int).SetBytes(head)
-	if !off.IsInt64() || off.Int64()+32 > int64(len(data)) {
+	if off.Cmp(big.NewInt(int64(len(data)))) >= 0 {
 		return nil, false
 	}
 	o := int(off.Int64())
+	if len(data)-o < 32 {
+		return nil, false
+	}
 	ln := new(big.Int).SetBytes(data[o : o+32])
-	if !ln.IsInt64() || int64(o+32)+ln.Int64() > int64(len(data)) {
+	if ln.Cmp(big.NewInt(int64(len(data)-o-32))) > 0 {
 		return nil, false
 	}
 	n := int(ln.Int64())
@@ -346,12 +366,4 @@ func dynamicBytes(data, head []byte) ([]byte, bool) {
 		n = maxDecodedBytes
 	}
 	return data[o+32 : o+32+n], true
-}
-
-func hexBytes(s string) ([]byte, error) {
-	s = strings.TrimPrefix(strings.TrimPrefix(s, "0x"), "0X")
-	if len(s)%2 == 1 {
-		s = "0" + s
-	}
-	return hex.DecodeString(s)
 }

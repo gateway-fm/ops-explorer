@@ -10,7 +10,7 @@ import (
 func (f *Flow) Markdown() string {
 	var b strings.Builder
 	b.WriteString("## Flow\n\n")
-	b.WriteString(f.Summary + "\n\n")
+	b.WriteString(mdEscape(f.Summary) + "\n\n")
 	for _, s := range f.Steps {
 		indent := strings.Repeat("  ", min(s.Depth, 8))
 		fmt.Fprintf(&b, "%s%d. %s\n", indent, s.Index+1, mdEscape(s.Text))

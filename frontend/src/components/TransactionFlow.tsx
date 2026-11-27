@@ -18,33 +18,36 @@ const TONE_STROKE: Record<StepTone, string> = {
   call: 'stroke-primary',
   read: 'stroke-neutral-400',
   delegate: 'stroke-neutral-400',
-  money: 'stroke-success-600',
+  money: 'stroke-success-600 dark:stroke-success-500',
   create: 'stroke-primary',
-  event: 'stroke-warning-600',
-  failed: 'stroke-error-600',
+  event: 'stroke-warning-600 dark:stroke-warning-500',
+  failed: 'stroke-error-600 dark:stroke-error-500',
   undone: 'stroke-neutral-300',
 };
 
+// Status colours are fixed hex values, so each needs its own dark-mode shade to stay
+// readable on the dark card; neutrals flip by themselves.
 const TONE_TEXT: Record<StepTone, string> = {
   call: 'fill-primary',
   read: 'fill-neutral-500',
   delegate: 'fill-neutral-500',
-  money: 'fill-success-600',
+  money: 'fill-success-600 dark:fill-success-500',
   create: 'fill-primary',
-  event: 'fill-warning-700',
-  failed: 'fill-error-600',
+  event: 'fill-warning-700 dark:fill-warning-500',
+  failed: 'fill-error-600 dark:fill-error-500',
   undone: 'fill-neutral-400',
 };
 
+// Same light/dark pairs as the shared .badge-* classes in index.css.
 const TONE_BADGE: Record<StepTone, string> = {
-  call: 'bg-primary-100 text-primary-700',
-  read: 'bg-neutral-100 text-neutral-600',
-  delegate: 'bg-neutral-100 text-neutral-600',
-  money: 'bg-success-50 text-success-700',
-  create: 'bg-primary-100 text-primary-700',
-  event: 'bg-warning-50 text-warning-700',
-  failed: 'bg-error-50 text-error-700',
-  undone: 'bg-neutral-100 text-neutral-500',
+  call: 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400',
+  read: 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400',
+  delegate: 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400',
+  money: 'bg-success-50 dark:bg-success-500/10 text-success-700 dark:text-success-500',
+  create: 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400',
+  event: 'bg-warning-50 dark:bg-warning-500/10 text-warning-700 dark:text-warning-500',
+  failed: 'bg-error-50 dark:bg-error-500/10 text-error-700 dark:text-error-500',
+  undone: 'bg-neutral-100 dark:bg-neutral-800 text-neutral-500',
 };
 
 type View = 'diagram' | 'list';
@@ -126,7 +129,7 @@ export function TransactionFlow({ flow }: { flow: Flow }) {
               onClick={() => setView(v)}
               aria-pressed={view === v}
               data-testid={`flow-view-${v}`}
-              className={`px-3 py-1 capitalize ${view === v ? 'bg-primary-100 text-primary-700 font-medium' : 'text-neutral-600 hover:bg-neutral-50'}`}
+              className={`px-3 py-1 capitalize ${view === v ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 font-medium' : 'text-neutral-600 hover:bg-neutral-50'}`}
             >
               {v}
             </button>
@@ -396,7 +399,7 @@ function StepList({ steps, current, onSelect }: { steps: FlowStep[]; current: nu
               type="button"
               onClick={() => onSelect(i)}
               aria-current={active ? 'step' : undefined}
-              className={`w-full text-left flex items-start gap-2 py-2 pr-3 text-sm ${active ? 'bg-primary-50' : 'hover:bg-neutral-50'}`}
+              className={`w-full text-left flex items-start gap-2 py-2 pr-3 text-sm ${active ? 'bg-primary-50 dark:bg-primary-900/20' : 'hover:bg-neutral-50'}`}
               style={{ paddingLeft: `${Math.min(s.depth, 6) * 0.75 + 0.75}rem` }}
             >
               <span className="text-xs text-neutral-400 w-6 shrink-0 text-right">{i + 1}</span>
