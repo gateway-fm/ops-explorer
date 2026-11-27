@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -120,6 +121,17 @@ func TestMCP_ToolsMatchMarkdownPages(t *testing.T) {
 		}
 	}
 	sort.Strings(names)
+	// Every argument is published with a single JSON type: some clients
+	// reject a type array such as ["null", "integer"].
+	for _, tool := range tools.Tools {
+		raw, err := json.Marshal(tool.InputSchema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(raw), `"type":[`) {
+			t.Errorf("tool %s publishes a type array: %s", tool.Name, raw)
+		}
+	}
 	want := []string{"get_address", "get_block", "get_chain_stats", "get_contract", "get_token", "get_transaction", "list_address_transactions", "search"}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Fatalf("tools = %v, want %v", names, want)

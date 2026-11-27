@@ -25,6 +25,7 @@ import (
 	"explorer/pkg/eth/common"
 	"explorer/pkg/log"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -259,6 +260,7 @@ func (s *Server) newMCPServer() *mcp.Server {
 	})
 
 	mcp.AddTool(srv, &mcp.Tool{
+		InputSchema: mcpTokenSchema(),
 		Name:        "get_token",
 		Title:       "Get a token",
 		Description: "A token: name, symbol, type, supply, holders with their share of supply, and the latest transfers.",
@@ -283,6 +285,21 @@ func (s *Server) newMCPServer() *mcp.Server {
 	})
 
 	return srv
+}
+
+// mcpTokenSchema is get_token's input schema. Inferred, the optional `*int`
+// page would be published as type ["null", "integer"], and some MCP clients
+// reject a type array outright: publish a plain optional integer instead.
+func mcpTokenSchema() *jsonschema.Schema {
+	sch, err := jsonschema.For[mcpTokenIn](nil)
+	if err != nil {
+		panic("get_token input schema: " + err.Error())
+	}
+	if p := sch.Properties["page"]; p != nil {
+		p.Types = nil
+		p.Type = "integer"
+	}
+	return sch
 }
 
 func mcpQuery(key, value string) url.Values {
