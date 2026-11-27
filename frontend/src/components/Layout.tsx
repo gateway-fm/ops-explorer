@@ -12,6 +12,8 @@ import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip';
 import { ImpersonationBanner } from './ImpersonationBanner';
 import { branding } from '../lib/branding';
 import { features } from '../lib/features';
+import { directSuggestion, suggestionBadge, suggestionBadgeClass, suggestionPath } from '../lib/searchDirect';
+import { useSearchSuggestions } from '../hooks/useSearchSuggestions';
 
 const mobileNavItems = [
   { to: '/blocks', label: 'Blocks', icon: Boxes },
@@ -39,9 +41,14 @@ const mobileNavItems = [
 export function Layout() {
   const privacyEnabled = usePrivacyEnabled();
   const [search, setSearch] = useState('');
-  const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [selectedIndex, setSelectedIndex] = useState(-1);
+  const {
+    suggestions,
+    open: showSuggestions,
+    setOpen: setShowSuggestions,
+    selectedIndex,
+    setSelectedIndex,
+    clear: clearSuggestions,
+  } = useSearchSuggestions(search);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
   const searchRef = useRef<HTMLDivElement>(null);
@@ -104,29 +111,6 @@ export function Layout() {
     };
   }, [mobileMenuOpen]);
 
-  // Debounced search suggestions
-  useEffect(() => {
-    if (!search.trim() || search.length < 1) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing suggestions when search is empty
-      setSuggestions([]);
-      return;
-    }
-
-    const timer = setTimeout(async () => {
-      try {
-        const response = await api.searchSuggestions(search.trim());
-        setSuggestions(response.suggestions || []);
-        setShowSuggestions(true);
-        setSelectedIndex(-1);
-      } catch (err) {
-        console.error('Search suggestions error:', err);
-        setSuggestions([]);
-      }
-    }, 150);
-
-    return () => clearTimeout(timer);
-  }, [search]);
-
   // Close suggestions when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -137,23 +121,12 @@ export function Layout() {
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [setShowSuggestions]);
 
   const navigateToSuggestion = (suggestion: SearchSuggestion) => {
-    switch (suggestion.type) {
-      case 'block':
-        navigate(`/block/${suggestion.value}`);
-        break;
-      case 'transaction':
-        navigate(`/tx/${suggestion.value}`);
-        break;
-      case 'address':
-        navigate(`/address/${suggestion.value}`);
-        break;
-    }
+    navigate(suggestionPath(suggestion));
     setSearch('');
-    setSuggestions([]);
-    setShowSuggestions(false);
+    clearSuggestions();
     setMobileMenuOpen(false);
   };
 
@@ -166,18 +139,8 @@ export function Layout() {
       return;
     }
 
-    const q = search.trim();
-    if (/^\d+$/.test(q)) {
-      navigate(`/block/${q}`);
-    } else if (q.startsWith('0x') && q.length === 66) {
-      navigate(`/tx/${q}`);
-    } else if (q.startsWith('0x') && q.length === 42) {
-      navigate(`/address/${q}`);
-    }
-    setSearch('');
-    setSuggestions([]);
-    setShowSuggestions(false);
-    setMobileMenuOpen(false);
+    const direct = directSuggestion(search.trim());
+    if (direct) navigateToSuggestion(direct);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -198,32 +161,6 @@ export function Layout() {
         setShowSuggestions(false);
         setSelectedIndex(-1);
         break;
-    }
-  };
-
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'block':
-        return '#';
-      case 'transaction':
-        return 'Tx';
-      case 'address':
-        return '@';
-      default:
-        return '?';
-    }
-  };
-
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case 'block':
-        return 'bg-blue-50 text-blue-600 border border-blue-200';
-      case 'transaction':
-        return 'bg-green-50 text-green-600 border border-green-200';
-      case 'address':
-        return 'bg-primary-50 text-primary-600 border border-primary-200';
-      default:
-        return 'bg-neutral-100 text-neutral-600';
     }
   };
 
@@ -377,8 +314,8 @@ export function Layout() {
                         index === selectedIndex ? 'bg-primary-50' : 'hover:bg-neutral-50'
                       }`}
                     >
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded ${getTypeColor(suggestion.type)}`}>
-                        {getTypeIcon(suggestion.type)}
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded ${suggestionBadgeClass(suggestion.type)}`}>
+                        {suggestionBadge(suggestion.type)}
                       </span>
                       <span className="text-sm text-neutral-700 font-mono truncate">
                         {suggestion.label}

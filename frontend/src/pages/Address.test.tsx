@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
 
 // Contract under test (REQ-5.6): when the address-info request is rejected with
@@ -17,14 +17,18 @@ import type { ReactNode } from 'react';
 // The api client method getAddress is made to reject with a 403-style Error
 // (matching fetchAPI's "API error: 403"). Other queries are harmless.
 const mockGetAddress = vi.fn();
+const mockGetBalances = vi.fn();
+const mockGetContract = vi.fn<(addr: string) => Promise<unknown>>(() => Promise.resolve(null));
+const mockUseTokenMap = vi.fn<(addresses: string[]) => Record<string, unknown>>(() => ({}));
 
 vi.mock('../lib/api', () => {
   const empty = () => Promise.resolve({ data: [], hasMore: false });
   return {
     api: {
-      getAddress: () => mockGetAddress(),
-      getContract: () => Promise.resolve(null),
-      getAddressTokenBalances: () => Promise.resolve([]),
+      getAddress: (addr: string) => mockGetAddress(addr),
+      getContract: (addr: string) => mockGetContract(addr),
+      getContractUML: () => Promise.resolve(null),
+      getAddressTokenBalances: () => mockGetBalances(),
       getToken: () => Promise.resolve(null),
       getAddressTransactions: empty,
       getAddressTransfers: empty,
@@ -46,7 +50,7 @@ vi.mock('../lib/runtimeConfig', () => ({
 
 // useTokenMap hits the network otherwise; stub it.
 vi.mock('../hooks/useTokenMap', () => ({
-  useTokenMap: () => ({}),
+  useTokenMap: (addresses: string[]) => mockUseTokenMap(addresses),
 }));
 
 // Tooltip provider (Radix needs a provider); render children inline.
@@ -76,6 +80,7 @@ function renderAt(addr: string) {
 describe('Address page — restricted card', () => {
   beforeEach(() => {
     mockGetAddress.mockReset();
+    mockGetBalances.mockReset().mockResolvedValue([]);
   });
 
   it('renders the "Address restricted" card on a 403', async () => {
@@ -103,5 +108,111 @@ describe('Address page — restricted card', () => {
       expect(screen.getByText(/Address not found/i)).toBeInTheDocument();
     });
     expect(screen.queryByText('Address restricted')).not.toBeInTheDocument();
+  });
+});
+
+describe('Address page — overview', () => {
+  const addr = '0x407d73d8a49eeb85d32cf465507dd71d507100c1';
+  beforeEach(() => {
+    mockGetAddress.mockReset().mockResolvedValue({
+      address: addr, balance: '0', txCount: 0, isContract: false, tokenTransferCount: 0, internalTxCount: 0,
+    });
+    mockGetBalances.mockReset();
+    // Every looked-up token is a $2 ERC-20 with no decimals.
+    mockUseTokenMap.mockReset().mockImplementation((addresses) =>
+      Object.fromEntries(addresses.map((a) => [a.toLowerCase(), { address: a, symbol: 'TKN', decimals: 0, usdPrice: 2, tokenType: 'ERC20' }])),
+    );
+  });
+
+  const holdings = (n: number) => Array.from({ length: n }, (_, i) => ({
+    address: addr, tokenAddress: '0x' + (i + 1).toString(16).padStart(40, '0'), blockNumber: 1, balance: '1',
+  }));
+
+  it('bounds the token metadata lookups to a few holdings and hides the partial USD total', async () => {
+    mockGetBalances.mockResolvedValue(holdings(25));
+
+    renderAt(addr);
+
+    await waitFor(() => expect(screen.getByText('+22 more')).toBeInTheDocument());
+    const largest = Math.max(...mockUseTokenMap.mock.calls.map(([a]) => a.length));
+    expect(largest).toBeGreaterThanOrEqual(3);
+    expect(largest).toBeLessThanOrEqual(10);
+    expect(screen.getByTestId('address-overview')).not.toHaveTextContent(/Total/);
+  });
+
+  it('shows the USD total when every holding was looked up', async () => {
+    mockGetBalances.mockResolvedValue(holdings(5));
+
+    renderAt(addr);
+
+    await waitFor(() => expect(screen.getByText('+2 more')).toBeInTheDocument());
+    expect(screen.getByTestId('address-overview')).toHaveTextContent('Total $10');
+  });
+
+  it('shows an unavailable state when the balances request fails', async () => {
+    mockGetBalances.mockRejectedValue(new Error('API error: 503'));
+
+    renderAt(addr);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('address-overview')).toHaveTextContent(/token balances unavailable/i);
+    });
+    fireEvent.click(screen.getByTestId('tab-tokens'));
+    expect(screen.getByText(/token balances are unavailable/i)).toBeInTheDocument();
+  });
+});
+
+describe('Address page — contract source', () => {
+  const a = '0x' + 'a'.repeat(40);
+  const b = '0x' + 'b'.repeat(40);
+  const contractAt = (addr: string, name: string) => ({
+    address: addr, creator: addr, creationTx: '0x' + '1'.repeat(64), blockNumber: 1, isVerified: false,
+    contractName: name, abi: [],
+    sourceCode: `// File: ${name}.sol\ncontract ${name} {}\n\n// File: Lib${name}.sol\nlibrary Lib${name} {}\n\n`,
+  });
+
+  function GoTo() {
+    const navigate = useNavigate();
+    return (
+      <>
+        <button onClick={() => navigate(`/address/${a}?tab=contract`)}>go-a</button>
+        <button onClick={() => navigate(`/address/${b}?tab=contract`)}>go-b</button>
+      </>
+    );
+  }
+
+  beforeEach(() => {
+    mockGetAddress.mockReset().mockImplementation((addr: string) => Promise.resolve({
+      address: addr, balance: '0', txCount: 0, isContract: true, tokenTransferCount: 0, internalTxCount: 0,
+    }));
+    mockGetBalances.mockReset().mockResolvedValue([]);
+    mockGetContract.mockReset().mockImplementation((addr: string) =>
+      Promise.resolve(addr === a ? contractAt(a, 'Alpha') : contractAt(b, 'Beta')));
+  });
+
+  it('resets the file selection when another contract opens with its data already cached', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={[`/address/${b}?tab=contract`]}>
+          <Routes>
+            <Route path="/address/:address" element={<><Address /><GoTo /></>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    // Visit B, then A, and pick Full source there.
+    await waitFor(() => expect(screen.getByTestId('source-code')).toHaveTextContent('contract Beta'));
+    fireEvent.click(screen.getByText('go-a'));
+    await waitFor(() => expect(screen.getByTestId('source-code')).toHaveTextContent('contract Alpha'));
+    fireEvent.click(screen.getByTestId('source-full'));
+    expect(screen.getByTestId('source-full')).toHaveAttribute('aria-current', 'true');
+
+    // Back to B, served from cache: B opens on its first file, not on Full source.
+    fireEvent.click(screen.getByText('go-b'));
+    await waitFor(() => expect(screen.getByText('Beta.sol', { selector: 'span[title]' })).toBeInTheDocument());
+    expect(screen.getByTestId('source-full')).not.toHaveAttribute('aria-current');
+    expect(screen.getAllByTestId('source-file')[0]).toHaveAttribute('aria-current', 'true');
   });
 });
