@@ -34,6 +34,7 @@ The public API is available at `http://localhost:8082` by default.
 | `NETWORK_NAME` | — | Chain name in the title of the [Markdown pages](../llm-md/). The Compose files pass the same value the frontend gets as `VITE_NETWORK_NAME` |
 | `NETWORK_CURRENCY` | `ETH` | Native currency shown on the Markdown pages. The Compose files pass the same value the frontend gets as `VITE_NETWORK_CURRENCY` |
 | `EXPLORER_PUBLIC_URL` | — | Public origin used in Markdown page links. When unset, the request's host is used |
+| `MCP_API_KEY_SHA256` | — | SHA-256 hex digests of the API keys the [MCP server](../mcp/) accepts, comma-separated. Unset = `/mcp` is off |
 | `DATABASE_URL` | — | PostgreSQL connection string |
 | `RPC_URL` | — | Ethereum JSON-RPC endpoint |
 

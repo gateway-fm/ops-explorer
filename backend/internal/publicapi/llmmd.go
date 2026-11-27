@@ -92,12 +92,7 @@ func writeMarkdown(w http.ResponseWriter, status int, body string) {
 // (404/400) carry their own text; anything else is a data-source failure and
 // is logged, not echoed, so internal addresses never reach the page.
 func (s *Server) writeMDError(w http.ResponseWriter, r *http.Request, d *mdDoc, err error) {
-	var me *mdError
-	if status.Code(err) == codes.InvalidArgument {
-		// The indexer rejected a client-supplied value (a malformed cursor).
-		me = &mdError{status: http.StatusBadRequest, title: "Bad request", detail: "A query parameter is not valid. Follow the page's own links for paging."}
-	}
-	if me != nil || errors.As(err, &me) {
+	if me := expectedMDError(err); me != nil {
 		out := newMDDoc(d.base)
 		out.h1(me.title)
 		out.para(me.detail)
@@ -110,6 +105,20 @@ func (s *Server) writeMDError(w http.ResponseWriter, r *http.Request, d *mdDoc, 
 	out.h1("Temporarily unavailable")
 	out.para("The explorer could not read this data just now. Try again in a few seconds.")
 	writeMarkdown(w, http.StatusServiceUnavailable, out.String())
+}
+
+// expectedMDError is the user-facing form of a page error: the page's own
+// *mdError, or a 400 when the indexer rejected a client-supplied value (a
+// malformed cursor). nil means the data source failed.
+func expectedMDError(err error) *mdError {
+	var me *mdError
+	if errors.As(err, &me) {
+		return me
+	}
+	if status.Code(err) == codes.InvalidArgument {
+		return &mdError{status: http.StatusBadRequest, title: "Bad request", detail: "A query parameter is not valid. Follow the page's own links for paging."}
+	}
+	return nil
 }
 
 // handleNotFound answers unknown `…/llm.md` and `…/llms.txt` paths with a

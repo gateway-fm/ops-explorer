@@ -136,6 +136,7 @@ export default defineConfig({
           items: [
             { label: 'Public REST API', slug: 'api/public-api' },
             { label: 'Markdown pages for AI agents', slug: 'api/llm-md' },
+            { label: 'MCP server for AI agents', slug: 'api/mcp' },
           ],
         },
         {

@@ -23,6 +23,7 @@ type Server struct {
 	rateLimiter *RateLimiter
 	router      *chi.Mux
 	site        SiteInfo
+	mcpKeys     [][]byte // SHA-256 digests of the accepted MCP keys
 }
 
 // NewServer creates a new public API server. The gasTracker parameter
@@ -60,6 +61,8 @@ func (s *Server) setupRoutes() {
 
 	s.router.Get("/health", s.handleHealthCheck)
 	s.setupMarkdownRoutes()
+	// MCP for AI agents: API key required, 404 while no key is configured.
+	s.router.Handle("/mcp", s.mcpHandler())
 	s.router.Get("/version", s.handleVersion)
 
 	s.router.Route("/api/v1", func(r chi.Router) {
