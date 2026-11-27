@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useNavigate } from 'react-router-dom';
 import { renderWithProviders } from '../test/render';
 import { server, http, HttpResponse, API, makeTx } from '../test/msw';
 import { TransactionDetail } from './TransactionDetail';
@@ -107,6 +108,63 @@ describe('TransactionDetail', () => {
     await userEvent.click(screen.getByTestId('transfers-show-more'));
     expect(screen.getAllByTestId('transfer-row')).toHaveLength(120);
     expect(screen.queryByTestId('transfers-show-more')).not.toBeInTheDocument();
+  });
+
+  const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+  const manyLogs = (n: number, h = hash) => Array.from({ length: n }, (_, i) => ({
+    id: i, txHash: h, logIndex: i, address: '0x' + '3'.repeat(40), topic0: TRANSFER_TOPIC,
+    topic1: '0x' + '0'.repeat(24) + '1'.repeat(40), topic2: '0x' + '0'.repeat(24) + '2'.repeat(40), topic3: null,
+    data: '0x' + '0'.repeat(63) + '1', blockNumber: 1,
+  }));
+  const noContract = () => http.get(`${API}/addresses/:addr/contract`, () => new HttpResponse(null, { status: 404 }));
+
+  it('draws logs a page at a time', async () => {
+    server.use(...txEndpoints({ logs: manyLogs(70) }), noContract());
+    mount();
+    await userEvent.click(await screen.findByTestId('tab-logs'));
+    await waitFor(() => expect(screen.getAllByTestId('log-card')).toHaveLength(50));
+    await userEvent.click(screen.getByTestId('logs-show-more'));
+    expect(screen.getAllByTestId('log-card')).toHaveLength(70);
+    expect(screen.queryByTestId('logs-show-more')).not.toBeInTheDocument();
+  });
+
+  it('draws internal calls a page at a time', async () => {
+    const internal = Array.from({ length: 120 }, (_, i) => ({
+      id: i, txHash: hash, blockNumber: 1, traceAddress: String(i), from: '0x' + '1'.repeat(40), to: '0x' + '2'.repeat(40), value: '0', callType: 'call',
+    }));
+    server.use(...txEndpoints({ internal }), noContract());
+    mount();
+    await userEvent.click(await screen.findByTestId('tab-trace'));
+    await waitFor(() => expect(screen.getAllByTestId('trace-row')).toHaveLength(50));
+    expect(screen.getByTestId('trace-show-more')).toHaveTextContent('Show 50 more (71 not shown)');
+    await userEvent.click(screen.getByTestId('trace-show-more'));
+    await userEvent.click(screen.getByTestId('trace-show-more'));
+    expect(screen.getAllByTestId('trace-row')).toHaveLength(121);
+  });
+
+  it('starts the next transaction on one page again', async () => {
+    const other = '0x' + 'b'.repeat(64);
+    function GoToOther() {
+      const navigate = useNavigate();
+      return <button type="button" onClick={() => navigate(`/tx/${other}`)}>other</button>;
+    }
+    server.use(
+      ...txEndpoints({ logs: manyLogs(120) }),
+      http.get(`${API}/transactions/${other}`, () => HttpResponse.json(makeTx(2, { hash: other }))),
+      http.get(`${API}/transactions/${other}/transfers`, () => HttpResponse.json([])),
+      http.get(`${API}/transactions/${other}/logs`, () => HttpResponse.json(manyLogs(120, other))),
+      http.get(`${API}/transactions/${other}/internal`, () => HttpResponse.json([])),
+      noContract(),
+    );
+    renderWithProviders(<><TransactionDetail /><GoToOther /></>, { path: '/tx/:hash', initialEntries: [`/tx/${hash}`] });
+    await userEvent.click(await screen.findByTestId('tab-logs'));
+    await userEvent.click(await screen.findByTestId('logs-show-more'));
+    expect(screen.getAllByTestId('log-card')).toHaveLength(100);
+
+    await userEvent.click(screen.getByRole('button', { name: 'other' }));
+    await waitFor(() => expect(screen.getByTestId('tab-overview')).toHaveAttribute('aria-selected', 'true'));
+    await userEvent.click(await screen.findByTestId('tab-logs'));
+    await waitFor(() => expect(screen.getAllByTestId('log-card')).toHaveLength(50));
   });
 
   it('renders the restricted interstitial on a 403', async () => {

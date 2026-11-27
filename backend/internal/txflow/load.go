@@ -3,6 +3,7 @@ package txflow
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 
@@ -54,7 +55,13 @@ func Load(ctx context.Context, src Source, hash string, opts Options) (*Flow, er
 			// Degrade to events and transfers, but leave the operator a trace of why.
 			// P-3: no transaction hash, and no address or hash left in the error
 			// text either (a transport error quotes the request URL, which carries it).
-			log.Warn("transaction flow: internal calls could not be read", "error", log.RedactIdentifiers(e.Error()))
+			// In privacy mode that URL can also name an impersonated user and their
+			// organisation, so only the error's type is logged there.
+			reason := log.RedactIdentifiers(e.Error())
+			if log.RedactHTTPPaths {
+				reason = fmt.Sprintf("%T", e)
+			}
+			log.Warn("transaction flow: internal calls could not be read", "error", reason)
 			in.InternalUnavailable, in.Internal = true, nil
 			return nil
 		}
@@ -74,8 +81,10 @@ func Load(ctx context.Context, src Source, hash string, opts Options) (*Flow, er
 		return nil, err
 	}
 
-	in.Partial = len(in.Internal) >= types.MaxTxScopedRows || len(in.Logs) >= types.MaxTxScopedRows ||
-		len(in.Transfers) >= types.MaxTxScopedRows
+	// The indexer reads stop at exactly MaxTxScopedRows; a source that returns more did
+	// not cut anything.
+	in.Partial = len(in.Internal) == types.MaxTxScopedRows || len(in.Logs) == types.MaxTxScopedRows ||
+		len(in.Transfers) == types.MaxTxScopedRows
 	in.Contracts, in.Tokens = lookupMetadata(ctx, src, in)
 	return Build(in, opts), nil
 }

@@ -10,6 +10,7 @@ import { useTokenMap } from '../hooks/useTokenMap';
 import { AddressLink, TokenAddressLink } from '../components/AddressLink';
 import { AddressLabel } from '../components/AddressLabel';
 import { CallTraceTree } from '../components/CallTraceTree';
+import { ROWS_PER_PAGE, ShowMore } from '../components/ShowMore';
 import { TransactionFlow } from '../components/TransactionFlow';
 
 import { PageHeader } from '../components/PageHeader';
@@ -50,8 +51,14 @@ function TxCategoryBadges({ categories }: { categories?: TxCategory[] }) {
   );
 }
 
+// Keyed by the hash, so moving to another transaction starts afresh: on the Overview
+// tab, with one page of each list rather than however many pages the last one showed.
 export function TransactionDetail() {
   const { hash } = useParams<{ hash: string }>();
+  return <TransactionDetailView key={hash} hash={hash} />;
+}
+
+function TransactionDetailView({ hash }: { hash?: string }) {
   const [activeTab, setActiveTab] = useState<'overview' | 'flow' | 'logs' | 'trace'>('overview');
   const [showMore, setShowMore] = useState(false);
 
@@ -398,17 +405,6 @@ export function TransactionDetail() {
   );
 }
 
-const ROWS_PER_PAGE = 50;
-
-function ShowMore({ shown, total, onMore, testId }: { shown: number; total: number; onMore: () => void; testId: string }) {
-  if (shown >= total) return null;
-  return (
-    <button type="button" className="btn-secondary self-start text-sm" onClick={onMore} data-testid={testId}>
-      Show {Math.min(ROWS_PER_PAGE, total - shown)} more ({total - shown} not shown)
-    </button>
-  );
-}
-
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="info-row" data-testid="info-row" data-label={label}>
@@ -593,7 +589,7 @@ function LogCard({ log }: { log: Log }) {
     : null);
 
   return (
-    <div className="card p-4 space-y-3">
+    <div className="card p-4 space-y-3" data-testid="log-card">
       <div className="flex items-center gap-2">
         <span className="badge badge-neutral font-mono">
           {log.logIndex}

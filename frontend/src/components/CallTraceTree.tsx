@@ -5,6 +5,7 @@ import { buildTree, type TraceNode } from '../lib/callTrace';
 import { AddressLink } from './AddressLink';
 import { AddressLabel } from './AddressLabel';
 import { formatWei, formatGas, getNetworkCurrency } from '../lib/utils';
+import { ROWS_PER_PAGE, ShowMore } from './ShowMore';
 
 // A few common 4-byte selectors so the trace reads more naturally. Anything
 // unknown falls back to showing the raw selector.
@@ -42,7 +43,31 @@ function hasValue(value: string | number | null | undefined): boolean {
   }
 }
 
-function TraceRow({ node }: { node: TraceNode }) {
+// firstNodes is the set of the first limit nodes of the tree in pre-order (execution
+// order), the rows drawn so far.
+function firstNodes(root: TraceNode, limit: number): Set<TraceNode> {
+  const out = new Set<TraceNode>();
+  const stack = [root];
+  while (stack.length > 0 && out.size < limit) {
+    const n = stack.pop()!;
+    out.add(n);
+    for (let i = n.children.length - 1; i >= 0; i--) stack.push(n.children[i]);
+  }
+  return out;
+}
+
+function countNodes(root: TraceNode): number {
+  let total = 0;
+  const stack = [root];
+  while (stack.length > 0) {
+    const n = stack.pop()!;
+    total++;
+    stack.push(...n.children);
+  }
+  return total;
+}
+
+function TraceRow({ node, shown }: { node: TraceNode; shown: Set<TraceNode> }) {
   const [open, setOpen] = useState(true);
   const { trace, depth, children } = node;
   const hasChildren = children.length > 0;
@@ -113,8 +138,8 @@ function TraceRow({ node }: { node: TraceNode }) {
         </div>
       </div>
 
-      {hasChildren && open && children.map((child) => (
-        <TraceRow key={child.trace.traceAddress} node={child} />
+      {hasChildren && open && children.filter((child) => shown.has(child)).map((child) => (
+        <TraceRow key={child.trace.traceAddress} node={child} shown={shown} />
       ))}
     </div>
   );
@@ -123,6 +148,9 @@ function TraceRow({ node }: { node: TraceNode }) {
 export function CallTraceTree({ tx, internalTxs }: { tx: Transaction; internalTxs: InternalTransaction[] }) {
   const [raw, setRaw] = useState(false);
   const root = useMemo(() => buildTree(tx, internalTxs), [tx, internalTxs]);
+  const total = useMemo(() => countNodes(root), [root]);
+  const [limit, setLimit] = useState(ROWS_PER_PAGE);
+  const shown = useMemo(() => firstNodes(root, limit), [root, limit]);
 
   return (
     <div className="card">
@@ -144,8 +172,11 @@ export function CallTraceTree({ tx, internalTxs }: { tx: Transaction; internalTx
           <pre className="whitespace-pre-wrap break-all">{JSON.stringify(internalTxs, null, 2)}</pre>
         </div>
       ) : (
-        <div className="py-1">
-          <TraceRow node={root} />
+        <div className="py-1 flex flex-col">
+          <TraceRow node={root} shown={shown} />
+          <div className="px-3 py-2 empty:hidden">
+            <ShowMore shown={shown.size} total={total} onMore={() => setLimit((n) => n + ROWS_PER_PAGE)} testId="trace-show-more" />
+          </div>
         </div>
       )}
     </div>

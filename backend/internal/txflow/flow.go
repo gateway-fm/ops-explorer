@@ -435,12 +435,14 @@ func canEmit(f *frame) bool { return f.err == "" && !f.failedAbove && !f.static 
 // The log goes in the latest gap of that call that comes before the next unused call
 // to the same address starts: after the sub-calls the call made first, but never past
 // a nested or later call that is still waiting for its logs (a callback into the same
-// contract). A call that hands its work to a delegatecall (a proxy, a multicall) starts
+// contract). A call that only forwards to a delegatecall (a proxy, a multicall) starts
 // as used, since the code it delegates to emits in its name.
 //
-// This assumes every kept, non-read-only call emits at least one log for its address:
-// when a call emits none, a log of an earlier call to the same contract is shown in it.
-// A log with no gap at all for its address stays at the previous log's gap.
+// This assumes every kept, non-read-only call emits at least one log for its address,
+// and that extra logs belong to the earlier call: when a call emits none, a log of an
+// earlier call to the same contract is shown in it, and when every call emits several
+// (two transferFrom calls, each with Approval and Transfer), the first call collects
+// the extras. A log with no gap at all for its address stays at the previous log's gap.
 func placeLogs(frames []*frame, moments []moment, logs []types.Log) []int {
 	at := make([]int, len(logs))
 	if len(logs) == 0 {
@@ -488,12 +490,7 @@ func placeLogs(frames []*frame, moments []moment, logs []types.Log) []int {
 		}
 	}
 
-	used := map[int]bool{}
-	for _, f := range frames[1:] {
-		if f.callType == "delegatecall" || f.callType == "callcode" {
-			used[f.parent] = true
-		}
-	}
+	used := forwarders(frames)
 
 	// remaining[i] counts the placeable logs from i on with log i's address; lastBound
 	// is the bound of an address's last placeable log.
@@ -511,40 +508,7 @@ func placeLogs(frames []*frame, moments []moment, logs []types.Log) []int {
 			lastBound[a] = bound[i]
 		}
 	}
-	// open tracks, per address, the unused calls a remaining log could still go to,
-	// ordered by their last gap so the ones that ended before the previous log drop out.
-	type openCalls struct {
-		frames      []int
-		next, alive int
-	}
-	open := map[string]*openCalls{}
-	counted := map[int]bool{}
-	for a := range lastBound {
-		open[a] = &openCalls{}
-	}
-	for fi, f := range frames {
-		gs := gapsOf[fi]
-		lb, ok := lastBound[strings.ToLower(f.ctx)]
-		if len(gs) == 0 || used[fi] || !ok || gs[0] > lb {
-			continue
-		}
-		o := open[strings.ToLower(f.ctx)]
-		o.frames = append(o.frames, fi)
-		o.alive++
-		counted[fi] = true
-	}
-	for _, o := range open {
-		sort.SliceStable(o.frames, func(x, y int) bool {
-			gx, gy := gapsOf[o.frames[x]], gapsOf[o.frames[y]]
-			return gx[len(gx)-1] < gy[len(gy)-1]
-		})
-	}
-	uncount := func(fi int) {
-		if counted[fi] {
-			counted[fi] = false
-			open[strings.ToLower(frames[fi].ctx)].alive--
-		}
-	}
+	open := newOpenCalls(frames, gapsOf, used, lastBound)
 
 	prev, prevFrame := 1, -1 // the gap after the top call starts
 	for i := range logs {
@@ -553,20 +517,12 @@ func placeLogs(frames []*frame, moments []moment, logs []types.Log) []int {
 			continue
 		}
 		a, c, re := addrs[i], byAddr[addrs[i]], runEnd[addrs[i]]
-		o := open[a]
-		for o.next < len(o.frames) {
-			gs := gapsOf[o.frames[o.next]]
-			if gs[len(gs)-1] >= prev {
-				break
-			}
-			uncount(o.frames[o.next])
-			o.next++
-		}
+		alive := open.alive(a, prev)
 		prevFits := prevFrame >= 0 && strings.EqualFold(frames[prevFrame].ctx, a) && latest(gapsOf[prevFrame], bound[i]) >= prev
 
 		lo, hi := sort.SearchInts(c, prev), sort.SearchInts(c, bound[i]+1)
 		pick := -1
-		if prevFits && remaining[i] > o.alive {
+		if prevFits && remaining[i] > alive {
 			pick = prevFrame
 		}
 		for k := lo; pick < 0 && k < hi; k = re[k] {
@@ -589,10 +545,93 @@ func placeLogs(frames []*frame, moments []moment, logs []types.Log) []int {
 		}
 		at[i] = latest(gs, end)
 		used[pick] = true
-		uncount(pick)
+		open.use(pick)
 		prev, prevFrame = at[i], pick
 	}
 	return at
+}
+
+// forwarders marks the calls that hand their work to a kept delegatecall: a proxy
+// passing its own input on, or a contract delegatecalling itself (a multicall). Their
+// logs come from the code they delegate to, so placement treats them as already used.
+// A delegatecall to other code with other input (a library, a Safe's MultiSend) does
+// not count: the caller still runs and emits its own logs around it.
+func forwarders(frames []*frame) map[int]bool {
+	out := map[int]bool{}
+	norm := func(s string) string { return strings.ToLower(strings.TrimPrefix(strings.TrimPrefix(s, "0x"), "0X")) }
+	for _, f := range frames[1:] {
+		if (f.callType != "delegatecall" && f.callType != "callcode") || !canEmit(f) {
+			continue
+		}
+		p := frames[f.parent]
+		if norm(f.input) == norm(p.input) || strings.EqualFold(f.to, p.ctx) {
+			out[f.parent] = true
+		}
+	}
+	return out
+}
+
+// openCalls counts, per address, the unused calls a remaining log could still go to:
+// those that start before the address's last log is placed and end at or after the
+// previous log. Each address's calls are ordered by their last gap, so the ones that
+// ended before the previous log drop out as placement moves forward.
+type openCalls struct {
+	gapsOf  map[int][]int
+	byAddr  map[string]*openList
+	counted map[int]string // frame -> its address, while it is counted as open
+}
+
+type openList struct {
+	frames      []int
+	next, count int
+}
+
+func newOpenCalls(frames []*frame, gapsOf map[int][]int, used map[int]bool, lastBound map[string]int) *openCalls {
+	o := &openCalls{gapsOf: gapsOf, byAddr: map[string]*openList{}, counted: map[int]string{}}
+	for a := range lastBound {
+		o.byAddr[a] = &openList{}
+	}
+	for fi, f := range frames {
+		a := strings.ToLower(f.ctx)
+		gs := gapsOf[fi]
+		lb, ok := lastBound[a]
+		if len(gs) == 0 || used[fi] || !ok || gs[0] > lb {
+			continue
+		}
+		l := o.byAddr[a]
+		l.frames = append(l.frames, fi)
+		l.count++
+		o.counted[fi] = a
+	}
+	for _, l := range o.byAddr {
+		sort.SliceStable(l.frames, func(x, y int) bool {
+			gx, gy := gapsOf[l.frames[x]], gapsOf[l.frames[y]]
+			return gx[len(gx)-1] < gy[len(gy)-1]
+		})
+	}
+	return o
+}
+
+// alive returns how many calls for address a are still open at gap prev.
+func (o *openCalls) alive(a string, prev int) int {
+	l := o.byAddr[a]
+	for l.next < len(l.frames) {
+		gs := o.gapsOf[l.frames[l.next]]
+		if gs[len(gs)-1] >= prev {
+			break
+		}
+		o.use(l.frames[l.next])
+		l.next++
+	}
+	return l.count
+}
+
+// use stops counting call fi as open.
+func (o *openCalls) use(fi int) {
+	if a, ok := o.counted[fi]; ok {
+		delete(o.counted, fi)
+		o.byAddr[a].count--
+	}
 }
 
 func parseBig(s string) *big.Int {

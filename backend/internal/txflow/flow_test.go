@@ -682,6 +682,17 @@ func TestLoadWarningCarriesNoHash(t *testing.T) {
 	assert.Contains(t, buf.String(), "internal calls could not be read")
 	assert.NotContains(t, strings.ToLower(buf.String()), strings.Repeat("ab", 32))
 	assert.NotContains(t, buf.String(), alice, "addresses are masked like in the access log")
+
+	// In privacy mode the error text can name an impersonated user: only its type is logged.
+	buf.Reset()
+	log.RedactHTTPPaths = true
+	defer func() { log.RedactHTTPPaths = false }()
+	src.internalErr = errors.New(`Get "http://proxy/admin/impersonate/did:example:target/in/org-7/internal": timeout`)
+	_, err = Load(context.Background(), src, hash, Options{})
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "internal calls could not be read")
+	assert.NotContains(t, buf.String(), "did:example:target")
+	assert.NotContains(t, buf.String(), "org-7")
 }
 
 func approvalLog(idx int, token, owner, spender string) types.Log {
@@ -771,4 +782,43 @@ func TestPartialReadsAreSaid(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, f.Summary, "at least")
 	assert.NotContains(t, strings.Join(f.Notes, " "), "Only the first")
+}
+
+func TestFailedDelegatecallDoesNotForward(t *testing.T) {
+	// The first token call catches a reverted delegatecall, then reports A itself; the
+	// second token call reports B. Each event stays with its own call.
+	in := Input{
+		Tx: types.Transaction{Hash: "0x1", From: sender, To: ptr(vault), Value: "0", InputData: "12345678", Status: 1},
+		Internal: []types.InternalTransaction{
+			call("0", vault, usdc, "aaaaaaaa"),
+			{TraceAddress: "0,0", From: usdc, To: ptr(impl), CallType: "delegatecall", Value: "0", Input: ptr("0xaaaaaaaa"), Error: ptr("reverted")},
+			call("1", vault, usdc, "bbbbbbbb"),
+		},
+		Logs: []types.Log{eventLog(0, usdc, "A()"), eventLog(1, usdc, "B()")},
+	}
+	assert.Equal(t, []string{
+		"0x12345678@0", "0xaaaaaaaa@1", "0xaaaaaaaa@2", topicOf("A()") + "@1", "0xbbbbbbbb@1", topicOf("B()") + "@1",
+	}, order(Build(in, Options{})))
+}
+
+func TestSafeBatchFirstEventStaysInTheSafeCode(t *testing.T) {
+	// A multisig proxy forwards to its singleton, which delegatecalls a batching library
+	// (other code, other input) that calls a token. The singleton reports its own event
+	// before delegating, so that event belongs to the singleton, not the library.
+	safe, singleton, batcher := vault, impl, oracle
+	exec := "0x" + "aaaaaaaa" + word(1)
+	in := Input{
+		Tx: types.Transaction{Hash: "0x1", From: sender, To: ptr(safe), Value: "0", InputData: exec, Status: 1},
+		Internal: []types.InternalTransaction{
+			{TraceAddress: "0", From: safe, To: ptr(singleton), CallType: "delegatecall", Value: "0", Input: ptr(exec)},
+			{TraceAddress: "0,0", From: safe, To: ptr(batcher), CallType: "delegatecall", Value: "0", Input: ptr("0xbbbbbbbb")},
+			call("0,0,0", safe, usdc, selectorOf("transfer(address,uint256)")+word(alice)+word(1)),
+		},
+		Logs: []types.Log{eventLog(0, safe, "SafeMultiSigTransaction()"), transferLog(1, usdc, safe, alice, 1), eventLog(2, safe, "ExecutionSuccess()")},
+	}
+	got := order(Build(in, Options{}))
+	assert.Equal(t, []string{"0xaaaaaaaa@0", "0xaaaaaaaa@1", topicOf("SafeMultiSigTransaction()") + "@1", "0xbbbbbbbb@2", "transfer@3", "Transfer@3"}, got[:6])
+	// ExecutionSuccess follows the transfer; placement shows it in the library's call,
+	// since it assumes every call emits (see placeLogs).
+	assert.Equal(t, topicOf("ExecutionSuccess()")+"@2", got[6])
 }
