@@ -133,7 +133,10 @@ export default defineConfig({
         },
         {
           label: 'API Reference',
-          items: [{ label: 'Public REST API', slug: 'api/public-api' }],
+          items: [
+            { label: 'Public REST API', slug: 'api/public-api' },
+            { label: 'Markdown pages for AI agents', slug: 'api/llm-md' },
+          ],
         },
         {
           label: 'Design',
