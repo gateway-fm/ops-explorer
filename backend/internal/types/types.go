@@ -186,6 +186,10 @@ type Log struct {
 	AddressMetadata map[string]string `json:"addressMetadata,omitempty"`
 }
 
+// MaxTxScopedRows bounds the rows of one kind (logs, token transfers or internal
+// calls) read for a single transaction; past it a transaction is shown in part.
+const MaxTxScopedRows = 5000
+
 type InternalTransaction struct {
 	ID           int64      `json:"id"`
 	TxHash       string     `json:"txHash"`

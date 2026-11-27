@@ -10,6 +10,8 @@ import { useTokenMap } from '../hooks/useTokenMap';
 import { AddressLink, TokenAddressLink } from '../components/AddressLink';
 import { AddressLabel } from '../components/AddressLabel';
 import { CallTraceTree } from '../components/CallTraceTree';
+import { ROWS_PER_PAGE, ShowMore } from '../components/ShowMore';
+import { TransactionFlow } from '../components/TransactionFlow';
 
 import { PageHeader } from '../components/PageHeader';
 import { CopyButton } from '../components/CopyButton';
@@ -49,9 +51,15 @@ function TxCategoryBadges({ categories }: { categories?: TxCategory[] }) {
   );
 }
 
+// Keyed by the hash, so moving to another transaction starts afresh: on the Overview
+// tab, with one page of each list rather than however many pages the last one showed.
 export function TransactionDetail() {
   const { hash } = useParams<{ hash: string }>();
-  const [activeTab, setActiveTab] = useState<'overview' | 'logs' | 'trace'>('overview');
+  return <TransactionDetailView key={hash} hash={hash} />;
+}
+
+function TransactionDetailView({ hash }: { hash?: string }) {
+  const [activeTab, setActiveTab] = useState<'overview' | 'flow' | 'logs' | 'trace'>('overview');
   const [showMore, setShowMore] = useState(false);
 
   const { data: tx, isLoading, error } = useQuery({
@@ -82,7 +90,20 @@ export function TransactionDetail() {
     retry: false,
   });
 
-  const tokenMap = useTokenMap((transfers || []).map(t => t.tokenAddress));
+  // Fetched only while the Flow tab is open: the other tabs never pay for it.
+  const { data: flow, isLoading: flowLoading, error: flowError } = useQuery({
+    queryKey: ['transaction-flow', hash],
+    queryFn: () => api.getTransactionFlow(hash!),
+    enabled: !!hash && activeTab === 'flow',
+    retry: false,
+  });
+
+  // A transaction can carry thousands of transfers and logs: draw them a page at a
+  // time, and look up token details only for the transfers on screen.
+  const [shownTransfers, setShownTransfers] = useState(ROWS_PER_PAGE);
+  const [shownLogs, setShownLogs] = useState(ROWS_PER_PAGE);
+  const visibleTransfers = (transfers || []).slice(0, shownTransfers);
+  const tokenMap = useTokenMap(visibleTransfers.map(t => t.tokenAddress));
 
   // Batch check logic removed; visibility metadata is now attached directly to API responses
 
@@ -119,42 +140,49 @@ export function TransactionDetail() {
     <div className="space-y-6">
       <PageHeader title="Transaction Details" />
 
-      {/* Tabs - only show when there are logs or internal calls to display */}
-      {(hasLogs || hasTrace) && (
-        <div className="tabs" role="tablist">
+      {/* Tabs - Flow is always available; Logs and Internal Txns only when there is data */}
+      <div className="tabs" role="tablist">
+        <button
+          onClick={() => setActiveTab('overview')}
+          role="tab"
+          data-testid="tab-overview"
+          aria-selected={activeTab === 'overview'}
+          className={activeTab === 'overview' ? 'tab-active' : 'tab'}
+        >
+          Overview
+        </button>
+        <button
+          onClick={() => setActiveTab('flow')}
+          role="tab"
+          data-testid="tab-flow"
+          aria-selected={activeTab === 'flow'}
+          className={activeTab === 'flow' ? 'tab-active' : 'tab'}
+        >
+          Flow
+        </button>
+        {hasLogs && (
           <button
-            onClick={() => setActiveTab('overview')}
+            onClick={() => setActiveTab('logs')}
             role="tab"
-            data-testid="tab-overview"
-            aria-selected={activeTab === 'overview'}
-            className={activeTab === 'overview' ? 'tab-active' : 'tab'}
+            data-testid="tab-logs"
+            aria-selected={activeTab === 'logs'}
+            className={activeTab === 'logs' ? 'tab-active' : 'tab'}
           >
-            Overview
+            Logs ({logs?.length || 0})
           </button>
-          {hasLogs && (
-            <button
-              onClick={() => setActiveTab('logs')}
-              role="tab"
-              data-testid="tab-logs"
-              aria-selected={activeTab === 'logs'}
-              className={activeTab === 'logs' ? 'tab-active' : 'tab'}
-            >
-              Logs ({logs?.length || 0})
-            </button>
-          )}
-          {hasTrace && (
-            <button
-              onClick={() => setActiveTab('trace')}
-              role="tab"
-              data-testid="tab-trace"
-              aria-selected={activeTab === 'trace'}
-              className={activeTab === 'trace' ? 'tab-active' : 'tab'}
-            >
-              Internal Txns ({internalTxs?.length || 0})
-            </button>
-          )}
-        </div>
-      )}
+        )}
+        {hasTrace && (
+          <button
+            onClick={() => setActiveTab('trace')}
+            role="tab"
+            data-testid="tab-trace"
+            aria-selected={activeTab === 'trace'}
+            className={activeTab === 'trace' ? 'tab-active' : 'tab'}
+          >
+            Internal Txns ({internalTxs?.length || 0})
+          </button>
+        )}
+      </div>
 
       {/* Overview Tab */}
       {activeTab === 'overview' && (
@@ -242,7 +270,7 @@ export function TransactionDetail() {
                   <span className="text-xs text-neutral-400">({transfers.length})</span>
                 </div>
                 <div className="flex flex-col gap-2">
-                  {transfers.map((transfer) => {
+                  {visibleTransfers.map((transfer) => {
                     const tokenInfo = tokenMap[transfer.tokenAddress.toLowerCase()];
                     return (
                       <TokenTransferRow
@@ -253,6 +281,7 @@ export function TransactionDetail() {
                       />
                     );
                   })}
+                  <ShowMore shown={visibleTransfers.length} total={transfers.length} onMore={() => setShownTransfers(n => n + ROWS_PER_PAGE)} testId="transfers-show-more" />
                 </div>
               </div>
             )}
@@ -351,12 +380,20 @@ export function TransactionDetail() {
         </div>
       )}
 
+      {/* Flow Tab */}
+      {activeTab === 'flow' && (
+        flowLoading ? <StateMessage variant="loading" />
+          : flowError || !flow ? <StateMessage variant="error" title="The flow for this transaction is not available" />
+            : <TransactionFlow flow={flow} />
+      )}
+
       {/* Logs Tab */}
       {activeTab === 'logs' && logs && (
         <div className="space-y-4">
-          {logs.map((log) => (
+          {logs.slice(0, shownLogs).map((log) => (
             <LogCard key={`${log.txHash}-${log.logIndex}`} log={log} />
           ))}
+          <ShowMore shown={Math.min(shownLogs, logs.length)} total={logs.length} onMore={() => setShownLogs(n => n + ROWS_PER_PAGE)} testId="logs-show-more" />
         </div>
       )}
 
@@ -552,7 +589,7 @@ function LogCard({ log }: { log: Log }) {
     : null);
 
   return (
-    <div className="card p-4 space-y-3">
+    <div className="card p-4 space-y-3" data-testid="log-card">
       <div className="flex items-center gap-2">
         <span className="badge badge-neutral font-mono">
           {log.logIndex}

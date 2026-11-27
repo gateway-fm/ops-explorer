@@ -91,6 +91,7 @@ func main() {
 	}
 
 	server := publicapi.NewServer(dataProvider, nil, chainInfo, port, rateLimit, rateWindow)
+	server.SetNetworkCurrency(os.Getenv("NETWORK_CURRENCY"))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

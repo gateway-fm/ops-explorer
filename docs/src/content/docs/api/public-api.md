@@ -80,8 +80,13 @@ return blocks before this number).
 | GET | `/api/v1/transactions/{hash}/logs` | Get transaction event logs |
 | GET | `/api/v1/transactions/{hash}/transfers` | Get token transfers in transaction |
 | GET | `/api/v1/transactions/{hash}/internal` | Get internal transactions |
+| GET | `/api/v1/transactions/{hash}/flow` | Get the transaction as ordered plain-language steps |
 
 **Query parameters for list:** `page` (int, default 1), `pageSize` (int, default 25, max 100).
+
+`/logs`, `/transfers` and `/internal` return every row of the transaction, unpaged, up to 5,000 rows each when the explorer reads from the indexer; a longer list is cut there.
+
+**Transaction flow.** `/flow` returns `summary`, `participants` (one per address, with a contract name or token symbol when known) and `steps` in execution order. Each step has a `kind` (`call`, `create`, `value_transfer`, `token_transfer`, `event`), `from`, `to`, a decoded `method` and `args` when the contract is verified or the function is a standard token one (otherwise the 4-byte selector or event topic), and `text`, the step in plain words. Identical consecutive steps (the same call with the same input, or the same event with the same data) are merged (`repeat`), and at most 250 steps are returned; when `truncated` is set, `totalSteps` counts every call and event before merging. Decoded `string` and `bytes` values are cut at 256 bytes and then end in `…`. The flow is built only from indexed data, from the same rows as `/logs`, `/transfers` and `/internal` (when one of them is cut at 5,000, `notes` says so and the summary's counts read "at least"): internal calls appear only when the indexer ran with tracing on for that block, and each event is placed inside a call made by or for the contract that emitted it. Its exact position is not recorded, so it is estimated from the order of events and calls.
 
 ### Addresses
 

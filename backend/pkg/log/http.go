@@ -25,6 +25,13 @@ var hexIdentifier = regexp.MustCompile(`(?i)0x[0-9a-f]{6,}`)
 
 const redactedSegment = "[redacted]"
 
+// RedactIdentifiers masks every on-chain identifier (address or hash) in s the same
+// way privacy-mode access logs do. Use it on text that reaches a log line from a
+// request path, e.g. an upstream error that quotes the URL (PROD_READINESS_AUDIT §P-3).
+func RedactIdentifiers(s string) string {
+	return hexIdentifier.ReplaceAllString(s, redactedSegment)
+}
+
 // redactPath masks privacy-sensitive identifiers in a request path so that
 // privacy-mode access logs cannot correlate an authenticated DID with the real
 // addresses / grants it viewed (PROD_READINESS_AUDIT §P-3). It masks:

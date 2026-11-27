@@ -113,6 +113,8 @@ services:
       RPC_URL: ${RPC_URL:?Set RPC_URL}
       # Standalone mode — chain data via chain-indexer over gRPC.
       INDEXER_URL: chain-indexer:50051
+      # Native currency symbol in transaction flow text; same value as the frontend's.
+      NETWORK_CURRENCY: ${NETWORK_CURRENCY:-ETH}
 
       # --- Server ---
       API_PORT: "8080"                              # Internal port (mapped via Docker)
@@ -149,6 +151,8 @@ services:
       RPC_URL: ${RPC_URL:?Set RPC_URL}
       # public-api also reads chain data via chain-indexer (RD-855 Phase 6).
       INDEXER_URL: chain-indexer:50051
+      # Native currency symbol in transaction flow text; same value as the frontend's.
+      NETWORK_CURRENCY: ${NETWORK_CURRENCY:-ETH}
 
       # --- Server ---
       PUBLIC_API_PORT: "8082"                       # Internal port (mapped via Docker)

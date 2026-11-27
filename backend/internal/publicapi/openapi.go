@@ -66,6 +66,11 @@ func buildPaths() map[string]any {
 				pathParam("hash", "string", "Transaction hash"),
 			}, arrayOf(ref("InternalTransaction"))),
 		},
+		"/transactions/{hash}/flow": map[string]any{
+			"get": endpoint("Get transaction flow", "Returns the transaction as ordered plain-language steps: calls, native and token transfers, and events. Built only from indexed data; capped at 250 steps.", []param{
+				pathParam("hash", "string", "Transaction hash"),
+			}, ref("TransactionFlow")),
+		},
 		"/addresses/{address}": map[string]any{
 			"get": endpoint("Get address info", "Returns address information including balance, tx count, and contract status.", []param{
 				pathParam("address", "string", "Ethereum address"),
@@ -305,6 +310,72 @@ func buildComponents() map[string]any {
 					"to":           map[string]any{"type": "string"},
 					"value":        map[string]any{"type": "string"},
 					"callType":     map[string]any{"type": "string"},
+				},
+			},
+			"TransactionFlow": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"txHash":       map[string]any{"type": "string"},
+					"status":       map[string]any{"type": "string", "enum": []string{"success", "failed"}},
+					"currency":     map[string]any{"type": "string"},
+					"hasCallData":  map[string]any{"type": "boolean"},
+					"participants": arrayOf(ref("FlowParticipant")),
+					"steps":        arrayOf(ref("FlowStep")),
+					"totalSteps":   map[string]any{"type": "integer"},
+					"truncated":    map[string]any{"type": "boolean"},
+					"summary":      map[string]any{"type": "string"},
+					"notes":        arrayOf(map[string]any{"type": "string"}),
+				},
+			},
+			"FlowParticipant": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"address":  map[string]any{"type": "string"},
+					"label":    map[string]any{"type": "string"},
+					"kind":     map[string]any{"type": "string", "enum": []string{"account", "contract", "token", "private"}},
+					"verified": map[string]any{"type": "boolean"},
+				},
+			},
+			"FlowStep": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"index":        map[string]any{"type": "integer"},
+					"kind":         map[string]any{"type": "string", "enum": []string{"call", "create", "value_transfer", "token_transfer", "event"}},
+					"depth":        map[string]any{"type": "integer"},
+					"from":         map[string]any{"type": "string"},
+					"to":           map[string]any{"type": "string"},
+					"callType":     map[string]any{"type": "string"},
+					"readOnly":     map[string]any{"type": "boolean"},
+					"traceAddress": map[string]any{"type": "string"},
+					"method":       map[string]any{"type": "string"},
+					"signature":    map[string]any{"type": "string"},
+					"decoded":      map[string]any{"type": "string", "enum": []string{"verified", "common"}},
+					"args": arrayOf(map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"name":  map[string]any{"type": "string"},
+							"type":  map[string]any{"type": "string"},
+							"value": map[string]any{"type": "string"},
+						},
+					}),
+					"value":  map[string]any{"type": "string", "description": "Native currency in wei"},
+					"amount": map[string]any{"type": "string", "description": "value in whole units"},
+					"token": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"address":  map[string]any{"type": "string"},
+							"symbol":   map[string]any{"type": "string"},
+							"standard": map[string]any{"type": "string"},
+							"raw":      map[string]any{"type": "string"},
+							"amount":   map[string]any{"type": "string"},
+							"tokenId":  map[string]any{"type": "string"},
+						},
+					},
+					"logIndex":   map[string]any{"type": "integer"},
+					"error":      map[string]any{"type": "string"},
+					"rolledBack": map[string]any{"type": "boolean"},
+					"repeat":     map[string]any{"type": "integer"},
+					"text":       map[string]any{"type": "string", "description": "The step in plain words"},
 				},
 			},
 			"AddressInfo": map[string]any{

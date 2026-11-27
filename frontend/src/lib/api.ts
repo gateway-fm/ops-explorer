@@ -226,6 +226,59 @@ export interface InternalTransaction {
   addressMetadata?: Record<string, VisibilityReason>;
 }
 
+// Transaction flow (GET /transactions/{hash}/flow): the transaction as ordered
+// plain-language steps, built by the backend from indexed data only.
+export type FlowStepKind = 'call' | 'create' | 'value_transfer' | 'token_transfer' | 'event';
+
+export interface FlowParticipant {
+  address: string;
+  label: string;
+  kind: 'account' | 'contract' | 'token' | 'private';
+  verified?: boolean;
+}
+
+export interface FlowArg {
+  name: string;
+  type: string;
+  value: string;
+}
+
+export interface FlowStep {
+  index: number;
+  kind: FlowStepKind;
+  depth: number;
+  from: string;
+  to: string;
+  callType?: string;
+  readOnly?: boolean;
+  traceAddress?: string;
+  method?: string;
+  signature?: string;
+  decoded?: 'verified' | 'common';
+  args?: FlowArg[];
+  value?: string;
+  amount?: string;
+  token?: { address: string; symbol?: string; standard?: string; raw: string; amount?: string; tokenId?: string };
+  logIndex?: number;
+  error?: string;
+  rolledBack?: boolean;
+  repeat?: number;
+  text: string;
+}
+
+export interface TransactionFlow {
+  txHash: string;
+  status: 'success' | 'failed';
+  currency: string;
+  hasCallData: boolean;
+  participants: FlowParticipant[];
+  steps: FlowStep[];
+  totalSteps: number;
+  truncated: boolean;
+  summary: string;
+  notes?: string[];
+}
+
 export interface TxHistoryPoint {
   timestamp: number;
   count: number;
@@ -533,6 +586,8 @@ export const api = {
   getTransactionLogs: (hash: string) => fetchAPI<Log[]>(`/transactions/${hash}/logs`),
 
   getTransactionInternalTxs: (hash: string) => fetchAPI<InternalTransaction[]>(`/transactions/${hash}/internal`),
+
+  getTransactionFlow: (hash: string) => fetchAPI<TransactionFlow>(`/transactions/${hash}/flow`),
 
   getAddress: (address: string) => fetchAPI<AddressInfo>(`/addresses/${address}`),
 

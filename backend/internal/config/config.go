@@ -104,6 +104,10 @@ type Config struct {
 	PriceCoinID   string `mapstructure:"price_coin_id"`
 	PriceCurrency string `mapstructure:"price_currency"`
 
+	// NetworkCurrency is the native currency symbol used in the plain-language
+	// transaction flow (e.g. "sent 1.5 ETH"). Match the frontend's VITE_NETWORK_CURRENCY.
+	NetworkCurrency string `mapstructure:"network_currency"`
+
 	EnableOPDeposits      bool          `mapstructure:"enable_op_deposits"`
 	L1RPCURL              string        `mapstructure:"l1_rpc_url"`
 	OptimismPortalAddress string        `mapstructure:"optimism_portal_address"`
@@ -165,6 +169,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("enable_price", true)
 	v.SetDefault("price_coin_id", "ethereum")
 	v.SetDefault("price_currency", "usd")
+	v.SetDefault("network_currency", "ETH")
 	v.SetDefault("enable_op_deposits", false)
 	v.SetDefault("l1_rpc_url", "")
 	v.SetDefault("optimism_portal_address", "")
@@ -250,6 +255,7 @@ func Load() (*Config, error) {
 	cfg.EnableProviderCache = v.GetBool("enable_provider_cache")
 	cfg.PriceCoinID = v.GetString("price_coin_id")
 	cfg.PriceCurrency = v.GetString("price_currency")
+	cfg.NetworkCurrency = v.GetString("network_currency")
 
 	// P-4: privacy-aware default for the CoinGecko egress. When ENABLE_PRICE is
 	// set explicitly (env or .env) honour it; otherwise default OFF in privacy
