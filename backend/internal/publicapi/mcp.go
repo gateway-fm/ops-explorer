@@ -174,7 +174,7 @@ type mcpContractIn struct {
 
 type mcpTokenIn struct {
 	Address string `json:"address" jsonschema:"token contract address: 0x followed by 40 hex characters"`
-	Page    int    `json:"page,omitempty" jsonschema:"page of the holder list, from 1"`
+	Page    *int   `json:"page,omitempty" jsonschema:"page of the holder list, from 1"`
 }
 
 type mcpNoIn struct{}
@@ -264,11 +264,11 @@ func (s *Server) newMCPServer() *mcp.Server {
 		Description: "A token: name, symbol, type, supply, holders with their share of supply, and the latest transfers.",
 		Annotations: ro(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpTokenIn) (*mcp.CallToolResult, any, error) {
-		// Any page but "absent" goes to the page's own parser, which
-		// rejects values below 1 rather than serving page 1.
+		// Any page the agent sent, 0 included, goes to the page's own
+		// parser, which rejects values below 1 rather than serving page 1.
 		var q url.Values
-		if in.Page != 0 {
-			q = url.Values{"page": {strconv.Itoa(in.Page)}}
+		if in.Page != nil {
+			q = url.Values{"page": {strconv.Itoa(*in.Page)}}
 		}
 		return s.mcpRender(ctx, "get_token", s.mdToken, strings.TrimSpace(in.Address), q)
 	})

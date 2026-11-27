@@ -192,6 +192,7 @@ func TestMCP_ToolErrors(t *testing.T) {
 		{"list_address_transactions", map[string]any{"address": mdAddrA, "kind": "everything"}, "Bad request"},
 		{"get_block", map[string]any{"block": "-1"}, "Bad request"},
 		{"get_token", map[string]any{"address": mdToken, "page": -1}, "Bad request"},
+		{"get_token", map[string]any{"address": mdToken, "page": 0}, "Bad request"},
 	} {
 		got, isErr := mcpCall(t, cs, c.tool, c.args)
 		if !isErr || !strings.HasPrefix(got, "# "+c.want) {
