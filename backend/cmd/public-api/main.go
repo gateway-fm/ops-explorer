@@ -113,6 +113,12 @@ func main() {
 		CurrencySymbol: os.Getenv("NETWORK_CURRENCY"),
 		PublicURL:      os.Getenv("EXPLORER_PUBLIC_URL"),
 	})
+	// MCP server at /mcp: comma-separated SHA-256 hex digests of the accepted
+	// API keys. Unset = /mcp is off. The keys themselves are never configured.
+	if err := server.SetMCPKeyHashes(os.Getenv("MCP_API_KEY_SHA256")); err != nil {
+		log.Fatal("MCP_API_KEY_SHA256 is not valid", "error", err)
+	}
+	log.Info("mcp server", "enabled", server.MCPEnabled())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

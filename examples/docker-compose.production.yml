@@ -160,6 +160,11 @@ services:
       # --- Markdown pages (/llm.md) ---
       NETWORK_NAME: ${NETWORK_NAME:-My Chain}       # Title: "<name> block explorer"
       NETWORK_CURRENCY: ${NETWORK_CURRENCY:-ETH}    # Native currency symbol
+
+      # --- MCP server (/mcp) ---
+      # SHA-256 hex digests of the accepted API keys, comma-separated; unset = off.
+      # printf '%s' "$KEY" | sha256sum | cut -d' ' -f1
+      MCP_API_KEY_SHA256: ${MCP_API_KEY_SHA256:-}
     depends_on:
       postgres:
         condition: service_healthy
