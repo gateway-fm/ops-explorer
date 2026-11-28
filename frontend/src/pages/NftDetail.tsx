@@ -90,12 +90,25 @@ export default function NftDetail() {
               <Row label="Token ID">
                 <span className="font-mono tabular-nums text-neutral-900">{item.tokenId}</span>
               </Row>
-              <Row label="Owner">
-                <div className="flex items-center gap-2">
-                  <AddressLink address={item.owner} full />
-                  <CopyButton text={item.owner} />
-                </div>
-              </Row>
+              {item.quantity !== undefined ? (
+                // ERC-1155: an id has no single owner — show its live supply
+                // and how many addresses hold it.
+                <>
+                  <Row label="Supply">
+                    <span className="font-mono tabular-nums text-neutral-900">{item.quantity}</span>
+                  </Row>
+                  <Row label="Holders">
+                    <span className="font-mono tabular-nums text-neutral-900">{item.holders}</span>
+                  </Row>
+                </>
+              ) : (
+                <Row label="Owner">
+                  <div className="flex items-center gap-2">
+                    <AddressLink address={item.owner} full />
+                    <CopyButton text={item.owner} />
+                  </div>
+                </Row>
+              )}
               <Row label="Contract">
                 <div className="flex min-w-0 items-center gap-2">
                   <Link
